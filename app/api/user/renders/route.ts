@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 
@@ -17,7 +17,10 @@ export async function GET() {
       );
     }
 
-    const supabase = await createClient();
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
     // Récupérer les rendus de l'utilisateur
     const { data: renders, error } = await supabase
