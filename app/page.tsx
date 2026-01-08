@@ -300,127 +300,165 @@ export default function LandingPage() {
             </p>
           </div>
 
-          {/* Chat Interface */}
-          <Card className="max-w-2xl mx-auto p-6 space-y-4 bg-white/5 backdrop-blur-[2px] border border-white">
-            {/* Upload Zone */}
-            <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`
-                relative border-2 border-dashed rounded-none p-12
-                transition-all duration-200 cursor-pointer
-                ${isDragging 
-                  ? "border-primary bg-primary/5" 
-                  : "border-border hover:border-primary/50"
-                }
-                ${uploadedImage ? "bg-muted/30" : ""}
-              `}
-            >
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileSelect}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              />
-              
-              {uploadedImage ? (
-                <div className="space-y-4">
-                  <div className="relative w-full h-64 bg-muted rounded-none overflow-hidden">
-                    <img
-                      src={uploadedImage}
-                      alt="Uploaded"
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                  <p className="text-center text-sm font-mono text-muted-foreground">
-                    IMAGE CHARGÉE · CLIQUEZ POUR CHANGER
+          {/* Affichage conditionnel : Formulaire OU Chargement */}
+          {isGenerating ? (
+            /* ========== ÉCRAN DE CHARGEMENT ========== */
+            <Card className="max-w-2xl mx-auto p-8 space-y-6 bg-white/5 backdrop-blur-[2px] border border-white">
+              {/* Animation de chargement */}
+              <div className="flex flex-col items-center justify-center py-12 space-y-8">
+                {/* Loader animé */}
+                <div className="relative">
+                  <div className="w-24 h-24 border-4 border-border rounded-full"></div>
+                  <div className="absolute inset-0 w-24 h-24 border-4 border-t-primary border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin"></div>
+                  <Sparkles className="absolute inset-0 m-auto w-8 h-8 text-primary animate-pulse" />
+                </div>
+
+                {/* Texte de statut */}
+                <div className="text-center space-y-2">
+                  <h3 className="text-xl font-bold tracking-tight">Génération en cours...</h3>
+                  <p className="text-sm text-muted-foreground font-mono">
+                    Votre rendu est en cours de création
                   </p>
                 </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center space-y-4 text-center">
-                  <div className="relative">
-                    <div className="absolute inset-0 tech-gradient opacity-20 blur-xl"></div>
-                    <Upload className="w-12 h-12 relative z-10" />
+
+                {/* Étapes */}
+                <div className="w-full max-w-sm space-y-3">
+                  <div className="flex items-center gap-3 p-3 border border-border bg-muted/30">
+                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-mono">ÉTAPE 1/2 · GÉNÉRATION IA</p>
+                      <p className="text-xs text-muted-foreground">🍌 Nano Banana (Google)</p>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <p className="text-lg font-medium">
-                      Glissez votre image de référence
-                    </p>
-                    <p className="text-sm text-muted-foreground font-mono">
-                      CROQUIS · DESSIN · PHOTO · RENDU 3D
-                    </p>
+                  <div className="flex items-center gap-3 p-3 border border-border bg-muted/20">
+                    <div className="w-2 h-2 rounded-full bg-muted-foreground"></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-mono text-muted-foreground">ÉTAPE 2/2 · UPSCALING</p>
+                      <p className="text-xs text-muted-foreground">Magnific AI en attente</p>
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
 
-            {/* Prompt Input */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-mono uppercase tracking-wider">
-                  Instructions de génération
-                </label>
-                <span className="text-xs font-mono text-muted-foreground">
-                  {prompt.length} / 500
-                </span>
-              </div>
-              <Textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
-                placeholder="Décrivez le style, l'ambiance, les détails que vous souhaitez dans votre rendu hyperréaliste..."
-                className="min-h-[120px] resize-none rounded-none font-mono text-sm"
-                disabled={isGenerating}
-              />
-              <p className="text-xs text-muted-foreground font-mono">
-                Exemple : "Photorealistic architectural render, golden hour lighting, modern materials"
-              </p>
-            </div>
-
-            {/* Generate Button */}
-            <Button
-              onClick={handleGenerate}
-              disabled={!uploadedImage || !prompt.trim() || isGenerating}
-              className="w-full h-14 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] !opacity-100 transition-all"
-            >
-              <span className="flex items-center justify-center gap-2">
-                {isGenerating ? (
-                  <>
-                    <Sparkles className="w-4 h-4 animate-pulse" />
-                    GÉNÉRATION EN COURS...
-                  </>
-                ) : (
-                  <>
-                    GÉNÉRER LE RENDU
-                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </>
+                {/* ID du render */}
+                {currentRenderId && (
+                  <p className="text-xs font-mono text-muted-foreground">
+                    ID: {currentRenderId.slice(0, 8)}...
+                  </p>
                 )}
-              </span>
-            </Button>
-
-            {/* Info - Génération en cours */}
-            {isGenerating && (
-              <div className="border border-border p-4 bg-muted/30">
-                <div className="flex items-start gap-3">
-                  <div className="w-1 h-20 tech-gradient animate-pulse"></div>
-                  <div className="flex-1 space-y-1 font-mono text-xs">
-                    <p className="text-white">ÉTAPE 1/2 · GÉNÉRATION IA</p>
-                    <p className="text-muted-foreground">🍌 Nano Banana (Google) en cours...</p>
-                    <p className="text-muted-foreground mt-2">ÉTAPE 2/2 · UPSCALING</p>
-                    <p className="text-muted-foreground">Magnific AI en attente...</p>
-                    {currentRenderId && (
-                      <p className="text-muted-foreground mt-2">
-                        ID: {currentRenderId.slice(0, 8)}... · 
-                        <Link href="/profile" className="text-primary hover:underline ml-1">
-                          Voir dans le profil →
-                        </Link>
-                      </p>
-                    )}
-                  </div>
-                </div>
               </div>
-            )}
-          </Card>
+
+              {/* Séparateur */}
+              <div className="border-t border-border"></div>
+
+              {/* Section nouveau rendu */}
+              <div className="text-center space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  ⏳ Le rendu actuel n'est pas perdu ! Il sera disponible dans votre{" "}
+                  <Link href="/profile" className="text-primary hover:underline font-medium">
+                    profil
+                  </Link>{" "}
+                  une fois terminé.
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={handleNewGeneration}
+                  className="font-mono text-sm"
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  CRÉER UN NOUVEAU RENDU
+                </Button>
+              </div>
+            </Card>
+          ) : (
+            /* ========== FORMULAIRE NORMAL ========== */
+            <Card className="max-w-2xl mx-auto p-6 space-y-4 bg-white/5 backdrop-blur-[2px] border border-white">
+              {/* Upload Zone */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`
+                  relative border-2 border-dashed rounded-none p-12
+                  transition-all duration-200 cursor-pointer
+                  ${isDragging 
+                    ? "border-primary bg-primary/5" 
+                    : "border-border hover:border-primary/50"
+                  }
+                  ${uploadedImage ? "bg-muted/30" : ""}
+                `}
+              >
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                
+                {uploadedImage ? (
+                  <div className="space-y-4">
+                    <div className="relative w-full h-64 bg-muted rounded-none overflow-hidden">
+                      <img
+                        src={uploadedImage}
+                        alt="Uploaded"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    <p className="text-center text-sm font-mono text-muted-foreground">
+                      IMAGE CHARGÉE · CLIQUEZ POUR CHANGER
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center space-y-4 text-center">
+                    <div className="relative">
+                      <div className="absolute inset-0 tech-gradient opacity-20 blur-xl"></div>
+                      <Upload className="w-12 h-12 relative z-10" />
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-lg font-medium">
+                        Glissez votre image de référence
+                      </p>
+                      <p className="text-sm text-muted-foreground font-mono">
+                        CROQUIS · DESSIN · PHOTO · RENDU 3D
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Prompt Input */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-mono uppercase tracking-wider">
+                    Instructions de génération
+                  </label>
+                  <span className="text-xs font-mono text-muted-foreground">
+                    {prompt.length} / 500
+                  </span>
+                </div>
+                <Textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
+                  placeholder="Décrivez le style, l'ambiance, les détails que vous souhaitez dans votre rendu hyperréaliste..."
+                  className="min-h-[120px] resize-none rounded-none font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground font-mono">
+                  Exemple : "Photorealistic architectural render, golden hour lighting, modern materials"
+                </p>
+              </div>
+
+              {/* Generate Button */}
+              <Button
+                onClick={handleGenerate}
+                disabled={!uploadedImage || !prompt.trim()}
+                className="w-full h-14 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] !opacity-100 transition-all"
+              >
+                <span className="flex items-center justify-center gap-2">
+                  GÉNÉRER LE RENDU
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </span>
+              </Button>
+            </Card>
+          )}
 
           {/* Result Display */}
           {renderResult && (
