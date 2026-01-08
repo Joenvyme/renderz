@@ -77,7 +77,7 @@ export default function LandingPage() {
 
       if (!completed) {
         console.warn('Polling timeout - check profile for result');
-        alert('La génération prend plus de temps que prévu. Vérifiez votre profil pour voir le résultat.');
+        alert('Generation is taking longer than expected. Check your profile to see the result.');
       }
     } catch (error) {
       console.error('Polling error:', error);
@@ -217,7 +217,7 @@ export default function LandingPage() {
         console.error('Generate error:', generateData);
         // Gérer la limite de rendus
         if (generateRes.status === 403 && generateData.maxAllowed) {
-          alert(`Limite atteinte ! Vous avez utilisé ${generateData.currentCount}/${generateData.maxAllowed} rendus. Supprimez des rendus existants dans votre profil ou passez à un plan supérieur.`);
+          alert(`Limit reached! You have used ${generateData.currentCount}/${generateData.maxAllowed} renders. Delete existing renders in your profile or upgrade to a higher plan.`);
           setIsGenerating(false);
           return;
         }
@@ -232,7 +232,7 @@ export default function LandingPage() {
 
     } catch (error) {
       console.error('Error:', error);
-      alert(error instanceof Error ? error.message : 'Erreur lors de la génération. Vérifiez la console.');
+      alert(error instanceof Error ? error.message : 'Error during generation. Check the console.');
       setIsGenerating(false);
     }
   };
@@ -272,7 +272,7 @@ export default function LandingPage() {
                   className="font-mono text-xs"
                 >
                   <User className="w-3 h-3 mr-1" />
-                  PROFIL
+                  PROFILE
                 </Button>
               </Link>
               <Button 
@@ -282,7 +282,7 @@ export default function LandingPage() {
                 onClick={() => signOut()}
               >
                 <LogOut className="w-3 h-3 mr-1" />
-                DÉCONNEXION
+                SIGN OUT
               </Button>
             </div>
           ) : (
@@ -291,7 +291,7 @@ export default function LandingPage() {
               className="font-mono text-xs"
               onClick={() => setShowAuthModal(true)}
             >
-              SE CONNECTER
+              SIGN IN
             </Button>
           )}
         </div>
@@ -306,7 +306,7 @@ export default function LandingPage() {
               Your <AuroraText>AI</AuroraText> <AuroraText>rendering</AuroraText> assistant.
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Transformez vos croquis et références en rendus photoréalistes de qualité professionnelle en quelques secondes.
+              Show concepts easily and get client approvals faster.
             </p>
           </div>
 
@@ -323,29 +323,29 @@ export default function LandingPage() {
                   <Sparkles className="absolute inset-0 m-auto w-8 h-8 text-primary animate-pulse" />
                 </div>
 
-                {/* Texte de statut */}
+                {/* Status text */}
                 <div className="text-center space-y-3">
-                  <h3 className="text-xl font-bold tracking-tight">Génération en cours...</h3>
+                  <h3 className="text-xl font-bold tracking-tight">Generating...</h3>
                   <p className="text-sm text-muted-foreground">
-                    Votre rendu est en cours de création.
+                    Your render is being created.
                   </p>
                   <p className="text-xs text-muted-foreground font-mono">
-                    ⏱️ Cela peut prendre jusqu'à 10 minutes.
+                    ⏱️ This may take up to 10 minutes.
                   </p>
                 </div>
               </div>
 
-              {/* Séparateur */}
+              {/* Separator */}
               <div className="border-t border-border"></div>
 
-              {/* Section nouveau rendu */}
+              {/* New render section */}
               <div className="text-center space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Le rendu actuel n'est pas perdu ! Il sera disponible dans votre{" "}
+                  Your current render is not lost! It will be available in your{" "}
                   <Link href="/profile" className="text-primary hover:underline font-medium">
-                    profil
+                    profile
                   </Link>{" "}
-                  une fois terminé.
+                  once completed.
                 </p>
                 <Button
                   variant="outline"
@@ -353,7 +353,7 @@ export default function LandingPage() {
                   className="font-mono text-sm"
                 >
                   <Upload className="w-4 h-4 mr-2" />
-                  CRÉER UN NOUVEAU RENDU
+                  CREATE NEW RENDER
                 </Button>
               </div>
             </Card>
@@ -392,7 +392,7 @@ export default function LandingPage() {
                       />
                     </div>
                     <p className="text-center text-sm font-mono text-muted-foreground">
-                      IMAGE CHARGÉE · CLIQUEZ POUR CHANGER
+                      IMAGE LOADED · CLICK TO CHANGE
                     </p>
                   </div>
                 ) : (
@@ -403,10 +403,10 @@ export default function LandingPage() {
                     </div>
                     <div className="space-y-2">
                       <p className="text-lg font-medium">
-                        Glissez votre image de référence
+                        Drop your reference image here
                       </p>
                       <p className="text-sm text-muted-foreground font-mono">
-                        CROQUIS · DESSIN · PHOTO · RENDU 3D
+                        SKETCH · DRAWING · PHOTO · 3D RENDER
                       </p>
                     </div>
                   </div>
@@ -417,7 +417,7 @@ export default function LandingPage() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-mono uppercase tracking-wider">
-                    Instructions de génération
+                    Generation instructions
                   </label>
                   <span className="text-xs font-mono text-muted-foreground">
                     {prompt.length} / 500
@@ -426,11 +426,11 @@ export default function LandingPage() {
                 <Textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
-                  placeholder="Décrivez le style, l'ambiance, les détails que vous souhaitez dans votre rendu hyperréaliste..."
+                  placeholder="Describe the style, mood, and details you want in your photorealistic render..."
                   className="min-h-[120px] resize-none rounded-none font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground font-mono">
-                  Exemple : "Photorealistic architectural render, golden hour lighting, modern materials"
+                  Example: "Photorealistic architectural render, golden hour lighting, modern materials"
                 </p>
               </div>
 
@@ -441,7 +441,7 @@ export default function LandingPage() {
                 className="w-full h-14 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] !opacity-100 transition-all"
               >
                 <span className="flex items-center justify-center gap-2">
-                  GÉNÉRER LE RENDU
+                  GENERATE RENDER
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </span>
               </Button>
@@ -455,9 +455,9 @@ export default function LandingPage() {
                 {/* Header */}
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
-                    <h3 className="font-mono text-sm font-medium">RENDU GÉNÉRÉ ✓</h3>
+                    <h3 className="font-mono text-sm font-medium">RENDER GENERATED ✓</h3>
                     <p className="text-xs font-mono text-muted-foreground">
-                      Aperçu 1024x1024 · Qualité maximale disponible ci-dessous
+                      Preview 1024x1024 · Maximum quality available below
                     </p>
                   </div>
                   <Button
@@ -466,7 +466,7 @@ export default function LandingPage() {
                     onClick={handleNewGeneration}
                     className="font-mono text-xs"
                   >
-                    NOUVEAU RENDU
+                    NEW RENDER
                   </Button>
                 </div>
                 
@@ -479,49 +479,49 @@ export default function LandingPage() {
                         alt="Aperçu du rendu"
                         className="w-full h-full object-contain"
                       />
-                      {/* Badge aperçu */}
+                      {/* Preview badge */}
                       <div className="absolute top-3 left-3 bg-background/90 backdrop-blur-sm px-3 py-1 rounded-none border border-border">
-                        <p className="text-xs font-mono">APERÇU · 1024x1024</p>
+                        <p className="text-xs font-mono">PREVIEW · 1024x1024</p>
                       </div>
                     </div>
                     
                     {/* Upscaling Status */}
                     {renderResult.upscaled_image_url && 
                      renderResult.upscaled_image_url !== renderResult.generated_image_url ? (
-                      // Upscaling réussi
+                      // Upscaling successful
                       <div className="architectural-border bg-primary/5 p-4">
                         <div className="flex items-start gap-3">
                           <div className="w-1 h-12 tech-gradient"></div>
                           <div className="flex-1 space-y-1 font-mono text-xs">
-                            <p className="text-white font-medium">✓ UPSCALING TERMINÉ</p>
+                            <p className="text-white font-medium">✓ UPSCALING COMPLETE</p>
                             <p className="text-muted-foreground">
-                              Image en qualité maximale disponible (4096x4096, ~15MB)
+                              Maximum quality image available (4096x4096, ~15MB)
                             </p>
                           </div>
                         </div>
                       </div>
                     ) : renderResult.status === 'processing' ? (
-                      // Upscaling en cours
+                      // Upscaling in progress
                       <div className="border border-border bg-muted/30 p-4">
                         <div className="flex items-start gap-3">
                           <div className="w-1 h-12 tech-gradient animate-pulse"></div>
                           <div className="flex-1 space-y-1 font-mono text-xs">
-                            <p className="text-white">⏳ UPSCALING EN COURS...</p>
+                            <p className="text-white">⏳ UPSCALING IN PROGRESS...</p>
                             <p className="text-muted-foreground">
-                              Magnific AI traite votre image (30-60s)
+                              Magnific AI is processing your image (30-60s)
                             </p>
                           </div>
                         </div>
                       </div>
                     ) : (
-                      // Pas d'upscaling ou échoué
+                      // No upscaling or failed
                       <div className="border border-border bg-muted/30 p-4">
                         <div className="flex items-start gap-3">
                           <div className="w-1 h-12 bg-muted"></div>
                           <div className="flex-1 space-y-1 font-mono text-xs">
-                            <p className="text-white">ℹ️ QUALITÉ STANDARD</p>
+                            <p className="text-white">ℹ️ STANDARD QUALITY</p>
                             <p className="text-muted-foreground">
-                              Image disponible en résolution 1024x1024
+                              Image available at 1024x1024 resolution
                             </p>
                           </div>
                         </div>
@@ -555,8 +555,8 @@ export default function LandingPage() {
                           <Download className="w-5 h-5" />
                           {renderResult.upscaled_image_url && 
                            renderResult.upscaled_image_url !== renderResult.generated_image_url
-                            ? "TÉLÉCHARGER EN QUALITÉ MAXIMALE (4K)"
-                            : "TÉLÉCHARGER L'IMAGE"
+                            ? "DOWNLOAD MAXIMUM QUALITY (4K)"
+                            : "DOWNLOAD IMAGE"
                           }
                         </span>
                       </a>
@@ -593,7 +593,7 @@ export default function LandingPage() {
       <footer className="fixed bottom-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-sm border-t border-border">
         <div className="container mx-auto px-6 h-12 flex items-center justify-center">
           <p className="text-xs font-mono text-muted-foreground">
-            © 2026 RENDERZ · ARCHITECTURE + TECHNOLOGIE
+            © 2026 RENDERZ · ARCHITECTURE + TECHNOLOGY
           </p>
         </div>
       </footer>

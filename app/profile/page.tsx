@@ -64,7 +64,7 @@ export default function ProfilePage() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("fr-FR", {
+    return new Date(dateString).toLocaleDateString("en-US", {
       day: "numeric",
       month: "long",
       year: "numeric",
@@ -77,17 +77,17 @@ export default function ProfilePage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Vérification côté client
+    // Client-side validation
     if (!file.type.startsWith("image/")) {
-      alert("Le fichier doit être une image");
+      alert("File must be an image");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      alert("L'image ne doit pas dépasser 5MB");
+      alert("Image must be less than 5MB");
       return;
     }
 
-    // Aperçu local immédiat
+    // Immediate local preview
     const reader = new FileReader();
     reader.onloadend = () => {
       setAvatarPreview(reader.result as string);
@@ -108,15 +108,15 @@ export default function ProfilePage() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Erreur lors de l'upload");
+        throw new Error(data.error || "Upload error");
       }
 
-      // Rafraîchir la session pour obtenir la nouvelle image
+      // Refresh session to get the new image
       await refetch();
       setAvatarPreview(null);
     } catch (error) {
       console.error("Avatar upload error:", error);
-      alert(error instanceof Error ? error.message : "Erreur lors de l'upload");
+      alert(error instanceof Error ? error.message : "Upload error");
       setAvatarPreview(null);
     } finally {
       setIsUploadingAvatar(false);
@@ -124,7 +124,7 @@ export default function ProfilePage() {
   };
 
   const handleDeleteAvatar = async () => {
-    if (!confirm("Êtes-vous sûr de vouloir supprimer votre photo de profil ?")) {
+    if (!confirm("Are you sure you want to delete your profile picture?")) {
       return;
     }
 
@@ -136,13 +136,13 @@ export default function ProfilePage() {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Erreur lors de la suppression");
+        throw new Error(data.error || "Delete error");
       }
 
       await refetch();
     } catch (error) {
       console.error("Avatar delete error:", error);
-      alert(error instanceof Error ? error.message : "Erreur lors de la suppression");
+      alert(error instanceof Error ? error.message : "Delete error");
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -171,7 +171,7 @@ export default function ProfilePage() {
             <Link href="/">
               <Button variant="ghost" size="sm" className="font-mono text-xs">
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                RETOUR
+                BACK
               </Button>
             </Link>
             <span
@@ -188,7 +188,7 @@ export default function ProfilePage() {
             onClick={() => signOut()}
           >
             <LogOut className="w-3 h-3 mr-1" />
-            DÉCONNEXION
+            SIGN OUT
           </Button>
         </div>
       </header>
@@ -198,10 +198,10 @@ export default function ProfilePage() {
         <div className="max-w-5xl mx-auto space-y-8">
           {/* Profile Info */}
           <Card className="p-6 bg-white/5 backdrop-blur-[2px] border border-white">
-            <h1 className="text-3xl font-bold tracking-tight mb-6">Mon Profil</h1>
+            <h1 className="text-3xl font-bold tracking-tight mb-6">My Profile</h1>
             
             <div className="flex items-start gap-6">
-              {/* Avatar avec Upload */}
+              {/* Avatar with Upload */}
               <div className="relative group">
                 <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center border-2 border-border overflow-hidden">
                   {isUploadingAvatar ? (
@@ -209,7 +209,7 @@ export default function ProfilePage() {
                   ) : avatarPreview ? (
                     <img
                       src={avatarPreview}
-                      alt="Aperçu"
+                      alt="Preview"
                       className="w-full h-full object-cover"
                     />
                   ) : session.user.image ? (
@@ -229,7 +229,7 @@ export default function ProfilePage() {
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isUploadingAvatar}
                     className="w-10 h-10 rounded-full bg-black/70 flex items-center justify-center hover:bg-black/90 transition-colors"
-                    title="Changer la photo"
+                    title="Change photo"
                   >
                     <Camera className="w-4 h-4 text-white" />
                   </button>
@@ -238,14 +238,14 @@ export default function ProfilePage() {
                       onClick={handleDeleteAvatar}
                       disabled={isUploadingAvatar}
                       className="w-10 h-10 rounded-full bg-red-500/70 flex items-center justify-center hover:bg-red-500/90 transition-colors"
-                      title="Supprimer la photo"
+                      title="Delete photo"
                     >
                       <Trash2 className="w-4 h-4 text-white" />
                     </button>
                   )}
                 </div>
 
-                {/* Input File caché */}
+                {/* Hidden File Input */}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -259,7 +259,7 @@ export default function ProfilePage() {
               <div className="flex-1 space-y-3">
                 <div className="flex items-center gap-2">
                   <User className="w-4 h-4 text-muted-foreground" />
-                  <span className="font-medium">{session.user.name || "Utilisateur"}</span>
+                  <span className="font-medium">{session.user.name || "User"}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Mail className="w-4 h-4 text-muted-foreground" />
@@ -270,11 +270,11 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-2">
                   <Image className="w-4 h-4 text-muted-foreground" />
                   <span className="text-muted-foreground font-mono text-sm">
-                    {renders.length} rendu{renders.length > 1 ? "s" : ""} généré{renders.length > 1 ? "s" : ""}
+                    {renders.length} render{renders.length !== 1 ? "s" : ""} generated
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground font-mono mt-2">
-                  Survolez la photo pour la modifier · Max 5MB
+                  Hover over the photo to edit · Max 5MB
                 </p>
               </div>
             </div>
@@ -282,7 +282,7 @@ export default function ProfilePage() {
 
           {/* Renders History */}
           <div className="space-y-4">
-            <h2 className="text-2xl font-bold tracking-tight">Mes Rendus</h2>
+            <h2 className="text-2xl font-bold tracking-tight">My Renders</h2>
 
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
@@ -292,11 +292,11 @@ export default function ProfilePage() {
               <Card className="p-8 bg-white/5 backdrop-blur-[2px] border border-border text-center">
                 <Image className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
                 <p className="text-muted-foreground font-mono">
-                  Aucun rendu pour le moment
+                  No renders yet
                 </p>
                 <Link href="/">
                   <Button className="mt-4 font-mono text-sm">
-                    CRÉER MON PREMIER RENDU
+                    CREATE MY FIRST RENDER
                   </Button>
                 </Link>
               </Card>
@@ -332,10 +332,10 @@ export default function ProfilePage() {
                         }`}
                       >
                         {render.status === "completed"
-                          ? "TERMINÉ"
+                          ? "COMPLETED"
                           : render.status === "failed"
-                          ? "ÉCHOUÉ"
-                          : "EN COURS"}
+                          ? "FAILED"
+                          : "PROCESSING"}
                       </div>
                     </div>
 
@@ -368,7 +368,7 @@ export default function ProfilePage() {
                           }
                         >
                           <Download className="w-3 h-3 mr-2" />
-                          TÉLÉCHARGER
+                          DOWNLOAD
                         </Button>
                       )}
                     </div>
@@ -384,11 +384,10 @@ export default function ProfilePage() {
       <footer className="fixed bottom-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-sm border-t border-border">
         <div className="container mx-auto px-6 h-12 flex items-center justify-center">
           <p className="text-xs font-mono text-muted-foreground">
-            © 2026 RENDERZ · ARCHITECTURE + TECHNOLOGIE
+            © 2026 RENDERZ · ARCHITECTURE + TECHNOLOGY
           </p>
         </div>
       </footer>
     </div>
   );
 }
-

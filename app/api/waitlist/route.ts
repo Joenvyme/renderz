@@ -69,12 +69,12 @@ export async function POST(request: NextRequest) {
     if (existing) {
       return NextResponse.json({
         success: true,
-        message: 'Vous êtes déjà inscrit sur la liste d\'attente !',
+        message: 'You are already on the waitlist!',
         alreadyExists: true,
       });
     }
 
-    // Vérifier si l'email est déjà un utilisateur
+    // Check if email is already a user
     const { data: existingUser } = await supabase
       .from('user')
       .select('id')
@@ -84,12 +84,12 @@ export async function POST(request: NextRequest) {
     if (existingUser) {
       return NextResponse.json({
         success: false,
-        message: 'Cet email est déjà associé à un compte.',
+        message: 'This email is already associated with an account.',
         alreadyUser: true,
       });
     }
 
-    // Ajouter à la liste d'attente
+    // Add to waitlist
     const { error: insertError } = await supabase
       .from('waitlist')
       .insert({
@@ -99,12 +99,12 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       console.error('Waitlist insert error:', insertError);
       return NextResponse.json(
-        { error: 'Erreur lors de l\'inscription' },
+        { error: 'Error joining the waitlist' },
         { status: 500 }
       );
     }
 
-    // Compter la position dans la liste
+    // Count position in queue
     const { count: position } = await supabase
       .from('waitlist')
       .select('*', { count: 'exact', head: true })
@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Vous avez été ajouté à la liste d\'attente !',
+      message: 'You have been added to the waitlist!',
       position: position ?? 1,
     });
   } catch (error) {

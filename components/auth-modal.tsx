@@ -95,7 +95,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         setError(data.message || data.error || "Erreur lors de l'inscription");
       }
     } catch (err) {
-      setError("Erreur lors de l'inscription à la liste d'attente");
+      setError("Error joining the waitlist");
     } finally {
       setIsJoiningWaitlist(false);
     }
@@ -113,7 +113,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         callbackURL: "/",
       });
     } catch (err) {
-      setError("Erreur lors de la connexion avec Google");
+      setError("Error signing in with Google");
       setIsGoogleLoading(false);
     }
   };
@@ -142,7 +142,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         });
         
         if (error) {
-          setError(error.message || "Erreur lors de l'inscription");
+          setError(error.message || "Error signing up");
           return;
         }
       } else {
@@ -152,7 +152,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         });
         
         if (error) {
-          setError(error.message || "Erreur lors de la connexion");
+          setError(error.message || "Error signing in");
           return;
         }
       }
@@ -160,7 +160,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       onSuccess();
       onClose();
     } catch (err) {
-      setError("Une erreur est survenue. Veuillez réessayer.");
+      setError("An error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -174,7 +174,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         <Card className="relative z-10 w-full max-w-md p-8 bg-white border border-border shadow-2xl">
           <div className="flex flex-col items-center justify-center py-8">
             <Loader2 className="w-8 h-8 animate-spin mb-4" />
-            <p className="text-sm text-muted-foreground font-mono">Vérification...</p>
+            <p className="text-sm text-muted-foreground font-mono">Checking...</p>
           </div>
         </Card>
       </div>
@@ -196,52 +196,52 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
           </button>
 
           {waitlistSuccess ? (
-            // Succès de l'inscription à la liste d'attente
+            // Waitlist success
             <div className="text-center py-8">
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CheckCircle className="w-8 h-8 text-green-600" />
               </div>
               <h2 className="text-2xl font-bold tracking-tight mb-2">
-                Vous êtes sur la liste !
+                You're on the list!
               </h2>
               <p className="text-sm text-muted-foreground mb-4">
-                Nous vous enverrons un email dès qu'une place se libère.
+                We'll send you an email as soon as a spot opens up.
               </p>
               {waitlistPosition && (
                 <p className="text-xs font-mono text-muted-foreground">
-                  Position dans la file : #{waitlistPosition}
+                  Position in queue: #{waitlistPosition}
                 </p>
               )}
               <Button
                 onClick={onClose}
                 className="mt-6 font-mono text-sm"
               >
-                FERMER
+                CLOSE
               </Button>
             </div>
           ) : (
-            // Formulaire de liste d'attente
+            // Waitlist form
             <>
               <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Mail className="w-8 h-8 text-amber-600" />
                 </div>
                 <h2 className="text-2xl font-bold tracking-tight">
-                  Liste d'attente
+                  Waitlist
                 </h2>
                 <p className="text-sm text-muted-foreground mt-2">
-                  Nous avons actuellement trop de demandes. Laissez-nous votre email et nous vous contacterons dès que nous aurons augmenté la capacité de nos serveurs.
+                  We currently have too many requests. Leave your email and we'll contact you as soon as we increase our server capacity.
                 </p>
               </div>
 
               <form onSubmit={handleJoinWaitlist} className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-mono uppercase tracking-wider">
-                    Votre email
+                    Your email
                   </label>
                   <Input
                     type="email"
-                    placeholder="votre@email.com"
+                    placeholder="your@email.com"
                     value={waitlistEmail}
                     onChange={(e) => setWaitlistEmail(e.target.value)}
                     required
@@ -263,7 +263,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                   {isJoiningWaitlist ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    "REJOINDRE LA LISTE D'ATTENTE"
+                    "JOIN THE WAITLIST"
                   )}
                 </Button>
               </form>
@@ -274,7 +274,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                   onClick={() => setMode("signin")}
                   className="text-sm text-muted-foreground hover:text-foreground font-mono transition-colors"
                 >
-                  Déjà un compte ? Se connecter
+                  Already have an account? Sign in
                 </button>
               </div>
             </>
@@ -306,12 +306,12 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         {/* Header */}
         <div className="text-center mb-6">
           <h2 className="text-2xl font-bold tracking-tight">
-            {mode === "signin" ? "Connexion" : "Inscription"}
+            {mode === "signin" ? "Sign In" : "Sign Up"}
           </h2>
           <p className="text-sm text-muted-foreground mt-1 font-mono">
             {mode === "signin" 
-              ? "Connectez-vous pour générer des rendus" 
-              : "Créez un compte pour commencer"}
+              ? "Sign in to generate renders" 
+              : "Create an account to get started"}
           </p>
         </div>
 
@@ -320,11 +320,11 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
           {mode === "signup" && (
             <div className="space-y-2">
               <label className="text-sm font-mono uppercase tracking-wider">
-                Nom
+                Name
               </label>
               <Input
                 type="text"
-                placeholder="Votre nom"
+                placeholder="Your name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="rounded-none font-mono"
@@ -338,7 +338,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             </label>
             <Input
               type="email"
-              placeholder="votre@email.com"
+              placeholder="your@email.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -348,7 +348,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
 
           <div className="space-y-2">
             <label className="text-sm font-mono uppercase tracking-wider">
-              Mot de passe
+              Password
             </label>
             <Input
               type="password"
@@ -361,7 +361,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             />
             {mode === "signup" && (
               <p className="text-xs text-muted-foreground font-mono">
-                Minimum 8 caractères
+                Minimum 8 characters
               </p>
             )}
           </div>
@@ -380,9 +380,9 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             {isLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : mode === "signin" ? (
-              "SE CONNECTER"
+              "SIGN IN"
             ) : (
-              "S'INSCRIRE"
+              "SIGN UP"
             )}
           </Button>
         </form>
@@ -394,7 +394,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
           </div>
           <div className="relative flex justify-center text-xs uppercase">
             <span className="bg-white px-2 text-muted-foreground font-mono">
-              ou
+              or
             </span>
           </div>
         </div>
@@ -412,7 +412,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
           ) : (
             <>
               <GoogleIcon />
-              <span className="ml-2">CONTINUER AVEC GOOGLE</span>
+              <span className="ml-2">CONTINUE WITH GOOGLE</span>
             </>
           )}
         </Button>
@@ -428,8 +428,8 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             className="text-sm text-muted-foreground hover:text-foreground font-mono transition-colors"
           >
             {mode === "signin" 
-              ? "Pas encore de compte ? S'inscrire" 
-              : "Déjà un compte ? Se connecter"}
+              ? "Don't have an account? Sign up" 
+              : "Already have an account? Sign in"}
           </button>
         </div>
       </Card>
