@@ -22,6 +22,7 @@ interface RenderResult {
 const STORAGE_KEYS = {
   IMAGE: "renderz_pending_image",
   PROMPT: "renderz_pending_prompt",
+  RENDER_ID: "renderz_current_render_id",
 };
 
 export default function LandingPage() {
@@ -33,11 +34,64 @@ export default function LandingPage() {
   const [renderResult, setRenderResult] = useState<RenderResult | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [pendingGeneration, setPendingGeneration] = useState(false);
+  const [currentRenderId, setCurrentRenderId] = useState<string | null>(null);
+
+  // Fonction pour faire le polling d'un render
+  const pollRenderStatus = async (renderId: string) => {
+    setIsGenerating(true);
+    setCurrentRenderId(renderId);
+    localStorage.setItem(STORAGE_KEYS.RENDER_ID, renderId);
+
+    try {
+      let completed = false;
+      let attempts = 0;
+      const maxAttempts = 120; // 4 minutes max (120 * 2s)
+
+      while (!completed && attempts < maxAttempts) {
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        const statusRes = await fetch(`/api/render/${renderId}`);
+        if (!statusRes.ok) {
+          console.error('Status check failed:', statusRes.status);
+          continue;
+        }
+        
+        const render = await statusRes.json();
+        console.log(`[Attempt ${attempts}] Status: ${render.status}, Generated: ${!!render.generated_image_url}, Upscaled: ${!!render.upscaled_image_url}`);
+
+        if (render.status === 'completed') {
+          completed = true;
+          setRenderResult(render);
+          localStorage.removeItem(STORAGE_KEYS.RENDER_ID);
+          console.log('✓ Render completed!');
+        } else if (render.status === 'failed') {
+          localStorage.removeItem(STORAGE_KEYS.RENDER_ID);
+          throw new Error('Render failed');
+        }
+        // Si on a déjà l'image générée, on peut l'afficher en preview
+        else if (render.generated_image_url && !renderResult?.generated_image_url) {
+          setRenderResult(render);
+        }
+      }
+
+      if (!completed) {
+        console.warn('Polling timeout - check profile for result');
+        alert('La génération prend plus de temps que prévu. Vérifiez votre profil pour voir le résultat.');
+      }
+    } catch (error) {
+      console.error('Polling error:', error);
+    } finally {
+      setIsGenerating(false);
+      setCurrentRenderId(null);
+    }
+  };
 
   // Restaurer les données depuis localStorage au chargement
   useEffect(() => {
     const savedImage = localStorage.getItem(STORAGE_KEYS.IMAGE);
     const savedPrompt = localStorage.getItem(STORAGE_KEYS.PROMPT);
+    const savedRenderId = localStorage.getItem(STORAGE_KEYS.RENDER_ID);
     
     if (savedImage) {
       setUploadedImage(savedImage);
@@ -46,20 +100,23 @@ export default function LandingPage() {
       setPrompt(savedPrompt);
     }
     
-    // Si on a des données sauvegardées, marquer comme "en attente de génération"
-    if (savedImage && savedPrompt) {
+    // Si on a un render en cours, reprendre le polling
+    if (savedRenderId && session) {
+      console.log('Resuming polling for render:', savedRenderId);
+      pollRenderStatus(savedRenderId);
+    }
+    // Si on a des données sauvegardées (mais pas de render en cours), marquer comme "en attente"
+    else if (savedImage && savedPrompt && !savedRenderId) {
       setPendingGeneration(true);
     }
-  }, []);
+  }, [session]);
 
   // Lancer automatiquement la génération après connexion si des données étaient en attente
   useEffect(() => {
     if (session && pendingGeneration && uploadedImage && prompt.trim()) {
       setPendingGeneration(false);
-      // Nettoyer le localStorage
       localStorage.removeItem(STORAGE_KEYS.IMAGE);
       localStorage.removeItem(STORAGE_KEYS.PROMPT);
-      // Lancer la génération automatiquement
       handleGenerate();
     }
   }, [session, pendingGeneration]);
@@ -119,14 +176,16 @@ export default function LandingPage() {
       return;
     }
     
-    // Nettoyer le localStorage si on lance une génération
+    // Nettoyer le localStorage des données pré-auth
     localStorage.removeItem(STORAGE_KEYS.IMAGE);
     localStorage.removeItem(STORAGE_KEYS.PROMPT);
     
     setIsGenerating(true);
+    setRenderResult(null);
 
     try {
       // 1. Upload de l'image
+      console.log('📤 Uploading image...');
       const blob = await fetch(uploadedImage).then(r => r.blob());
       const formData = new FormData();
       formData.append('file', blob, 'image.png');
@@ -136,45 +195,48 @@ export default function LandingPage() {
         body: formData,
       });
 
-      if (!uploadRes.ok) throw new Error('Upload failed');
+      if (!uploadRes.ok) {
+        const errorData = await uploadRes.json().catch(() => ({}));
+        console.error('Upload error:', errorData);
+        throw new Error('Upload failed');
+      }
       const { url: imageUrl } = await uploadRes.json();
+      console.log('✓ Image uploaded:', imageUrl);
 
       // 2. Lancer la génération
+      console.log('🚀 Starting generation...');
       const generateRes = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageUrl, prompt }),
       });
 
-      if (!generateRes.ok) throw new Error('Generation failed');
-      const { renderId } = await generateRes.json();
-
-      // 3. Polling pour suivre le statut
-      let completed = false;
-      while (!completed) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        const statusRes = await fetch(`/api/render/${renderId}`);
-        const render = await statusRes.json();
-
-        console.log('Render status:', render.status);
-        console.log('Generated URL:', render.generated_image_url);
-        console.log('Upscaled URL:', render.upscaled_image_url);
-
-        if (render.status === 'completed') {
-          completed = true;
-          setRenderResult(render);
-          console.log('✓ Render completed! Displaying result...');
-        } else if (render.status === 'failed') {
-          throw new Error('Render failed');
-        }
+      if (!generateRes.ok) {
+        const errorData = await generateRes.json().catch(() => ({}));
+        console.error('Generate error:', errorData);
+        throw new Error('Generation failed');
       }
+      const { renderId } = await generateRes.json();
+      console.log('✓ Generation started, renderId:', renderId);
+
+      // 3. Polling pour suivre le statut (avec persistance)
+      await pollRenderStatus(renderId);
+
     } catch (error) {
       console.error('Error:', error);
       alert('Erreur lors de la génération. Vérifiez la console.');
-    } finally {
       setIsGenerating(false);
     }
+  };
+
+  // Fonction pour lancer une nouvelle génération (reset le formulaire)
+  const handleNewGeneration = () => {
+    setRenderResult(null);
+    setUploadedImage(null);
+    setPrompt("");
+    localStorage.removeItem(STORAGE_KEYS.IMAGE);
+    localStorage.removeItem(STORAGE_KEYS.PROMPT);
+    localStorage.removeItem(STORAGE_KEYS.RENDER_ID);
   };
 
   return (
@@ -336,16 +398,24 @@ export default function LandingPage() {
               </span>
             </Button>
 
-            {/* Info */}
+            {/* Info - Génération en cours */}
             {isGenerating && (
               <div className="border border-border p-4 bg-muted/30">
                 <div className="flex items-start gap-3">
-                  <div className="w-1 h-16 tech-gradient animate-pulse"></div>
+                  <div className="w-1 h-20 tech-gradient animate-pulse"></div>
                   <div className="flex-1 space-y-1 font-mono text-xs">
                     <p className="text-white">ÉTAPE 1/2 · GÉNÉRATION IA</p>
                     <p className="text-muted-foreground">🍌 Nano Banana (Google) en cours...</p>
                     <p className="text-muted-foreground mt-2">ÉTAPE 2/2 · UPSCALING</p>
                     <p className="text-muted-foreground">Magnific AI en attente...</p>
+                    {currentRenderId && (
+                      <p className="text-muted-foreground mt-2">
+                        ID: {currentRenderId.slice(0, 8)}... · 
+                        <Link href="/profile" className="text-primary hover:underline ml-1">
+                          Voir dans le profil →
+                        </Link>
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -367,7 +437,7 @@ export default function LandingPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setRenderResult(null)}
+                    onClick={handleNewGeneration}
                     className="font-mono text-xs"
                   >
                     NOUVEAU RENDU
