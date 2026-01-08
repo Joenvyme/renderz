@@ -231,6 +231,8 @@ export default function LandingPage() {
 
   // Fonction pour lancer une nouvelle génération (reset le formulaire)
   const handleNewGeneration = () => {
+    setIsGenerating(false);
+    setCurrentRenderId(null);
     setRenderResult(null);
     setUploadedImage(null);
     setPrompt("");
@@ -305,7 +307,7 @@ export default function LandingPage() {
             /* ========== ÉCRAN DE CHARGEMENT ========== */
             <Card className="max-w-2xl mx-auto p-8 space-y-6 bg-white/5 backdrop-blur-[2px] border border-white">
               {/* Animation de chargement */}
-              <div className="flex flex-col items-center justify-center py-12 space-y-8">
+              <div className="flex flex-col items-center justify-center py-16 space-y-8">
                 {/* Loader animé */}
                 <div className="relative">
                   <div className="w-24 h-24 border-4 border-border rounded-full"></div>
@@ -314,37 +316,15 @@ export default function LandingPage() {
                 </div>
 
                 {/* Texte de statut */}
-                <div className="text-center space-y-2">
+                <div className="text-center space-y-3">
                   <h3 className="text-xl font-bold tracking-tight">Génération en cours...</h3>
-                  <p className="text-sm text-muted-foreground font-mono">
-                    Votre rendu est en cours de création
+                  <p className="text-sm text-muted-foreground">
+                    Votre rendu est en cours de création.
+                  </p>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    ⏱️ Cela peut prendre jusqu'à 10 minutes.
                   </p>
                 </div>
-
-                {/* Étapes */}
-                <div className="w-full max-w-sm space-y-3">
-                  <div className="flex items-center gap-3 p-3 border border-border bg-muted/30">
-                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-mono">ÉTAPE 1/2 · GÉNÉRATION IA</p>
-                      <p className="text-xs text-muted-foreground">🍌 Nano Banana (Google)</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 p-3 border border-border bg-muted/20">
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground"></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-mono text-muted-foreground">ÉTAPE 2/2 · UPSCALING</p>
-                      <p className="text-xs text-muted-foreground">Magnific AI en attente</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* ID du render */}
-                {currentRenderId && (
-                  <p className="text-xs font-mono text-muted-foreground">
-                    ID: {currentRenderId.slice(0, 8)}...
-                  </p>
-                )}
               </div>
 
               {/* Séparateur */}
@@ -353,7 +333,7 @@ export default function LandingPage() {
               {/* Section nouveau rendu */}
               <div className="text-center space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  ⏳ Le rendu actuel n'est pas perdu ! Il sera disponible dans votre{" "}
+                  Le rendu actuel n'est pas perdu ! Il sera disponible dans votre{" "}
                   <Link href="/profile" className="text-primary hover:underline font-medium">
                     profil
                   </Link>{" "}
