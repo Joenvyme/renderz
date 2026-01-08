@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Upload, Sparkles, ArrowRight, Download, LogOut, User } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,12 @@ interface RenderResult {
   status: string;
 }
 
+// Clés localStorage pour persister les données
+const STORAGE_KEYS = {
+  IMAGE: "renderz_pending_image",
+  PROMPT: "renderz_pending_prompt",
+};
+
 export default function LandingPage() {
   const { data: session, isPending } = useSession();
   const [isDragging, setIsDragging] = useState(false);
@@ -26,6 +32,48 @@ export default function LandingPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [renderResult, setRenderResult] = useState<RenderResult | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [pendingGeneration, setPendingGeneration] = useState(false);
+
+  // Restaurer les données depuis localStorage au chargement
+  useEffect(() => {
+    const savedImage = localStorage.getItem(STORAGE_KEYS.IMAGE);
+    const savedPrompt = localStorage.getItem(STORAGE_KEYS.PROMPT);
+    
+    if (savedImage) {
+      setUploadedImage(savedImage);
+    }
+    if (savedPrompt) {
+      setPrompt(savedPrompt);
+    }
+    
+    // Si on a des données sauvegardées, marquer comme "en attente de génération"
+    if (savedImage && savedPrompt) {
+      setPendingGeneration(true);
+    }
+  }, []);
+
+  // Lancer automatiquement la génération après connexion si des données étaient en attente
+  useEffect(() => {
+    if (session && pendingGeneration && uploadedImage && prompt.trim()) {
+      setPendingGeneration(false);
+      // Nettoyer le localStorage
+      localStorage.removeItem(STORAGE_KEYS.IMAGE);
+      localStorage.removeItem(STORAGE_KEYS.PROMPT);
+      // Lancer la génération automatiquement
+      handleGenerate();
+    }
+  }, [session, pendingGeneration]);
+
+  // Sauvegarder les données avant d'ouvrir le modal d'auth
+  const saveAndShowAuth = () => {
+    if (uploadedImage) {
+      localStorage.setItem(STORAGE_KEYS.IMAGE, uploadedImage);
+    }
+    if (prompt) {
+      localStorage.setItem(STORAGE_KEYS.PROMPT, prompt);
+    }
+    setShowAuthModal(true);
+  };
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -67,9 +115,13 @@ export default function LandingPage() {
     
     // Vérifier l'authentification
     if (!session) {
-      setShowAuthModal(true);
+      saveAndShowAuth();
       return;
     }
+    
+    // Nettoyer le localStorage si on lance une génération
+    localStorage.removeItem(STORAGE_KEYS.IMAGE);
+    localStorage.removeItem(STORAGE_KEYS.PROMPT);
     
     setIsGenerating(true);
 
@@ -455,8 +507,9 @@ export default function LandingPage() {
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
         onSuccess={() => {
-          // L'utilisateur est maintenant connecté
-          // On peut relancer la génération automatiquement si l'image et le prompt sont prêts
+          setShowAuthModal(false);
+          // La génération sera lancée automatiquement via le useEffect
+          // qui surveille session + pendingGeneration
         }}
       />
     </div>
