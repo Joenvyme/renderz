@@ -45,17 +45,26 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const [error, setError] = useState<string | null>(null);
   
   // État pour la liste d'attente
-  const [isCheckingCapacity, setIsCheckingCapacity] = useState(true);
+  const [isCheckingCapacity, setIsCheckingCapacity] = useState(false);
   const [isSignupOpen, setIsSignupOpen] = useState(true);
   const [waitlistEmail, setWaitlistEmail] = useState("");
   const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
   const [waitlistSuccess, setWaitlistSuccess] = useState(false);
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
 
-  // Vérifier la capacité au chargement
+  // Vérifier la capacité UNIQUEMENT quand on passe en mode signup
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && mode === "signup") {
       checkCapacity();
+    }
+  }, [isOpen, mode]);
+
+  // Reset state quand le modal se ferme
+  useEffect(() => {
+    if (!isOpen) {
+      setWaitlistSuccess(false);
+      setWaitlistEmail("");
+      setError(null);
     }
   }, [isOpen]);
 
@@ -92,7 +101,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         setWaitlistSuccess(true);
         setWaitlistPosition(data.position || null);
       } else {
-        setError(data.message || data.error || "Erreur lors de l'inscription");
+        setError(data.message || data.error || "Error joining waitlist");
       }
     } catch (err) {
       setError("Error joining the waitlist");
@@ -146,6 +155,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
           return;
         }
       } else {
+        // Mode connexion - pas de vérification de capacité
         const { error } = await signIn.email({
           email,
           password,
@@ -166,15 +176,15 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     }
   };
 
-  // Écran de chargement
-  if (isCheckingCapacity) {
+  // Écran de chargement - UNIQUEMENT en mode signup
+  if (mode === "signup" && isCheckingCapacity) {
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center">
         <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
         <Card className="relative z-10 w-full max-w-md p-8 bg-white border border-border shadow-2xl">
           <div className="flex flex-col items-center justify-center py-8">
             <Loader2 className="w-8 h-8 animate-spin mb-4" />
-            <p className="text-sm text-muted-foreground font-mono">Checking...</p>
+            <p className="text-sm text-muted-foreground font-mono">Checking availability...</p>
           </div>
         </Card>
       </div>
@@ -196,41 +206,41 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
           </button>
 
           {waitlistSuccess ? (
-            // Waitlist success
+            // Waitlist success - Message de remerciement
             <div className="text-center py-8">
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CheckCircle className="w-8 h-8 text-green-600" />
               </div>
               <h2 className="text-2xl font-bold tracking-tight mb-2">
-                You're on the list!
+                Thank you!
               </h2>
               <p className="text-sm text-muted-foreground mb-4">
-                We'll send you an email as soon as a spot opens up.
+                You've been added to our waitlist. We'll send you an email as soon as registrations open again.
               </p>
               {waitlistPosition && (
-                <p className="text-xs font-mono text-muted-foreground">
-                  Position in queue: #{waitlistPosition}
+                <p className="text-xs font-mono text-muted-foreground mb-4">
+                  Your position: #{waitlistPosition}
                 </p>
               )}
               <Button
                 onClick={onClose}
-                className="mt-6 font-mono text-sm"
+                className="mt-2 font-mono text-sm"
               >
-                CLOSE
+                GOT IT
               </Button>
             </div>
           ) : (
-            // Waitlist form
+            // Waitlist form - Message positif, pas d'erreur
             <>
               <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Mail className="w-8 h-8 text-amber-600" />
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Mail className="w-8 h-8 text-blue-600" />
                 </div>
                 <h2 className="text-2xl font-bold tracking-tight">
-                  Waitlist
+                  Join the Waitlist
                 </h2>
                 <p className="text-sm text-muted-foreground mt-2">
-                  We currently have too many requests. Leave your email and we'll contact you as soon as we increase our server capacity.
+                  We're currently at full capacity! Leave your email and we'll notify you as soon as a spot opens up.
                 </p>
               </div>
 
@@ -263,7 +273,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                   {isJoiningWaitlist ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    "JOIN THE WAITLIST"
+                    "NOTIFY ME"
                   )}
                 </Button>
               </form>
@@ -284,7 +294,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     );
   }
 
-  // Formulaire normal (connexion ou inscription si places disponibles)
+  // Formulaire normal (connexion OU inscription si places disponibles)
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center">
       {/* Backdrop */}
