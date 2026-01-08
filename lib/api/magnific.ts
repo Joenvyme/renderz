@@ -80,11 +80,12 @@ async function pollMagnificTask(
         }
         
         // Fallback : vérifier d'autres champs possibles
+        const dataAny = data.data as any;
         const possibleUrl = 
           data.data?.url || 
-          data.data?.output_url || 
-          data.data?.result_url || 
-          data.data?.image_url ||
+          dataAny?.output_url || 
+          dataAny?.result_url || 
+          dataAny?.image_url ||
           (data as any).url ||
           (data as any).output_url;
         
