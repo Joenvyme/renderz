@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { X, Loader2, Mail, CheckCircle } from "lucide-react";
+import { X, Loader2 } from "lucide-react";
 import { signIn, signUp } from "@/lib/auth-client";
 
 // Google Icon SVG
@@ -43,72 +43,6 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  // État pour la liste d'attente
-  const [isCheckingCapacity, setIsCheckingCapacity] = useState(false);
-  const [isSignupOpen, setIsSignupOpen] = useState(true);
-  const [waitlistEmail, setWaitlistEmail] = useState("");
-  const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
-  const [waitlistSuccess, setWaitlistSuccess] = useState(false);
-  const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
-
-  // Vérifier la capacité UNIQUEMENT quand on passe en mode signup
-  useEffect(() => {
-    if (isOpen && mode === "signup") {
-      checkCapacity();
-    }
-  }, [isOpen, mode]);
-
-  // Reset state quand le modal se ferme
-  useEffect(() => {
-    if (!isOpen) {
-      setWaitlistSuccess(false);
-      setWaitlistEmail("");
-      setError(null);
-    }
-  }, [isOpen]);
-
-  const checkCapacity = async () => {
-    setIsCheckingCapacity(true);
-    try {
-      const res = await fetch('/api/waitlist');
-      const data = await res.json();
-      setIsSignupOpen(data.isOpen);
-    } catch (error) {
-      console.error('Error checking capacity:', error);
-      // En cas d'erreur, on permet l'inscription
-      setIsSignupOpen(true);
-    } finally {
-      setIsCheckingCapacity(false);
-    }
-  };
-
-  const handleJoinWaitlist = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsJoiningWaitlist(true);
-    setError(null);
-
-    try {
-      const res = await fetch('/api/waitlist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: waitlistEmail }),
-      });
-
-      const data = await res.json();
-
-      if (data.success) {
-        setWaitlistSuccess(true);
-        setWaitlistPosition(data.position || null);
-      } else {
-        setError(data.message || data.error || "Error joining waitlist");
-      }
-    } catch (err) {
-      setError("Error joining the waitlist");
-    } finally {
-      setIsJoiningWaitlist(false);
-    }
-  };
 
   if (!isOpen) return null;
 
@@ -134,16 +68,6 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
 
     try {
       if (mode === "signup") {
-        // Revérifier la capacité avant l'inscription
-        const capacityRes = await fetch('/api/waitlist');
-        const capacityData = await capacityRes.json();
-        
-        if (!capacityData.isOpen) {
-          setIsSignupOpen(false);
-          setIsLoading(false);
-          return;
-        }
-
         const { error } = await signUp.email({
           email,
           password,
@@ -155,7 +79,6 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
           return;
         }
       } else {
-        // Mode connexion - pas de vérification de capacité
         const { error } = await signIn.email({
           email,
           password,
@@ -176,125 +99,6 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     }
   };
 
-  // Écran de chargement - UNIQUEMENT en mode signup
-  if (mode === "signup" && isCheckingCapacity) {
-    return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-        <Card className="relative z-10 w-full max-w-md p-8 bg-white border border-border shadow-2xl">
-          <div className="flex flex-col items-center justify-center py-8">
-            <Loader2 className="w-8 h-8 animate-spin mb-4" />
-            <p className="text-sm text-muted-foreground font-mono">Checking availability...</p>
-          </div>
-        </Card>
-      </div>
-    );
-  }
-
-  // Écran de liste d'attente (quand inscriptions fermées et mode signup)
-  if (!isSignupOpen && mode === "signup") {
-    return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-        
-        <Card className="relative z-10 w-full max-w-md p-8 bg-white border border-border shadow-2xl">
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-1 hover:bg-muted rounded-sm transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-
-          {waitlistSuccess ? (
-            // Waitlist success - Message de remerciement
-            <div className="text-center py-8">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle className="w-8 h-8 text-green-600" />
-              </div>
-              <h2 className="text-2xl font-bold tracking-tight mb-2">
-                Thank you!
-              </h2>
-              <p className="text-sm text-muted-foreground mb-4">
-                You've been added to our waitlist. We'll send you an email as soon as registrations open again.
-              </p>
-              {waitlistPosition && (
-                <p className="text-xs font-mono text-muted-foreground mb-4">
-                  Your position: #{waitlistPosition}
-                </p>
-              )}
-              <Button
-                onClick={onClose}
-                className="mt-2 font-mono text-sm"
-              >
-                GOT IT
-              </Button>
-            </div>
-          ) : (
-            // Waitlist form - Message positif, pas d'erreur
-            <>
-              <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Mail className="w-8 h-8 text-blue-600" />
-                </div>
-                <h2 className="text-2xl font-bold tracking-tight">
-                  Join the Waitlist
-                </h2>
-                <p className="text-sm text-muted-foreground mt-2">
-                  We're currently at full capacity! Leave your email and we'll notify you as soon as a spot opens up.
-                </p>
-              </div>
-
-              <form onSubmit={handleJoinWaitlist} className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-mono uppercase tracking-wider">
-                    Your email
-                  </label>
-                  <Input
-                    type="email"
-                    placeholder="your@email.com"
-                    value={waitlistEmail}
-                    onChange={(e) => setWaitlistEmail(e.target.value)}
-                    required
-                    className="rounded-none font-mono"
-                  />
-                </div>
-
-                {error && (
-                  <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-sm font-mono">
-                    {error}
-                  </div>
-                )}
-
-                <Button
-                  type="submit"
-                  disabled={isJoiningWaitlist}
-                  className="w-full h-12 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a]"
-                >
-                  {isJoiningWaitlist ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    "NOTIFY ME"
-                  )}
-                </Button>
-              </form>
-
-              <div className="mt-6 text-center">
-                <button
-                  type="button"
-                  onClick={() => setMode("signin")}
-                  className="text-sm text-muted-foreground hover:text-foreground font-mono transition-colors"
-                >
-                  Already have an account? Sign in
-                </button>
-              </div>
-            </>
-          )}
-        </Card>
-      </div>
-    );
-  }
-
-  // Formulaire normal (connexion OU inscription si places disponibles)
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center">
       {/* Backdrop */}
