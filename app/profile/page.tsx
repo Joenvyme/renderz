@@ -185,7 +185,10 @@ export default function ProfilePage() {
             variant="outline"
             size="sm"
             className="font-mono text-xs"
-            onClick={() => signOut()}
+            onClick={async () => {
+              await signOut();
+              window.location.href = "/";
+            }}
           >
             <LogOut className="w-3 h-3 mr-1" />
             SIGN OUT
