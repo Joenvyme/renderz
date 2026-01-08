@@ -211,12 +211,20 @@ export default function LandingPage() {
         body: JSON.stringify({ imageUrl, prompt }),
       });
 
+      const generateData = await generateRes.json();
+
       if (!generateRes.ok) {
-        const errorData = await generateRes.json().catch(() => ({}));
-        console.error('Generate error:', errorData);
-        throw new Error('Generation failed');
+        console.error('Generate error:', generateData);
+        // Gérer la limite de rendus
+        if (generateRes.status === 403 && generateData.maxAllowed) {
+          alert(`Limite atteinte ! Vous avez utilisé ${generateData.currentCount}/${generateData.maxAllowed} rendus. Supprimez des rendus existants dans votre profil ou passez à un plan supérieur.`);
+          setIsGenerating(false);
+          return;
+        }
+        throw new Error(generateData.message || 'Generation failed');
       }
-      const { renderId } = await generateRes.json();
+      
+      const { renderId } = generateData;
       console.log('✓ Generation started, renderId:', renderId);
 
       // 3. Polling pour suivre le statut (avec persistance)
@@ -224,7 +232,7 @@ export default function LandingPage() {
 
     } catch (error) {
       console.error('Error:', error);
-      alert('Erreur lors de la génération. Vérifiez la console.');
+      alert(error instanceof Error ? error.message : 'Erreur lors de la génération. Vérifiez la console.');
       setIsGenerating(false);
     }
   };

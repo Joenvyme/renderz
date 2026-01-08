@@ -5,6 +5,9 @@ import { upscaleWithMagnific } from '@/lib/api/magnific';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 
+// Limite de rendus par utilisateur
+const MAX_RENDERS_PER_USER = 5;
+
 export async function POST(request: NextRequest) {
   try {
     // Vérifier l'authentification
@@ -33,6 +36,32 @@ export async function POST(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
+
+    // Vérifier le nombre de rendus de l'utilisateur
+    const { count, error: countError } = await supabase
+      .from('renders')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', session.user.id);
+
+    if (countError) {
+      console.error('Error counting renders:', countError);
+      return NextResponse.json(
+        { error: 'Erreur lors de la vérification des limites' },
+        { status: 500 }
+      );
+    }
+
+    if (count !== null && count >= MAX_RENDERS_PER_USER) {
+      return NextResponse.json(
+        { 
+          error: 'Limite atteinte',
+          message: `Vous avez atteint la limite de ${MAX_RENDERS_PER_USER} rendus. Supprimez des rendus existants ou passez à un plan supérieur.`,
+          currentCount: count,
+          maxAllowed: MAX_RENDERS_PER_USER
+        },
+        { status: 403 }
+      );
+    }
 
     // Créer un enregistrement dans la DB avec l'ID utilisateur
     const { data: render, error: dbError } = await supabase
