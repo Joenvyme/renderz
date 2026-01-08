@@ -1,0 +1,19 @@
+/**
+ * Mode Mock pour tester l'application sans clés API
+ * Définissez MOCK_MODE=true dans .env.local pour l'activer
+ */
+
+export const MOCK_MODE = process.env.MOCK_MODE === 'true';
+
+/**
+ * Simule un délai asynchrone
+ */
+export const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Image de test pour simulation
+ */
+export const MOCK_GENERATED_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjgwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iODAwIiBoZWlnaHQ9IjgwMCIgZmlsbD0iIzFhMWExYSIvPgogIDx0ZXh0IHg9IjUwJSIgeT0iNDAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjI0IiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5HRU5FUkFURUQgSU1BR0U8L3RleHQ+CiAgPHRleHQgeD0iNTAlIiB5PSI1NSUiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZvbnQtc2l6ZT0iMTYiIGZpbGw9IiM4ODgiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjxzdmc+PHRleHQgeD0iMCIgeT0iMTUiPvCfjok8L3RleHQ+PC9zdmc+IE5hbm8gQmFuYW5hIE1vY2s8L3RleHQ+Cjwvc3ZnPg==';
+
+export const MOCK_UPSCALED_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYwMCIgaGVpZ2h0PSIxNjAwIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgogIDxyZWN0IHdpZHRoPSIxNjAwIiBoZWlnaHQ9IjE2MDAiIGZpbGw9IiMwYTBhMGEiLz4KICA8dGV4dCB4PSI1MCUiIHk9IjQwJSIgZm9udC1mYW1pbHk9Im1vbm9zcGFjZSIgZm9udC1zaXplPSI0OCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+VVBTQ0FMRUQgSU1BR0U8L3RleHQ+CiAgPHRleHQgeD0iNTAlIiB5PSI1NSUiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZvbnQtc2l6ZT0iMzIiIGZpbGw9IiM4ODgiIHRleHQtYW5jaG9yPSJtaWRkbGUiPk1hZ25pZmljIEFJIE1vY2s8L3RleHQ+CiAgPHRleHQgeD0iNTAlIiB5PSI2NSUiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZvbnQtc2l6ZT0iMjAiIGZpbGw9IiM2NjYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjR4IFJlc29sdXRpb248L3RleHQ+Cjwvc3ZnPg==';
+
