@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { generateWithNanoBanana } from '@/lib/api/nano-banana';
-import { upscaleWithMagnific } from '@/lib/api/magnific';
+import { generateWithNanoBanana, AspectRatio } from '@/lib/api/nano-banana';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 
 // Limite de rendus par utilisateur
-const MAX_RENDERS_PER_USER = 5;
+const MAX_RENDERS_PER_USER = 10;
+
+// Utilisateurs sans limite de rendus
+const UNLIMITED_USERS = [
+  'joey.montani@gmail.com',
+];
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,7 +27,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { imageUrl, prompt } = body;
+    const { imageUrl, prompt, aspectRatio } = body as {
+      imageUrl: string;
+      prompt: string;
+      aspectRatio?: AspectRatio;
+    };
 
     if (!imageUrl || !prompt) {
       return NextResponse.json(
@@ -51,7 +59,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (count !== null && count >= MAX_RENDERS_PER_USER) {
+    // Vérifier si l'utilisateur a des rendus illimités
+    const hasUnlimitedRenders = UNLIMITED_USERS.includes(session.user.email || '');
+
+    if (!hasUnlimitedRenders && count !== null && count >= MAX_RENDERS_PER_USER) {
       return NextResponse.json(
         { 
           error: 'Limite atteinte',
@@ -71,6 +82,7 @@ export async function POST(request: NextRequest) {
         original_image_url: imageUrl,
         prompt,
         status: 'processing',
+        metadata: { aspectRatio: aspectRatio || '1:1' },
       })
       .select()
       .single();
@@ -83,8 +95,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Lancer la génération en arrière-plan (dans une vraie app, utiliser une queue)
-    processRender(render.id, imageUrl, prompt).catch(console.error);
+    // Lancer la génération en arrière-plan (SANS upscaling automatique)
+    processRender(render.id, imageUrl, prompt, aspectRatio).catch(console.error);
 
     return NextResponse.json({
       success: true,
@@ -101,19 +113,24 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processRender(renderId: string, imageUrl: string, prompt: string) {
+async function processRender(renderId: string, imageUrl: string, prompt: string, aspectRatio?: AspectRatio) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
   try {
-    // Étape 1: Génération avec Nano Banana (Google Gemini)
+    // Génération avec Nano Banana (Google Gemini) - SANS upscaling automatique
     console.log(`[${renderId}] Starting Nano Banana generation...`);
     console.log(`[${renderId}] Image URL: ${imageUrl}`);
     console.log(`[${renderId}] Prompt: ${prompt.substring(0, 50)}...`);
+    console.log(`[${renderId}] Aspect Ratio: ${aspectRatio || '1:1'}`);
     
-    const nanoBananaResult = await generateWithNanoBanana({ imageUrl, prompt });
+    const nanoBananaResult = await generateWithNanoBanana({ 
+      imageUrl, 
+      prompt,
+      aspectRatio: aspectRatio || '1:1'
+    });
 
     if (!nanoBananaResult.success || !nanoBananaResult.generatedImageUrl) {
       throw new Error(nanoBananaResult.error || 'Nano Banana generation failed');
@@ -122,149 +139,60 @@ async function processRender(renderId: string, imageUrl: string, prompt: string)
     console.log(`[${renderId}] ✓ Nano Banana generation complete!`);
     console.log(`[${renderId}] Generated image URL: ${nanoBananaResult.generatedImageUrl.substring(0, 80)}...`);
 
-    // Mettre à jour avec l'image générée
-    const { error: updateError } = await supabase
+    // Mettre à jour avec l'image générée et marquer comme complété
+    // L'utilisateur pourra choisir d'upscaler plus tard
+    console.log(`[${renderId}] Updating database...`);
+    
+    const { data: updateData, error: updateError } = await supabase
       .from('renders')
       .update({
         generated_image_url: nanoBananaResult.generatedImageUrl,
+        status: 'completed',
       })
-      .eq('id', renderId);
+      .eq('id', renderId)
+      .select()
+      .single();
 
     if (updateError) {
-      console.error(`[${renderId}] Database update error:`, updateError);
+      console.error(`[${renderId}] ❌ Database update error:`, updateError);
     } else {
-      console.log(`[${renderId}] ✓ Database updated with generated image`);
+      console.log(`[${renderId}] ✓ Database updated successfully!`);
+      console.log(`[${renderId}] Updated data:`, {
+        id: updateData?.id,
+        status: updateData?.status,
+        has_generated_url: !!updateData?.generated_image_url
+      });
     }
-
-    // Étape 2: Upscaling avec Magnific AI (optionnel)
-    console.log(`[${renderId}] Starting Magnific AI upscaling...`);
     
-    // Si pas de clé Magnific, on skip l'upscaling
-    if (!process.env.MAGNIFIC_API_KEY || process.env.MAGNIFIC_API_KEY === 'votre_cle_ici') {
-      console.log(`[${renderId}] No Magnific API key, skipping upscaling`);
-      await supabase
-        .from('renders')
-        .update({
-          upscaled_image_url: nanoBananaResult.generatedImageUrl, // Utiliser l'image générée directement
-          status: 'completed',
-        })
-        .eq('id', renderId);
-      console.log(`[${renderId}] Render completed (without upscaling)!`);
-      return;
-    }
-
-    try {
-      console.log(`[${renderId}] Calling Magnific with image: ${nanoBananaResult.generatedImageUrl.substring(0, 80)}...`);
-      
-      const magnificResult = await upscaleWithMagnific({
-        imageUrl: nanoBananaResult.generatedImageUrl,
-        scale: 4,
-      });
-
-      console.log(`[${renderId}] Magnific result:`, {
-        success: magnificResult.success,
-        hasUrl: !!magnificResult.upscaledImageUrl,
-        error: magnificResult.error
-      });
-
-      if (!magnificResult.success || !magnificResult.upscaledImageUrl) {
-        console.warn(`[${renderId}] ⚠️ Magnific upscaling failed: ${magnificResult.error || 'Unknown error'}`);
-        console.warn(`[${renderId}] Using generated image as fallback`);
-        // Si Magnific échoue, utiliser l'image générée quand même
-        await supabase
-          .from('renders')
-          .update({
-            upscaled_image_url: nanoBananaResult.generatedImageUrl,
-            status: 'completed',
-          })
-          .eq('id', renderId);
-        console.log(`[${renderId}] Render completed (without upscaling)!`);
-        return;
-      }
-
-      // Télécharger l'image upscalée depuis Magnific et l'uploader vers Supabase
-      // (car l'URL de Magnific contient un token temporaire qui expire)
-      console.log(`[${renderId}] Downloading upscaled image from Magnific...`);
-      const magnificImageResponse = await fetch(magnificResult.upscaledImageUrl);
-      
-      if (!magnificImageResponse.ok) {
-        throw new Error(`Failed to download upscaled image: ${magnificImageResponse.statusText}`);
-      }
-      
-      const magnificImageBuffer = await magnificImageResponse.arrayBuffer();
-      const magnificImageSizeKB = Math.round(magnificImageBuffer.byteLength / 1024);
-      console.log(`[${renderId}] ✓ Upscaled image downloaded! Size: ${magnificImageSizeKB}KB`);
-
-      // Upload vers Supabase Storage
-      const upscaledFileName = `upscaled-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.png`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('upscaled-renders')
-        .upload(`upscaled/${upscaledFileName}`, magnificImageBuffer, {
-          contentType: 'image/png',
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error(`[${renderId}] Upscaled image upload error:`, uploadError);
-        // Fallback : utiliser l'image générée
-        await supabase
-          .from('renders')
-          .update({
-            upscaled_image_url: nanoBananaResult.generatedImageUrl,
-            status: 'completed',
-          })
-          .eq('id', renderId);
-        console.log(`[${renderId}] Render completed (without upscaled storage)!`);
-        return;
-      }
-
-      // Récupérer l'URL publique
-      const { data: publicUrlData } = supabase.storage
-        .from('upscaled-renders')
-        .getPublicUrl(`upscaled/${upscaledFileName}`);
-
-      const finalUpscaledUrl = publicUrlData.publicUrl;
-      console.log(`[${renderId}] ✓ Upscaled image uploaded to Supabase:`, finalUpscaledUrl.substring(0, 80) + '...');
-
-      // Mettre à jour avec l'image upscalée
-      const { error: finalUpdateError } = await supabase
-        .from('renders')
-        .update({
-          upscaled_image_url: finalUpscaledUrl,
-          status: 'completed',
-        })
-        .eq('id', renderId);
-
-      if (finalUpdateError) {
-        console.error(`[${renderId}] Final database update error:`, finalUpdateError);
-      }
-
-      console.log(`[${renderId}] ✓ Render completed successfully with upscaling!`);
-    } catch (magnificError) {
-      console.error(`[${renderId}] ⚠️ Magnific exception caught:`, magnificError);
-      console.error(`[${renderId}] Error details:`, {
-        message: magnificError instanceof Error ? magnificError.message : 'Unknown',
-        stack: magnificError instanceof Error ? magnificError.stack : undefined
-      });
-      console.warn(`[${renderId}] Using generated image as fallback`);
-      // En cas d'erreur Magnific, utiliser l'image générée quand même
-      await supabase
-        .from('renders')
-        .update({
-          upscaled_image_url: nanoBananaResult.generatedImageUrl,
-          status: 'completed',
-        })
-        .eq('id', renderId);
-      console.log(`[${renderId}] Render completed (without upscaling)!`);
-    }
+    // Vérifier immédiatement que la mise à jour a fonctionné
+    const { data: verifyData } = await supabase
+      .from('renders')
+      .select('status, generated_image_url')
+      .eq('id', renderId)
+      .single();
+    
+    console.log(`[${renderId}] Verification after update:`, {
+      status: verifyData?.status,
+      has_generated_url: !!verifyData?.generated_image_url
+    });
   } catch (error) {
     console.error(`[${renderId}] Render failed:`, error);
+    
+    // Récupérer les metadata existantes pour ne pas les écraser
+    const { data: existingRender } = await supabase
+      .from('renders')
+      .select('metadata')
+      .eq('id', renderId)
+      .single();
     
     await supabase
       .from('renders')
       .update({
         status: 'failed',
-        metadata: { error: error instanceof Error ? error.message : 'Unknown error' },
+        metadata: { 
+          ...((existingRender?.metadata as object) || {}),
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        },
       })
       .eq('id', renderId);
   }

@@ -6,9 +6,21 @@
 
 import { MOCK_MODE, delay, MOCK_GENERATED_IMAGE } from './mock-mode';
 
+// Aspect ratios supportés par Gemini
+export type AspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16';
+
+export const ASPECT_RATIOS: { value: AspectRatio; label: string; resolution: string }[] = [
+  { value: '1:1', label: 'Square', resolution: '1024×1024' },
+  { value: '4:3', label: 'Landscape', resolution: '1344×1008' },
+  { value: '3:4', label: 'Portrait', resolution: '1008×1344' },
+  { value: '16:9', label: 'Widescreen', resolution: '1344×768' },
+  { value: '9:16', label: 'Vertical', resolution: '768×1344' },
+];
+
 interface NanoBananaGenerateRequest {
   imageUrl: string;
   prompt: string;
+  aspectRatio?: AspectRatio;
 }
 
 interface NanoBananaGenerateResponse {
@@ -69,7 +81,7 @@ export async function generateWithNanoBanana(
           generationConfig: {
             responseModalities: ['IMAGE'],
             imageConfig: {
-              aspectRatio: '1:1'
+              aspectRatio: request.aspectRatio || '1:1'
             }
           }
         }),

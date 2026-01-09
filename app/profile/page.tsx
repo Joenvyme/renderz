@@ -6,8 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useSession, signOut } from "@/lib/auth-client";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
-import { ArrowLeft, User, Mail, Calendar, Image, Download, Loader2, LogOut, Camera, Trash2 } from "lucide-react";
+import { ArrowLeft, User, Mail, Calendar, Image, Download, Loader2, LogOut, Camera, Trash2, Wand2, Eye, ExternalLink, Pencil, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import Link from "next/link";
+
+interface RenderMetadata {
+  aspectRatio?: string;
+  upscale_error?: string;
+  upscale_started_at?: string;
+  [key: string]: unknown;
+}
 
 interface Render {
   id: string;
@@ -17,6 +25,7 @@ interface Render {
   prompt: string | null;
   status: string;
   created_at: string;
+  metadata?: RenderMetadata;
 }
 
 export default function ProfilePage() {
@@ -26,6 +35,12 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [upscalingIds, setUpscalingIds] = useState<Set<string>>(new Set());
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [previewImage, setPreviewImage] = useState<{ url: string; type: string } | null>(null);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [isSavingName, setIsSavingName] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -33,6 +48,18 @@ export default function ProfilePage() {
       router.push("/");
     }
   }, [session, isPending, router]);
+
+  // Bloquer le scroll du body quand le modal est ouvert
+  useEffect(() => {
+    if (previewImage) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [previewImage]);
 
   useEffect(() => {
     if (session) {
@@ -71,6 +98,132 @@ export default function ProfilePage() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  // Upscale a render from the profile
+  const handleUpscale = async (renderId: string) => {
+    setUpscalingIds(prev => new Set(prev).add(renderId));
+
+    try {
+      const res = await fetch('/api/upscale', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ renderId, scale: 4 }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Upscaling failed');
+      }
+
+      // Polling pour suivre l'upscaling
+      let completed = false;
+      let attempts = 0;
+      const maxAttempts = 60;
+
+      while (!completed && attempts < maxAttempts) {
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        const statusRes = await fetch(`/api/render/${renderId}`);
+        if (!statusRes.ok) continue;
+        
+        const render = await statusRes.json();
+
+        if (render.status === 'completed' && render.upscaled_image_url && 
+            render.upscaled_image_url !== render.generated_image_url) {
+          completed = true;
+          // Mettre à jour le render dans la liste
+          setRenders(prev => prev.map(r => r.id === renderId ? render : r));
+        } else if (render.metadata?.upscale_error) {
+          throw new Error(render.metadata.upscale_error);
+        }
+      }
+
+      if (!completed) {
+        alert('Upscaling is taking longer than expected. Refresh the page later.');
+      }
+    } catch (error) {
+      console.error('Upscale error:', error);
+      alert(error instanceof Error ? error.message : 'Upscaling failed');
+    } finally {
+      setUpscalingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(renderId);
+        return newSet;
+      });
+    }
+  };
+
+  // Check if a render can be upscaled
+  const canUpscale = (render: Render) => {
+    return render.status === 'completed' && 
+           render.generated_image_url && 
+           (!render.upscaled_image_url || render.upscaled_image_url === render.generated_image_url);
+  };
+
+  // Check if a render has been upscaled
+  const isUpscaled = (render: Render) => {
+    return render.upscaled_image_url && 
+           render.upscaled_image_url !== render.generated_image_url;
+  };
+
+  // Delete a render
+  const handleDeleteRender = async (renderId: string) => {
+    if (!confirm("Are you sure you want to delete this render?")) return;
+
+    setDeletingIds(prev => new Set(prev).add(renderId));
+
+    try {
+      const res = await fetch(`/api/render/${renderId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Delete failed');
+      }
+
+      // Retirer de la liste locale
+      setRenders(prev => prev.filter(r => r.id !== renderId));
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert(error instanceof Error ? error.message : 'Delete failed');
+    } finally {
+      setDeletingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(renderId);
+        return newSet;
+      });
+    }
+  };
+
+  // Update profile name
+  const handleUpdateName = async () => {
+    if (!newName.trim()) return;
+    
+    setIsSavingName(true);
+    try {
+      const res = await fetch('/api/user/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim() }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Update failed');
+      }
+
+      await refetch();
+      setIsEditingName(false);
+      setNewName("");
+    } catch (error) {
+      console.error('Update name error:', error);
+      alert(error instanceof Error ? error.message : 'Update failed');
+    } finally {
+      setIsSavingName(false);
+    }
   };
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -167,20 +320,14 @@ export default function ProfilePage() {
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-sm border-b border-border">
         <div className="container mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/">
-              <Button variant="ghost" size="sm" className="font-mono text-xs">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                BACK
-              </Button>
-            </Link>
+          <Link href="/">
             <span
-              className="text-2xl font-bold tracking-tighter"
+              className="text-2xl font-bold tracking-tighter cursor-pointer hover:opacity-80 transition-opacity"
               style={{ fontFamily: "system-ui, -apple-system, sans-serif", letterSpacing: "-0.05em" }}
             >
               RENDERZ
             </span>
-          </div>
+          </Link>
           <Button
             variant="outline"
             size="sm"
@@ -199,6 +346,14 @@ export default function ProfilePage() {
       {/* Main Content */}
       <main className="relative z-10 container mx-auto px-6 pt-32 pb-16">
         <div className="max-w-5xl mx-auto space-y-8">
+          {/* Back Button */}
+          <Link href="/">
+            <Button variant="outline" size="sm" className="font-mono text-xs">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              BACK TO GENERATOR
+            </Button>
+          </Link>
+
           {/* Profile Info */}
           <Card className="p-6 bg-white/5 backdrop-blur-[2px] border border-white">
             <h1 className="text-3xl font-bold tracking-tight mb-6">My Profile</h1>
@@ -260,9 +415,60 @@ export default function ProfilePage() {
 
               {/* Info */}
               <div className="flex-1 space-y-3">
+                {/* Name with edit */}
                 <div className="flex items-center gap-2">
                   <User className="w-4 h-4 text-muted-foreground" />
-                  <span className="font-medium">{session.user.name || "User"}</span>
+                  {isEditingName ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        placeholder={session.user.name || "Your name"}
+                        className="h-8 w-48 font-mono text-sm"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleUpdateName();
+                          if (e.key === 'Escape') {
+                            setIsEditingName(false);
+                            setNewName("");
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleUpdateName}
+                        disabled={isSavingName || !newName.trim()}
+                        className="h-8 px-2"
+                      >
+                        {isSavingName ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setIsEditingName(false);
+                          setNewName("");
+                        }}
+                        className="h-8 px-2"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="font-medium">{session.user.name || "User"}</span>
+                      <button
+                        onClick={() => {
+                          setNewName(session.user.name || "");
+                          setIsEditingName(true);
+                        }}
+                        className="p-1 hover:bg-muted rounded transition-colors"
+                        title="Edit name"
+                      >
+                        <Pencil className="w-3 h-3 text-muted-foreground" />
+                      </button>
+                    </>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Mail className="w-4 h-4 text-muted-foreground" />
@@ -270,15 +476,20 @@ export default function ProfilePage() {
                     {session.user.email}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Image className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-muted-foreground font-mono text-sm">
-                    {renders.length} render{renders.length !== 1 ? "s" : ""} generated
-                  </span>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <Image className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-muted-foreground font-mono text-sm">
+                      {renders.filter(r => r.status === 'completed').length} standard
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Wand2 className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-muted-foreground font-mono text-sm">
+                      {renders.filter(r => r.upscaled_image_url && r.upscaled_image_url !== r.generated_image_url).length} upscaled
+                    </span>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground font-mono mt-2">
-                  Hover over the photo to edit · Max 5MB
-                </p>
               </div>
             </div>
           </Card>
@@ -311,35 +522,87 @@ export default function ProfilePage() {
                     className="overflow-hidden bg-white/5 backdrop-blur-[2px] border border-border"
                   >
                     {/* Image Preview */}
-                    <div className="aspect-square relative bg-muted">
-                      {render.upscaled_image_url || render.generated_image_url ? (
-                        <img
-                          src={render.upscaled_image_url || render.generated_image_url || ""}
-                          alt="Render"
-                          className="w-full h-full object-cover"
-                        />
+                    <div className="aspect-square relative bg-muted group">
+                      {render.generated_image_url ? (
+                        <>
+                          <img
+                            src={isUpscaled(render) ? render.upscaled_image_url! : render.generated_image_url}
+                            alt="Render"
+                            className="w-full h-full object-cover"
+                          />
+                          {/* Overlay avec boutons sur hover */}
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => setPreviewImage({ 
+                                url: render.generated_image_url!, 
+                                type: 'Standard' 
+                              })}
+                              className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+                              title="View standard"
+                            >
+                              <Eye className="w-4 h-4 text-white" />
+                            </button>
+                            {isUpscaled(render) && (
+                              <button
+                                onClick={() => setPreviewImage({ 
+                                  url: render.upscaled_image_url!, 
+                                  type: '4K Upscaled' 
+                                })}
+                                className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+                                title="View 4K"
+                              >
+                                <Wand2 className="w-4 h-4 text-white" />
+                              </button>
+                            )}
+                          </div>
+                        </>
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                         </div>
                       )}
                       
-                      {/* Status Badge */}
+                      {/* Status Badges */}
+                      <div className="absolute top-2 left-2 flex gap-1">
+                        {/* Quality badge */}
+                        {isUpscaled(render) ? (
+                          <div className="px-2 py-1 text-xs font-mono bg-green-500 text-white">
+                            4K
+                          </div>
+                        ) : render.status === 'completed' && render.generated_image_url ? (
+                          <div className="px-2 py-1 text-xs font-mono bg-yellow-500 text-black">
+                            STD
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {/* Status Badge (top right) */}
                       <div
                         className={`absolute top-2 right-2 px-2 py-1 text-xs font-mono ${
                           render.status === "completed"
-                            ? "bg-green-500 text-white"
+                            ? "bg-green-500/80 text-white"
                             : render.status === "failed"
                             ? "bg-red-500 text-white"
+                            : render.status === "upscaling"
+                            ? "bg-purple-500 text-white"
                             : "bg-yellow-500 text-black"
                         }`}
                       >
                         {render.status === "completed"
-                          ? "COMPLETED"
+                          ? "✓"
                           : render.status === "failed"
-                          ? "FAILED"
-                          : "PROCESSING"}
+                          ? "✗"
+                          : render.status === "upscaling"
+                          ? "⬆"
+                          : "⏳"}
                       </div>
+
+                      {/* Aspect ratio badge */}
+                      {render.metadata?.aspectRatio && (
+                        <div className="absolute bottom-2 left-2 px-2 py-0.5 text-[10px] font-mono bg-black/70 text-white">
+                          {render.metadata.aspectRatio}
+                        </div>
+                      )}
                     </div>
 
                     {/* Info */}
@@ -358,25 +621,123 @@ export default function ProfilePage() {
                       </div>
 
                       {/* Actions */}
-                      {render.status === "completed" && (render.upscaled_image_url || render.generated_image_url) && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full font-mono text-xs"
-                          onClick={() =>
-                            downloadImage(
-                              render.upscaled_image_url || render.generated_image_url || "",
-                              `renderz-${render.id}.png`
-                            )
-                          }
-                        >
-                          <Download className="w-3 h-3 mr-2" />
-                          DOWNLOAD
-                        </Button>
+                      {render.status === "completed" && render.generated_image_url && (
+                        <div className="space-y-2">
+                          {/* Upscale button si pas encore upscalé */}
+                          {canUpscale(render) && (
+                            <Button
+                              size="sm"
+                              className="w-full font-mono text-xs !bg-[#000000] hover:!bg-[#1a1a1a]"
+                              onClick={() => handleUpscale(render.id)}
+                              disabled={upscalingIds.has(render.id)}
+                            >
+                              {upscalingIds.has(render.id) ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                                  UPSCALING...
+                                </>
+                              ) : (
+                                <>
+                                  <Wand2 className="w-3 h-3 mr-2" />
+                                  UPSCALE TO 4K
+                                </>
+                              )}
+                            </Button>
+                          )}
+
+                          {/* Download buttons */}
+                          <div className="flex gap-2">
+                            {/* Standard download */}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 font-mono text-xs"
+                              onClick={() => downloadImage(
+                                render.generated_image_url!,
+                                `renderz-${render.id}-standard.png`
+                              )}
+                            >
+                              <Download className="w-3 h-3 mr-1" />
+                              STD
+                            </Button>
+
+                            {/* 4K download si upscalé */}
+                            {isUpscaled(render) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 font-mono text-xs border-green-500/50 text-green-400 hover:bg-green-500/10"
+                                onClick={() => downloadImage(
+                                  render.upscaled_image_url!,
+                                  `renderz-${render.id}-4k.png`
+                                )}
+                              >
+                                <Download className="w-3 h-3 mr-1" />
+                                4K
+                              </Button>
+                            )}
+
+                            {/* Delete button */}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="font-mono text-xs border-red-500/50 text-red-400 hover:bg-red-500/10"
+                              onClick={() => handleDeleteRender(render.id)}
+                              disabled={deletingIds.has(render.id)}
+                            >
+                              {deletingIds.has(render.id) ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3 h-3" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Error message */}
+                      {render.metadata?.upscale_error && (
+                        <p className="text-xs text-red-400 font-mono">
+                          Upscale failed: {render.metadata.upscale_error.substring(0, 50)}...
+                        </p>
                       )}
                     </div>
                   </Card>
                 ))}
+              </div>
+            )}
+
+            {/* Image Preview Modal */}
+            {previewImage && (
+              <div 
+                className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-8"
+                onClick={() => setPreviewImage(null)}
+              >
+                <div className="relative w-full h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                  <div className="absolute top-0 left-0 bg-black/70 px-3 py-1 text-sm font-mono text-white z-10">
+                    {previewImage.type}
+                  </div>
+                  <button
+                    onClick={() => setPreviewImage(null)}
+                    className="absolute top-0 right-0 w-8 h-8 bg-white/10 hover:bg-white/20 transition-colors z-10 flex items-center justify-center"
+                  >
+                    <X className="w-5 h-5 text-white" />
+                  </button>
+                  <img
+                    src={previewImage.url}
+                    alt="Preview"
+                    className="max-w-full max-h-full object-contain"
+                  />
+                  <a
+                    href={previewImage.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="absolute bottom-0 right-0 w-8 h-8 bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <ExternalLink className="w-4 h-4 text-white" />
+                  </a>
+                </div>
               </div>
             )}
           </div>

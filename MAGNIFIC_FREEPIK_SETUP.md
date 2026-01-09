@@ -200,3 +200,4 @@ Cela simulera les réponses de Magnific sans faire d'appels réels.
 
 **Besoin d'aide ?** Consultez le support Freepik : https://www.freepik.com/api#contact
 
+

@@ -245,3 +245,4 @@ vercel env add MAGNIFIC_API_KEY
 
 © 2026 Renderz - Tous droits réservés
 
+

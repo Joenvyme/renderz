@@ -268,3 +268,4 @@ Puis allez sur http://localhost:3000 et testez !
 
 **Envoyez-moi les nouveaux logs (surtout ceux avec 🔍 Magnific:) et je vous dirai exactement ce qui se passe !** 🚀
 
+

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Upload, Sparkles, ArrowRight, Download, LogOut, User } from "lucide-react";
+import { Upload, Sparkles, ArrowRight, Download, LogOut, User, RefreshCw, Wand2, Check } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,6 +10,7 @@ import { AuroraText } from "@/components/ui/aurora-text";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
 import { AuthModal } from "@/components/auth-modal";
 import { useSession, signOut } from "@/lib/auth-client";
+import { ASPECT_RATIOS, AspectRatio } from "@/lib/api/nano-banana";
 
 interface RenderResult {
   id: string;
@@ -23,6 +24,7 @@ const STORAGE_KEYS = {
   IMAGE: "renderz_pending_image",
   PROMPT: "renderz_pending_prompt",
   RENDER_ID: "renderz_current_render_id",
+  ASPECT_RATIO: "renderz_aspect_ratio",
 };
 
 export default function LandingPage() {
@@ -35,22 +37,24 @@ export default function LandingPage() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [pendingGeneration, setPendingGeneration] = useState(false);
   const [currentRenderId, setCurrentRenderId] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("1:1");
+  const [isUpscaling, setIsUpscaling] = useState(false);
 
   // Fonction pour faire le polling d'un render
   const pollRenderStatus = async (renderId: string) => {
+    console.log('🔄 Starting polling for render:', renderId);
     setIsGenerating(true);
     setCurrentRenderId(renderId);
     localStorage.setItem(STORAGE_KEYS.RENDER_ID, renderId);
 
-    try {
-      let completed = false;
-      let attempts = 0;
-      const maxAttempts = 120; // 4 minutes max (120 * 2s)
+    let attempts = 0;
+    const maxAttempts = 120; // 4 minutes max (120 * 2s)
 
-      while (!completed && attempts < maxAttempts) {
-        attempts++;
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
+    while (attempts < maxAttempts) {
+      attempts++;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      try {
         const statusRes = await fetch(`/api/render/${renderId}`);
         if (!statusRes.ok) {
           console.error('Status check failed:', statusRes.status);
@@ -58,33 +62,51 @@ export default function LandingPage() {
         }
         
         const render = await statusRes.json();
-        console.log(`[Attempt ${attempts}] Status: ${render.status}, Generated: ${!!render.generated_image_url}, Upscaled: ${!!render.upscaled_image_url}`);
+        console.log(`[Attempt ${attempts}] Status: ${render.status}, Generated: ${!!render.generated_image_url}`);
 
-        if (render.status === 'completed') {
-          completed = true;
-          setRenderResult(render);
+        // ✅ RENDER TERMINÉ - dès qu'on a l'image OU status completed
+        if (render.generated_image_url) {
+          console.log('✅ Image detected! Status:', render.status);
+          console.log('✅ URL:', render.generated_image_url.substring(0, 80) + '...');
           localStorage.removeItem(STORAGE_KEYS.RENDER_ID);
-          console.log('✓ Render completed!');
-        } else if (render.status === 'failed') {
+          
+          // IMPORTANT: D'abord arrêter le chargement
+          setIsGenerating(false);
+          setCurrentRenderId(null);
+          
+          // Puis mettre le résultat
+          setRenderResult({
+            id: render.id,
+            generated_image_url: render.generated_image_url,
+            upscaled_image_url: render.upscaled_image_url,
+            status: render.status,
+          });
+          
+          console.log('✅ States updated! isGenerating=false, renderResult set');
+          return; // Sortir immédiatement
+        }
+        
+        // ❌ RENDER ÉCHOUÉ
+        if (render.status === 'failed') {
+          console.error('❌ Render failed');
           localStorage.removeItem(STORAGE_KEYS.RENDER_ID);
-          throw new Error('Render failed');
+          setIsGenerating(false);
+          setCurrentRenderId(null);
+          alert('Generation failed. Please try again.');
+          return;
         }
-        // Si on a déjà l'image générée, on peut l'afficher en preview
-        else if (render.generated_image_url && !renderResult?.generated_image_url) {
-          setRenderResult(render);
-        }
+        
+      } catch (error) {
+        console.error('Polling error:', error);
       }
-
-      if (!completed) {
-        console.warn('Polling timeout - check profile for result');
-        alert('Generation is taking longer than expected. Check your profile to see the result.');
-      }
-    } catch (error) {
-      console.error('Polling error:', error);
-    } finally {
-      setIsGenerating(false);
-      setCurrentRenderId(null);
     }
+
+    // ⏰ TIMEOUT
+    console.warn('⏰ Polling timeout');
+    localStorage.removeItem(STORAGE_KEYS.RENDER_ID);
+    setIsGenerating(false);
+    setCurrentRenderId(null);
+    alert('Generation is taking longer than expected. Check your profile to see the result.');
   };
 
   // Restaurer les données depuis localStorage au chargement
@@ -92,12 +114,16 @@ export default function LandingPage() {
     const savedImage = localStorage.getItem(STORAGE_KEYS.IMAGE);
     const savedPrompt = localStorage.getItem(STORAGE_KEYS.PROMPT);
     const savedRenderId = localStorage.getItem(STORAGE_KEYS.RENDER_ID);
+    const savedAspectRatio = localStorage.getItem(STORAGE_KEYS.ASPECT_RATIO) as AspectRatio | null;
     
     if (savedImage) {
       setUploadedImage(savedImage);
     }
     if (savedPrompt) {
       setPrompt(savedPrompt);
+    }
+    if (savedAspectRatio) {
+      setAspectRatio(savedAspectRatio);
     }
     
     // Si on a un render en cours, reprendre le polling
@@ -129,6 +155,7 @@ export default function LandingPage() {
     if (prompt) {
       localStorage.setItem(STORAGE_KEYS.PROMPT, prompt);
     }
+    localStorage.setItem(STORAGE_KEYS.ASPECT_RATIO, aspectRatio);
     setShowAuthModal(true);
   };
 
@@ -179,6 +206,7 @@ export default function LandingPage() {
     // Nettoyer le localStorage des données pré-auth
     localStorage.removeItem(STORAGE_KEYS.IMAGE);
     localStorage.removeItem(STORAGE_KEYS.PROMPT);
+    localStorage.removeItem(STORAGE_KEYS.ASPECT_RATIO);
     
     setIsGenerating(true);
     setRenderResult(null);
@@ -208,7 +236,7 @@ export default function LandingPage() {
       const generateRes = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl, prompt }),
+        body: JSON.stringify({ imageUrl, prompt, aspectRatio }),
       });
 
       const generateData = await generateRes.json();
@@ -244,9 +272,74 @@ export default function LandingPage() {
     setRenderResult(null);
     setUploadedImage(null);
     setPrompt("");
+    setAspectRatio("1:1");
+    setIsUpscaling(false);
     localStorage.removeItem(STORAGE_KEYS.IMAGE);
     localStorage.removeItem(STORAGE_KEYS.PROMPT);
     localStorage.removeItem(STORAGE_KEYS.RENDER_ID);
+    localStorage.removeItem(STORAGE_KEYS.ASPECT_RATIO);
+  };
+
+  // Fonction pour régénérer avec les mêmes paramètres
+  const handleRegenerate = () => {
+    setRenderResult(null);
+    setIsUpscaling(false);
+    handleGenerate();
+  };
+
+  // Fonction pour upscaler l'image générée
+  const handleUpscale = async () => {
+    if (!renderResult?.id) return;
+    
+    setIsUpscaling(true);
+    
+    try {
+      const res = await fetch('/api/upscale', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ renderId: renderResult.id, scale: 4 }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Upscaling failed');
+      }
+
+      // Polling pour suivre l'upscaling
+      let completed = false;
+      let attempts = 0;
+      const maxAttempts = 60; // 2 minutes max
+
+      while (!completed && attempts < maxAttempts) {
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        const statusRes = await fetch(`/api/render/${renderResult.id}`);
+        if (!statusRes.ok) continue;
+        
+        const render = await statusRes.json();
+        console.log(`[Upscale Attempt ${attempts}] Status: ${render.status}`);
+
+        if (render.status === 'completed' && render.upscaled_image_url && 
+            render.upscaled_image_url !== render.generated_image_url) {
+          completed = true;
+          setRenderResult(render);
+          console.log('✓ Upscaling completed!');
+        } else if (render.status === 'completed' && render.metadata?.upscale_error) {
+          throw new Error(render.metadata.upscale_error);
+        }
+      }
+
+      if (!completed) {
+        console.warn('Upscaling timeout - check profile');
+        alert('Upscaling is taking longer than expected. Check your profile to see the result.');
+      }
+    } catch (error) {
+      console.error('Upscale error:', error);
+      alert(error instanceof Error ? error.message : 'Upscaling failed');
+    } finally {
+      setIsUpscaling(false);
+    }
   };
 
   return (
@@ -262,16 +355,21 @@ export default function LandingPage() {
           </div>
           {session ? (
             <div className="flex items-center gap-3">
-              <span className="text-xs font-mono text-muted-foreground hidden sm:inline">
-                {session.user.email}
-              </span>
               <Link href="/profile">
                 <Button 
                   variant="outline" 
                   size="sm"
                   className="font-mono text-xs"
                 >
-                  <User className="w-3 h-3 mr-1" />
+                  {session.user.image ? (
+                    <img 
+                      src={session.user.image} 
+                      alt="Profile" 
+                      className="w-5 h-5 rounded-full object-cover mr-1"
+                    />
+                  ) : (
+                    <User className="w-4 h-4 mr-1" />
+                  )}
                   PROFILE
                 </Button>
               </Link>
@@ -313,8 +411,204 @@ export default function LandingPage() {
             </p>
           </div>
 
-          {/* Affichage conditionnel : Formulaire OU Chargement */}
-          {isGenerating ? (
+          {/* Affichage conditionnel : Résultat OU Chargement OU Formulaire */}
+          {renderResult && renderResult.generated_image_url ? (
+            /* ========== RÉSULTAT - REMPLACE LE FORMULAIRE ========== */
+            <Card className="max-w-2xl mx-auto overflow-hidden bg-white/5 backdrop-blur-sm border border-border">
+              <div className="p-6 space-y-6">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <h3 className="font-mono text-sm font-medium flex items-center gap-2">
+                      <Check className="w-4 h-4 text-green-500" />
+                      RENDER GENERATED
+                    </h3>
+                    <p className="text-xs font-mono text-muted-foreground">
+                      {renderResult.upscaled_image_url && renderResult.upscaled_image_url !== renderResult.generated_image_url
+                        ? "4K upscaled · Ready for download"
+                        : "Preview ready · Choose your next step"
+                      }
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleNewGeneration}
+                    className="font-mono text-xs"
+                  >
+                    NEW RENDER
+                  </Button>
+                </div>
+                
+                {/* Preview Image */}
+                <div className="relative w-full aspect-square border border-white/10 overflow-hidden bg-white/5">
+                  <img
+                    src={renderResult.upscaled_image_url && renderResult.upscaled_image_url !== renderResult.generated_image_url
+                      ? renderResult.upscaled_image_url
+                      : renderResult.generated_image_url
+                    }
+                    alt="Rendered image"
+                    className="w-full h-full object-contain"
+                  />
+                  {/* Status badge */}
+                  <div className="absolute top-3 left-3 bg-background/90 backdrop-blur-sm px-3 py-1 rounded-none border border-border">
+                    <p className="text-xs font-mono">
+                      {renderResult.upscaled_image_url && renderResult.upscaled_image_url !== renderResult.generated_image_url
+                        ? "4K UPSCALED"
+                        : "PREVIEW"
+                      }
+                    </p>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                {!renderResult.upscaled_image_url || renderResult.upscaled_image_url === renderResult.generated_image_url ? (
+                  // Image générée mais pas encore upscalée
+                  <div className="space-y-3">
+                    {/* Status info */}
+                    <div className="border border-border bg-muted/30 p-3">
+                      <div className="flex items-start gap-3">
+                        <div className="w-1 h-10 bg-black"></div>
+                        <div className="flex-1 space-y-0.5 font-mono text-xs">
+                          <p className="text-black font-medium">🎨 STANDARD QUALITY</p>
+                          <p className="text-muted-foreground">
+                            Like this result? Upscale to 4K or regenerate a new version.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action buttons grid */}
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Regenerate button */}
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        onClick={handleRegenerate}
+                        disabled={isGenerating}
+                        className="h-14 font-mono text-sm tracking-wider"
+                      >
+                        <RefreshCw className={`w-4 h-4 mr-2 ${isGenerating ? 'animate-spin' : ''}`} />
+                        REGENERATE
+                      </Button>
+
+                      {/* Upscale button */}
+                      <Button
+                        size="lg"
+                        onClick={handleUpscale}
+                        disabled={isUpscaling}
+                        className="h-14 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a]"
+                      >
+                        {isUpscaling ? (
+                          <>
+                            <Sparkles className="w-4 h-4 mr-2 animate-pulse" />
+                            UPSCALING...
+                          </>
+                        ) : (
+                          <>
+                            <Wand2 className="w-4 h-4 mr-2" />
+                            UPSCALE 4K
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                    {/* Download standard version */}
+                    <Button
+                      asChild
+                      variant="ghost"
+                      size="sm"
+                      className="w-full font-mono text-xs text-muted-foreground"
+                    >
+                      <a
+                        href={renderResult.generated_image_url}
+                        download="renderz-preview.png"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Download className="w-3 h-3 mr-2" />
+                        DOWNLOAD STANDARD VERSION
+                      </a>
+                    </Button>
+                  </div>
+                ) : (
+                  // Image upscalée - Afficher le bouton de téléchargement
+                  <div className="space-y-4">
+                    {/* Success status */}
+                    <div className="border border-green-500/50 bg-green-500/10 p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-1 h-12 bg-green-500"></div>
+                        <div className="flex-1 space-y-1 font-mono text-xs">
+                          <p className="text-green-400 font-medium">✓ UPSCALING COMPLETE</p>
+                          <p className="text-muted-foreground">
+                            Maximum quality image available (4096x4096, ~15MB)
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Download 4K */}
+                    <Button
+                      asChild
+                      size="lg"
+                      className="w-full h-14 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a]"
+                    >
+                      <a
+                        href={renderResult.upscaled_image_url}
+                        download="renderz-4k-upscaled.png"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Download className="w-5 h-5 mr-2" />
+                        DOWNLOAD 4K IMAGE
+                      </a>
+                    </Button>
+
+                    {/* Both versions download */}
+                    <div className="flex gap-3">
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 font-mono text-xs"
+                      >
+                        <a
+                          href={renderResult.generated_image_url}
+                          download="renderz-standard.png"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Download className="w-3 h-3 mr-2" />
+                          STANDARD
+                        </a>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleNewGeneration}
+                        className="flex-1 font-mono text-xs"
+                      >
+                        <RefreshCw className="w-3 h-3 mr-2" />
+                        NEW RENDER
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Info footer */}
+                <div className="flex items-center justify-center gap-4 text-xs font-mono text-muted-foreground pt-2 border-t border-border">
+                  <span>GEMINI 2.5 FLASH</span>
+                  <span>·</span>
+                  <span>
+                    {renderResult.upscaled_image_url && renderResult.upscaled_image_url !== renderResult.generated_image_url
+                      ? "MAGNIFIC AI 4x"
+                      : `${aspectRatio} · ~1024px`
+                    }
+                  </span>
+                </div>
+              </div>
+            </Card>
+          ) : isGenerating ? (
             /* ========== ÉCRAN DE CHARGEMENT ========== */
             <Card className="max-w-2xl mx-auto p-8 space-y-6 bg-white/5 backdrop-blur-[2px] border border-white">
               {/* Animation de chargement */}
@@ -416,6 +710,37 @@ export default function LandingPage() {
                 )}
               </div>
 
+              {/* Aspect Ratio Selector */}
+              <div className="space-y-3">
+                <label className="text-sm font-mono uppercase tracking-wider">
+                  Aspect Ratio
+                </label>
+                <div className="grid grid-cols-5 gap-2">
+                  {ASPECT_RATIOS.map((ratio) => (
+                    <button
+                      key={ratio.value}
+                      type="button"
+                      onClick={() => setAspectRatio(ratio.value)}
+                      className={`
+                        p-3 border-2 transition-all duration-200 text-center
+                        ${aspectRatio === ratio.value 
+                          ? "border-primary bg-primary/10" 
+                          : "border-border hover:border-primary/50"
+                        }
+                      `}
+                    >
+                      <div className="text-xs font-mono font-bold">{ratio.label}</div>
+                      <div className="text-[10px] text-muted-foreground font-mono mt-1">
+                        {ratio.value}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground font-mono">
+                  Output: {ASPECT_RATIOS.find(r => r.value === aspectRatio)?.resolution}
+                </p>
+              </div>
+
               {/* Prompt Input */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -448,144 +773,6 @@ export default function LandingPage() {
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </span>
               </Button>
-            </Card>
-          )}
-
-          {/* Result Display */}
-          {renderResult && (
-            <Card className="overflow-hidden bg-white/5 backdrop-blur-sm border border-border">
-              <div className="p-6 space-y-6">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <h3 className="font-mono text-sm font-medium">RENDER GENERATED ✓</h3>
-                    <p className="text-xs font-mono text-muted-foreground">
-                      Preview 1024x1024 · Maximum quality available below
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleNewGeneration}
-                    className="font-mono text-xs"
-                  >
-                    NEW RENDER
-                  </Button>
-                </div>
-                
-                {/* Preview Image - Grande taille pour l'aperçu */}
-                {renderResult.generated_image_url && (
-                  <div className="space-y-4">
-                    <div className="relative w-full aspect-square border border-white/10 overflow-hidden bg-white/5">
-                      <img
-                        src={renderResult.generated_image_url}
-                        alt="Aperçu du rendu"
-                        className="w-full h-full object-contain"
-                      />
-                      {/* Preview badge */}
-                      <div className="absolute top-3 left-3 bg-background/90 backdrop-blur-sm px-3 py-1 rounded-none border border-border">
-                        <p className="text-xs font-mono">PREVIEW · 1024x1024</p>
-                      </div>
-                    </div>
-                    
-                    {/* Upscaling Status */}
-                    {renderResult.upscaled_image_url && 
-                     renderResult.upscaled_image_url !== renderResult.generated_image_url ? (
-                      // Upscaling successful
-                      <div className="architectural-border bg-primary/5 p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-1 h-12 tech-gradient"></div>
-                          <div className="flex-1 space-y-1 font-mono text-xs">
-                            <p className="text-white font-medium">✓ UPSCALING COMPLETE</p>
-                            <p className="text-muted-foreground">
-                              Maximum quality image available (4096x4096, ~15MB)
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ) : renderResult.status === 'processing' ? (
-                      // Upscaling in progress
-                      <div className="border border-border bg-muted/30 p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-1 h-12 tech-gradient animate-pulse"></div>
-                          <div className="flex-1 space-y-1 font-mono text-xs">
-                            <p className="text-white">⏳ UPSCALING IN PROGRESS...</p>
-                            <p className="text-muted-foreground">
-                              Magnific AI is processing your image (30-60s)
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      // No upscaling or failed
-                      <div className="border border-border bg-muted/30 p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-1 h-12 bg-muted"></div>
-                          <div className="flex-1 space-y-1 font-mono text-xs">
-                            <p className="text-white">ℹ️ STANDARD QUALITY</p>
-                            <p className="text-muted-foreground">
-                              Image available at 1024x1024 resolution
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Main Download Button */}
-                    <Button
-                      asChild
-                      size="lg"
-                      className="w-full h-14 font-mono text-sm tracking-wider group relative overflow-hidden"
-                    >
-                      <a
-                        href={
-                          renderResult.upscaled_image_url && 
-                          renderResult.upscaled_image_url !== renderResult.generated_image_url
-                            ? renderResult.upscaled_image_url
-                            : renderResult.generated_image_url
-                        }
-                        download={
-                          renderResult.upscaled_image_url && 
-                          renderResult.upscaled_image_url !== renderResult.generated_image_url
-                            ? "renderz-4k-upscaled.png"
-                            : "renderz-generated.png"
-                        }
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <span className="absolute inset-0 tech-gradient opacity-0 group-hover:opacity-100 transition-opacity"></span>
-                        <span className="relative z-10 flex items-center justify-center gap-2">
-                          <Download className="w-5 h-5" />
-                          {renderResult.upscaled_image_url && 
-                           renderResult.upscaled_image_url !== renderResult.generated_image_url
-                            ? "DOWNLOAD MAXIMUM QUALITY (4K)"
-                            : "DOWNLOAD IMAGE"
-                          }
-                        </span>
-                      </a>
-                    </Button>
-
-                    {/* Secondary info */}
-                    <div className="flex items-center justify-center gap-6 text-xs font-mono text-muted-foreground">
-                      <span>
-                        {renderResult.upscaled_image_url && 
-                         renderResult.upscaled_image_url !== renderResult.generated_image_url
-                          ? "4096x4096 · ~15MB · PNG"
-                          : "1024x1024 · ~2.5MB · PNG"
-                        }
-                      </span>
-                      <span>·</span>
-                      <span>
-                        {renderResult.upscaled_image_url && 
-                         renderResult.upscaled_image_url !== renderResult.generated_image_url
-                          ? "MAGNIFIC AI UPSCALE 4x"
-                          : "NANO BANANA"
-                        }
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
             </Card>
           )}
 

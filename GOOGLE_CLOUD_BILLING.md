@@ -227,3 +227,4 @@ Une fois la facturation activée et la clé API mise à jour :
 **Temps estimé** : 5-10 minutes  
 **Coût** : $0 (crédits gratuits $300 pendant 90 jours)
 
+

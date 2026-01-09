@@ -334,3 +334,4 @@ Puis allez sur http://localhost:3000 et générez un rendu !
 
 **Envoyez-moi les logs qui commencent par ✅ Magnific: Tâche terminée !** 🎉
 
+

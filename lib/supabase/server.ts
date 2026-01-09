@@ -7,3 +7,4 @@ export const createServerClient = () => {
   return createServerComponentClient<Database>({ cookies: () => cookieStore });
 };
 
+
