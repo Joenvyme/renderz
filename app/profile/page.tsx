@@ -695,6 +695,26 @@ export default function ProfilePage() {
                         </div>
                       )}
 
+                      {/* Delete button for non-completed renders */}
+                      {render.status !== "completed" && (
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 font-mono text-xs border-red-500/50 text-red-400 hover:bg-red-500/10"
+                            onClick={() => handleDeleteRender(render.id)}
+                            disabled={deletingIds.has(render.id)}
+                          >
+                            {deletingIds.has(render.id) ? (
+                              <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3 h-3 mr-2" />
+                            )}
+                            DELETE
+                          </Button>
+                        </div>
+                      )}
+
                       {/* Error message */}
                       {render.metadata?.upscale_error && (
                         <p className="text-xs text-red-400 font-mono">

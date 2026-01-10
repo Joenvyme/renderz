@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { X, Loader2 } from "lucide-react";
-import { signIn, signUp } from "@/lib/auth-client";
+import { signIn, signUp, authClient } from "@/lib/auth-client";
 
 // Google Icon SVG
 const GoogleIcon = () => (
@@ -36,15 +36,41 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const { error } = await authClient.requestPasswordReset({
+        email,
+        redirectTo: "/reset-password",
+      });
+
+      if (error) {
+        setError(error.message || "Error sending reset email");
+      } else {
+        setSuccessMessage("If an account exists with this email, you'll receive a reset link!");
+      }
+    } catch {
+      // En cas d'erreur, afficher un message générique pour la sécurité
+      setSuccessMessage("If an account exists with this email, you'll receive a reset link!");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
@@ -120,132 +146,206 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         {/* Header */}
         <div className="text-center mb-6">
           <h2 className="text-2xl font-bold tracking-tight">
-            {mode === "signin" ? "Sign In" : "Sign Up"}
+            {mode === "signin" ? "Sign In" : mode === "signup" ? "Sign Up" : "Forgot Password"}
           </h2>
           <p className="text-sm text-muted-foreground mt-1 font-mono">
             {mode === "signin" 
               ? "Sign in to generate renders" 
-              : "Create an account to get started"}
+              : mode === "signup"
+              ? "Create an account to get started"
+              : "Enter your email to reset your password"}
           </p>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === "signup" && (
+        {mode === "forgot" ? (
+          <form onSubmit={handleForgotPassword} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-mono uppercase tracking-wider">
-                Name
+                Email
               </label>
               <Input
-                type="text"
-                placeholder="Your name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
                 className="rounded-none font-mono"
               />
             </div>
-          )}
 
-          <div className="space-y-2">
-            <label className="text-sm font-mono uppercase tracking-wider">
-              Email
-            </label>
-            <Input
-              type="email"
-              placeholder="your@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="rounded-none font-mono"
-            />
-          </div>
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-sm font-mono">
+                {error}
+              </div>
+            )}
 
-          <div className="space-y-2">
-            <label className="text-sm font-mono uppercase tracking-wider">
-              Password
-            </label>
-            <Input
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
-              className="rounded-none font-mono"
-            />
+            {successMessage && (
+              <div className="p-3 bg-green-50 border border-green-200 text-green-600 text-sm font-mono">
+                {successMessage}
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              disabled={isLoading}
+              className="w-full h-12 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a]"
+            >
+              {isLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                "SEND RESET LINK"
+              )}
+            </Button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMode("signin");
+                setError(null);
+                setSuccessMessage(null);
+              }}
+              className="w-full text-sm text-muted-foreground hover:text-foreground font-mono transition-colors"
+            >
+              ← Back to sign in
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
             {mode === "signup" && (
-              <p className="text-xs text-muted-foreground font-mono">
-                Minimum 8 characters
-              </p>
+              <div className="space-y-2">
+                <label className="text-sm font-mono uppercase tracking-wider">
+                  Name
+                </label>
+                <Input
+                  type="text"
+                  placeholder="Your name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="rounded-none font-mono"
+                />
+              </div>
             )}
-          </div>
 
-          {error && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-sm font-mono">
-              {error}
+            <div className="space-y-2">
+              <label className="text-sm font-mono uppercase tracking-wider">
+                Email
+              </label>
+              <Input
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="rounded-none font-mono"
+              />
             </div>
-          )}
 
-          <Button
-            type="submit"
-            disabled={isLoading || isGoogleLoading}
-            className="w-full h-12 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a]"
-          >
-            {isLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : mode === "signin" ? (
-              "SIGN IN"
-            ) : (
-              "SIGN UP"
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-mono uppercase tracking-wider">
+                  Password
+                </label>
+                {mode === "signin" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("forgot");
+                      setError(null);
+                    }}
+                    className="text-xs text-muted-foreground hover:text-foreground font-mono transition-colors"
+                  >
+                    Forgot password?
+                  </button>
+                )}
+              </div>
+              <Input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={8}
+                className="rounded-none font-mono"
+              />
+              {mode === "signup" && (
+                <p className="text-xs text-muted-foreground font-mono">
+                  Minimum 8 characters
+                </p>
+              )}
+            </div>
+
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-sm font-mono">
+                {error}
+              </div>
             )}
-          </Button>
-        </form>
 
-        {/* Separator */}
-        <div className="relative my-6">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-border"></div>
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-white px-2 text-muted-foreground font-mono">
-              or
-            </span>
-          </div>
-        </div>
+            <Button
+              type="submit"
+              disabled={isLoading || isGoogleLoading}
+              className="w-full h-12 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a]"
+            >
+              {isLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : mode === "signin" ? (
+                "SIGN IN"
+              ) : (
+                "SIGN UP"
+              )}
+            </Button>
+          </form>
+        )}
 
-        {/* Google Sign In */}
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleGoogleSignIn}
-          disabled={isLoading || isGoogleLoading}
-          className="w-full h-12 font-mono text-sm tracking-wider"
-        >
-          {isGoogleLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <>
-              <GoogleIcon />
-              <span className="ml-2">CONTINUE WITH GOOGLE</span>
-            </>
-          )}
-        </Button>
+        {/* Separator and Google Sign In - only for signin/signup */}
+        {mode !== "forgot" && (
+          <>
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-border"></div>
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-2 text-muted-foreground font-mono">
+                  or
+                </span>
+              </div>
+            </div>
 
-        {/* Toggle mode */}
-        <div className="mt-6 text-center">
-          <button
-            type="button"
-            onClick={() => {
-              setMode(mode === "signin" ? "signup" : "signin");
-              setError(null);
-            }}
-            className="text-sm text-muted-foreground hover:text-foreground font-mono transition-colors"
-          >
-            {mode === "signin" 
-              ? "Don't have an account? Sign up" 
-              : "Already have an account? Sign in"}
-          </button>
-        </div>
+            {/* Google Sign In */}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleGoogleSignIn}
+              disabled={isLoading || isGoogleLoading}
+              className="w-full h-12 font-mono text-sm tracking-wider"
+            >
+              {isGoogleLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <GoogleIcon />
+                  <span className="ml-2">CONTINUE WITH GOOGLE</span>
+                </>
+              )}
+            </Button>
+
+            {/* Toggle mode */}
+            <div className="mt-6 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode(mode === "signin" ? "signup" : "signin");
+                  setError(null);
+                }}
+                className="text-sm text-muted-foreground hover:text-foreground font-mono transition-colors"
+              >
+                {mode === "signin" 
+                  ? "Don't have an account? Sign up" 
+                  : "Already have an account? Sign in"}
+              </button>
+            </div>
+          </>
+        )}
       </Card>
     </div>
   );
