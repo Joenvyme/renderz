@@ -310,3 +310,4 @@ Allez sur http://localhost:3000 et admirez l'effet shimmer sur le bouton "GÉNÉ
 Design cohérent avec AuroraText pour une identité visuelle moderne et professionnelle ! 🎨🚀
 
 
+

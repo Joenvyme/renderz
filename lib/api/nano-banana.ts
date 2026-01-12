@@ -17,7 +17,22 @@ export const ASPECT_RATIOS: { value: AspectRatio; label: string; resolution: str
   { value: '9:16', label: 'Vertical', resolution: '768×1344' },
 ];
 
+// Types pour les images multiples
+export type ImageRole = 'main' | 'style' | 'reference';
+
+export interface ImageInput {
+  url: string;
+  role: ImageRole;
+}
+
 interface NanoBananaGenerateRequest {
+  images: ImageInput[]; // Support pour plusieurs images
+  prompt: string;
+  aspectRatio?: AspectRatio;
+}
+
+// Pour la compatibilité, on garde aussi l'ancien format
+interface NanoBananaGenerateRequestLegacy {
   imageUrl: string;
   prompt: string;
   aspectRatio?: AspectRatio;
@@ -29,8 +44,11 @@ interface NanoBananaGenerateResponse {
   error?: string;
 }
 
+/**
+ * Génère une image avec Gemini, supportant plusieurs images en entrée
+ */
 export async function generateWithNanoBanana(
-  request: NanoBananaGenerateRequest
+  request: NanoBananaGenerateRequest | NanoBananaGenerateRequestLegacy
 ): Promise<NanoBananaGenerateResponse> {
   // MODE MOCK pour tester sans API
   if (MOCK_MODE) {
@@ -49,11 +67,58 @@ export async function generateWithNanoBanana(
       throw new Error('Google Gemini API key not configured. Get one free at https://aistudio.google.com/app/apikey');
     }
 
-    // Convertir l'image de référence en base64
-    const imageBase64 = await fetchImageAsBase64(request.imageUrl);
+    // Normaliser le format de la requête (compatibilité avec l'ancien format)
+    const images: ImageInput[] = 'images' in request 
+      ? request.images 
+      : [{ url: request.imageUrl, role: 'main' as ImageRole }];
 
-    // Construire le prompt avec contexte de l'image de référence
-    const enhancedPrompt = `Based on the reference image provided, ${request.prompt}. Create a photorealistic, hyperrealistic render with professional lighting and materials. High quality, 8K resolution style.`;
+    // Convertir toutes les images en base64
+    const imagePartsPromises = images.map(async (img) => {
+      const base64 = await fetchImageAsBase64(img.url);
+      return {
+        inline_data: {
+          mime_type: 'image/png',
+          data: base64
+        }
+      };
+    });
+    const imageParts = await Promise.all(imagePartsPromises);
+
+    // Construire le prompt en fonction du nombre d'images et de leurs rôles
+    let enhancedPrompt: string;
+    
+    if (images.length === 1) {
+      enhancedPrompt = `Based on the reference image provided, ${request.prompt}. Create a photorealistic, hyperrealistic render with professional lighting and materials. High quality, 8K resolution style.`;
+    } else {
+      // Construire un prompt qui décrit le rôle de chaque image
+      const roleDescriptions = images.map((img, index) => {
+        switch (img.role) {
+          case 'main':
+            return `Image ${index + 1} is the main subject/content`;
+          case 'style':
+            return `Image ${index + 1} is the style reference (apply its visual style, colors, lighting)`;
+          case 'reference':
+            return `Image ${index + 1} is an additional reference for context`;
+          default:
+            return `Image ${index + 1} is a reference`;
+        }
+      }).join('. ');
+
+      enhancedPrompt = `You are provided with ${images.length} images. ${roleDescriptions}. 
+      
+Based on these images, ${request.prompt}. 
+
+Combine the elements thoughtfully: use the main image as the primary subject, apply any style references for visual aesthetics, and incorporate additional references as needed. Create a photorealistic, hyperrealistic render with professional lighting and materials. High quality, 8K resolution style.`;
+    }
+
+    console.log(`🍌 Generating with ${images.length} image(s)...`);
+    console.log(`   Roles: ${images.map(i => i.role).join(', ')}`);
+
+    // Construire les parts: d'abord le texte, puis toutes les images
+    const parts: any[] = [
+      { text: enhancedPrompt },
+      ...imageParts
+    ];
 
     // Appel à l'API Gemini 2.5 Flash Image (Nano Banana)
     // Documentation: https://ai.google.dev/gemini-api/docs/image-generation
@@ -66,17 +131,7 @@ export async function generateWithNanoBanana(
         },
         body: JSON.stringify({
           contents: [{
-            parts: [
-              {
-                text: enhancedPrompt
-              },
-              {
-                inline_data: {
-                  mime_type: 'image/png',
-                  data: imageBase64
-                }
-              }
-            ]
+            parts: parts
           }],
           generationConfig: {
             responseModalities: ['IMAGE'],
@@ -97,16 +152,36 @@ export async function generateWithNanoBanana(
 
     const data = await response.json();
 
+    // Log la réponse complète pour debug
+    console.log('🍌 API Response:', JSON.stringify(data, null, 2).substring(0, 1000));
+
+    // Vérifier s'il y a un blocage de contenu
+    if (data.promptFeedback?.blockReason) {
+      throw new Error(`Content blocked: ${data.promptFeedback.blockReason}`);
+    }
+
+    // Vérifier s'il y a une erreur
+    if (data.error) {
+      throw new Error(`API Error: ${data.error.message || JSON.stringify(data.error)}`);
+    }
+
     // Extraire l'image générée de la réponse
     // La réponse contient candidates[0].content.parts[]
-    const parts = data.candidates?.[0]?.content?.parts;
+    const responseParts = data.candidates?.[0]?.content?.parts;
     
-    if (!parts || parts.length === 0) {
-      throw new Error('No image returned from Nano Banana API');
+    // Vérifier si le candidat a été bloqué
+    if (data.candidates?.[0]?.finishReason === 'SAFETY') {
+      throw new Error('Image generation blocked for safety reasons');
+    }
+    
+    if (!responseParts || responseParts.length === 0) {
+      // Log plus de détails
+      console.error('🍌 No parts in response. Full response:', JSON.stringify(data, null, 2));
+      throw new Error(`No image returned from Nano Banana API. Finish reason: ${data.candidates?.[0]?.finishReason || 'unknown'}`);
     }
 
     // Trouver la partie qui contient l'image (inlineData)
-    const imagePart = parts.find((part: any) => part.inlineData);
+    const imagePart = responseParts.find((part: any) => part.inlineData);
     
     if (!imagePart || !imagePart.inlineData?.data) {
       throw new Error('No image data in response');

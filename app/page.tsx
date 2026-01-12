@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Upload, Sparkles, ArrowRight, Download, LogOut, User, RefreshCw, Wand2, Check } from "lucide-react";
+import { Upload, Sparkles, ArrowRight, Download, LogOut, User, RefreshCw, Wand2, Check, X, Plus, Image as ImageIcon, Palette, Layers } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,7 +10,7 @@ import { AuroraText } from "@/components/ui/aurora-text";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
 import { AuthModal } from "@/components/auth-modal";
 import { useSession, signOut } from "@/lib/auth-client";
-import { ASPECT_RATIOS, AspectRatio } from "@/lib/api/nano-banana";
+import { ASPECT_RATIOS, AspectRatio, ImageRole } from "@/lib/api/nano-banana";
 
 interface RenderResult {
   id: string;
@@ -19,18 +19,47 @@ interface RenderResult {
   status: string;
 }
 
+// Interface pour une image uploadée avec son rôle
+interface UploadedImageItem {
+  id: string;
+  dataUrl: string;
+  role: ImageRole;
+}
+
+// Configuration des rôles
+const ROLE_CONFIG: Record<ImageRole, { label: string; description: string; icon: typeof ImageIcon }> = {
+  main: { 
+    label: 'Main', 
+    description: 'Primary subject/content',
+    icon: ImageIcon
+  },
+  style: { 
+    label: 'Style', 
+    description: 'Visual style reference',
+    icon: Palette
+  },
+  reference: { 
+    label: 'Reference', 
+    description: 'Additional context',
+    icon: Layers
+  },
+};
+
 // Clés localStorage pour persister les données
 const STORAGE_KEYS = {
-  IMAGE: "renderz_pending_image",
+  IMAGES: "renderz_pending_images",
   PROMPT: "renderz_pending_prompt",
   RENDER_ID: "renderz_current_render_id",
   ASPECT_RATIO: "renderz_aspect_ratio",
 };
 
+// Nombre maximum d'images
+const MAX_IMAGES = 3;
+
 export default function LandingPage() {
   const { data: session, isPending } = useSession();
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [uploadedImages, setUploadedImages] = useState<UploadedImageItem[]>([]);
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [renderResult, setRenderResult] = useState<RenderResult | null>(null);
@@ -111,13 +140,18 @@ export default function LandingPage() {
 
   // Restaurer les données depuis localStorage au chargement
   useEffect(() => {
-    const savedImage = localStorage.getItem(STORAGE_KEYS.IMAGE);
+    const savedImages = localStorage.getItem(STORAGE_KEYS.IMAGES);
     const savedPrompt = localStorage.getItem(STORAGE_KEYS.PROMPT);
     const savedRenderId = localStorage.getItem(STORAGE_KEYS.RENDER_ID);
     const savedAspectRatio = localStorage.getItem(STORAGE_KEYS.ASPECT_RATIO) as AspectRatio | null;
     
-    if (savedImage) {
-      setUploadedImage(savedImage);
+    if (savedImages) {
+      try {
+        const parsed = JSON.parse(savedImages) as UploadedImageItem[];
+        setUploadedImages(parsed);
+      } catch (e) {
+        console.error('Failed to parse saved images:', e);
+      }
     }
     if (savedPrompt) {
       setPrompt(savedPrompt);
@@ -132,16 +166,16 @@ export default function LandingPage() {
       pollRenderStatus(savedRenderId);
     }
     // Si on a des données sauvegardées (mais pas de render en cours), marquer comme "en attente"
-    else if (savedImage && savedPrompt && !savedRenderId) {
+    else if (savedImages && savedPrompt && !savedRenderId) {
       setPendingGeneration(true);
     }
   }, [session]);
 
   // Lancer automatiquement la génération après connexion si des données étaient en attente
   useEffect(() => {
-    if (session && pendingGeneration && uploadedImage && prompt.trim()) {
+    if (session && pendingGeneration && uploadedImages.length > 0 && prompt.trim()) {
       setPendingGeneration(false);
-      localStorage.removeItem(STORAGE_KEYS.IMAGE);
+      localStorage.removeItem(STORAGE_KEYS.IMAGES);
       localStorage.removeItem(STORAGE_KEYS.PROMPT);
       handleGenerate();
     }
@@ -149,8 +183,8 @@ export default function LandingPage() {
 
   // Sauvegarder les données avant d'ouvrir le modal d'auth
   const saveAndShowAuth = () => {
-    if (uploadedImage) {
-      localStorage.setItem(STORAGE_KEYS.IMAGE, uploadedImage);
+    if (uploadedImages.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.IMAGES, JSON.stringify(uploadedImages));
     }
     if (prompt) {
       localStorage.setItem(STORAGE_KEYS.PROMPT, prompt);
@@ -169,33 +203,98 @@ export default function LandingPage() {
     setIsDragging(false);
   }, []);
 
+  // Fonction pour supprimer une image
+  const removeImage = useCallback((imageId: string) => {
+    setUploadedImages(prev => prev.filter(img => img.id !== imageId));
+  }, []);
+
+  // Fonction pour changer le rôle d'une image
+  const changeImageRole = useCallback((imageId: string, newRole: ImageRole) => {
+    setUploadedImages(prev => prev.map(img => 
+      img.id === imageId ? { ...img, role: newRole } : img
+    ));
+  }, []);
+
+  // Fonction pour ajouter plusieurs images d'un coup avec les bons rôles
+  const addMultipleImages = useCallback((dataUrls: string[]) => {
+    setUploadedImages(prev => {
+      const availableSlots = MAX_IMAGES - prev.length;
+      const urlsToAdd = dataUrls.slice(0, availableSlots);
+      
+      const newImages: UploadedImageItem[] = urlsToAdd.map((dataUrl, index) => {
+        // Calculer le rôle en tenant compte des images existantes ET des nouvelles déjà ajoutées
+        const allRoles = [
+          ...prev.map(img => img.role),
+          ...Array(index).fill(null).map((_, i) => {
+            // Recalculer les rôles des nouvelles images précédentes
+            const existingCount = prev.length + i;
+            if (existingCount === 0) return 'main';
+            if (existingCount === 1) return 'style';
+            return 'reference';
+          })
+        ];
+        
+        let role: ImageRole = 'main';
+        if (allRoles.includes('main')) {
+          role = allRoles.includes('style') ? 'reference' : 'style';
+        }
+        
+        return {
+          id: `img-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+          dataUrl,
+          role,
+        };
+      });
+      
+      return [...prev, ...newImages];
+    });
+  }, []);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setUploadedImage(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  }, []);
+    const files = Array.from(e.dataTransfer.files);
+    const imageFiles = files.filter(f => f.type.startsWith("image/"));
+    
+    // Lire tous les fichiers et les ajouter d'un coup
+    Promise.all(
+      imageFiles.map(file => new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.readAsDataURL(file);
+      }))
+    ).then(dataUrls => {
+      const validUrls = dataUrls.filter(Boolean);
+      if (validUrls.length > 0) {
+        addMultipleImages(validUrls);
+      }
+    });
+  }, [addMultipleImages]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setUploadedImage(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
+    const files = Array.from(e.target.files || []);
+    
+    // Lire tous les fichiers et les ajouter d'un coup
+    Promise.all(
+      files.map(file => new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (evt) => resolve(evt.target?.result as string);
+        reader.readAsDataURL(file);
+      }))
+    ).then(dataUrls => {
+      const validUrls = dataUrls.filter(Boolean);
+      if (validUrls.length > 0) {
+        addMultipleImages(validUrls);
+      }
+    });
+    
+    // Reset l'input pour permettre de re-sélectionner le même fichier
+    e.target.value = '';
   };
 
   const handleGenerate = async () => {
-    if (!uploadedImage || !prompt.trim()) return;
+    if (uploadedImages.length === 0 || !prompt.trim()) return;
     
     // Vérifier l'authentification
     if (!session) {
@@ -204,7 +303,7 @@ export default function LandingPage() {
     }
     
     // Nettoyer le localStorage des données pré-auth
-    localStorage.removeItem(STORAGE_KEYS.IMAGE);
+    localStorage.removeItem(STORAGE_KEYS.IMAGES);
     localStorage.removeItem(STORAGE_KEYS.PROMPT);
     localStorage.removeItem(STORAGE_KEYS.ASPECT_RATIO);
     
@@ -212,31 +311,41 @@ export default function LandingPage() {
     setRenderResult(null);
 
     try {
-      // 1. Upload de l'image
-      console.log('📤 Uploading image...');
-      const blob = await fetch(uploadedImage).then(r => r.blob());
-      const formData = new FormData();
-      formData.append('file', blob, 'image.png');
+      // 1. Upload de toutes les images
+      console.log(`📤 Uploading ${uploadedImages.length} image(s)...`);
+      
+      const uploadedUrls: { url: string; role: ImageRole }[] = [];
+      
+      for (const img of uploadedImages) {
+        const blob = await fetch(img.dataUrl).then(r => r.blob());
+        const formData = new FormData();
+        formData.append('file', blob, `image-${img.role}.png`);
 
-      const uploadRes = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+        const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
 
-      if (!uploadRes.ok) {
-        const errorData = await uploadRes.json().catch(() => ({}));
-        console.error('Upload error:', errorData);
-        throw new Error('Upload failed');
+        if (!uploadRes.ok) {
+          const errorData = await uploadRes.json().catch(() => ({}));
+          console.error('Upload error:', errorData);
+          throw new Error(`Upload failed for ${img.role} image`);
+        }
+        
+        const { url } = await uploadRes.json();
+        uploadedUrls.push({ url, role: img.role });
+        console.log(`✓ ${img.role} image uploaded:`, url);
       }
-      const { url: imageUrl } = await uploadRes.json();
-      console.log('✓ Image uploaded:', imageUrl);
 
-      // 2. Lancer la génération
-      console.log('🚀 Starting generation...');
+      // 2. Lancer la génération avec toutes les images
+      console.log('🚀 Starting generation with', uploadedUrls.length, 'image(s)...');
+      
+      const images = uploadedUrls.map(item => ({ url: item.url, role: item.role }));
+      
       const generateRes = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl, prompt, aspectRatio }),
+        body: JSON.stringify({ images, prompt, aspectRatio }),
       });
 
       const generateData = await generateRes.json();
@@ -270,11 +379,11 @@ export default function LandingPage() {
     setIsGenerating(false);
     setCurrentRenderId(null);
     setRenderResult(null);
-    setUploadedImage(null);
+    setUploadedImages([]);
     setPrompt("");
     setAspectRatio("1:1");
     setIsUpscaling(false);
-    localStorage.removeItem(STORAGE_KEYS.IMAGE);
+    localStorage.removeItem(STORAGE_KEYS.IMAGES);
     localStorage.removeItem(STORAGE_KEYS.PROMPT);
     localStorage.removeItem(STORAGE_KEYS.RENDER_ID);
     localStorage.removeItem(STORAGE_KEYS.ASPECT_RATIO);
@@ -657,54 +766,156 @@ export default function LandingPage() {
           ) : (
             /* ========== FORMULAIRE NORMAL ========== */
             <Card className="max-w-2xl mx-auto p-6 space-y-4 bg-white/5 backdrop-blur-[2px] border border-white">
-              {/* Upload Zone */}
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={`
-                  relative border-2 border-dashed rounded-none p-12
-                  transition-all duration-200 cursor-pointer
-                  ${isDragging 
-                    ? "border-primary bg-primary/5" 
-                    : "border-border hover:border-primary/50"
-                  }
-                  ${uploadedImage ? "bg-muted/30" : ""}
-                `}
-              >
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileSelect}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-                
-                {uploadedImage ? (
-                  <div className="space-y-4">
-                    <div className="relative w-full h-64 bg-muted rounded-none overflow-hidden">
-                      <img
-                        src={uploadedImage}
-                        alt="Uploaded"
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                    <p className="text-center text-sm font-mono text-muted-foreground">
-                      IMAGE LOADED · CLICK TO CHANGE
-                    </p>
+              {/* Upload Zone - Images multiples */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-mono uppercase tracking-wider">
+                    Reference Images
+                  </label>
+                  <span className="text-xs font-mono text-muted-foreground">
+                    {uploadedImages.length} / {MAX_IMAGES}
+                  </span>
+                </div>
+
+                {/* Images uploadées */}
+                {uploadedImages.length > 0 && (
+                  <div className="grid grid-cols-3 gap-3">
+                    {uploadedImages.map((img) => {
+                      const RoleIcon = ROLE_CONFIG[img.role].icon;
+                      return (
+                        <div key={img.id} className="relative group">
+                          {/* Image preview */}
+                          <div className="relative aspect-square border border-border overflow-hidden bg-muted/30">
+                            <img
+                              src={img.dataUrl}
+                              alt={`${img.role} reference`}
+                              className="w-full h-full object-cover"
+                            />
+                            {/* Overlay avec rôle */}
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                              <div className="flex items-center gap-1.5">
+                                <RoleIcon className="w-3 h-3 text-white" />
+                                <span className="text-xs font-mono text-white uppercase">
+                                  {img.role}
+                                </span>
+                              </div>
+                            </div>
+                            {/* Bouton supprimer */}
+                            <button
+                              onClick={() => removeImage(img.id)}
+                              className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-red-600 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100"
+                            >
+                              <X className="w-3 h-3 text-white" />
+                            </button>
+                          </div>
+                          {/* Sélecteur de rôle */}
+                          <div className="mt-2 flex gap-1">
+                            {(Object.keys(ROLE_CONFIG) as ImageRole[]).map((role) => (
+                              <button
+                                key={role}
+                                onClick={() => changeImageRole(img.id, role)}
+                                className={`
+                                  flex-1 py-1 text-[10px] font-mono uppercase transition-all
+                                  ${img.role === role 
+                                    ? 'bg-primary text-primary-foreground' 
+                                    : 'bg-muted hover:bg-muted/80 text-muted-foreground'
+                                  }
+                                `}
+                              >
+                                {role}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Zone d'ajout si pas encore à la limite */}
+                    {uploadedImages.length < MAX_IMAGES && (
+                      <div
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        className={`
+                          relative aspect-square border-2 border-dashed
+                          transition-all duration-200 cursor-pointer
+                          flex items-center justify-center
+                          ${isDragging 
+                            ? "border-primary bg-primary/5" 
+                            : "border-border hover:border-primary/50"
+                          }
+                        `}
+                      >
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={handleFileSelect}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+                        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                          <Plus className="w-6 h-6" />
+                          <span className="text-xs font-mono">ADD</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center space-y-4 text-center">
-                    <div className="relative">
-                      <div className="absolute inset-0 tech-gradient opacity-20 blur-xl"></div>
-                      <Upload className="w-12 h-12 relative z-10" />
+                )}
+
+                {/* Zone d'upload initiale (si aucune image) */}
+                {uploadedImages.length === 0 && (
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`
+                      relative border-2 border-dashed rounded-none p-12
+                      transition-all duration-200 cursor-pointer
+                      ${isDragging 
+                        ? "border-primary bg-primary/5" 
+                        : "border-border hover:border-primary/50"
+                      }
+                    `}
+                  >
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleFileSelect}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    
+                    <div className="flex flex-col items-center justify-center space-y-4 text-center">
+                      <div className="relative">
+                        <div className="absolute inset-0 tech-gradient opacity-20 blur-xl"></div>
+                        <Upload className="w-12 h-12 relative z-10" />
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-lg font-medium">
+                          Drop your reference images here
+                        </p>
+                        <p className="text-sm text-muted-foreground font-mono">
+                          UP TO 3 IMAGES · MAIN + STYLE + REFERENCE
+                        </p>
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <p className="text-lg font-medium">
-                        Drop your reference image here
-                      </p>
-                      <p className="text-sm text-muted-foreground font-mono">
-                        SKETCH · DRAWING · PHOTO · 3D RENDER
-                      </p>
+                  </div>
+                )}
+
+                {/* Légende des rôles */}
+                {uploadedImages.length > 0 && (
+                  <div className="flex flex-wrap gap-4 text-xs font-mono text-muted-foreground pt-2">
+                    <div className="flex items-center gap-1.5">
+                      <ImageIcon className="w-3 h-3" />
+                      <span>MAIN: primary content</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Palette className="w-3 h-3" />
+                      <span>STYLE: visual style</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Layers className="w-3 h-3" />
+                      <span>REF: additional context</span>
                     </div>
                   </div>
                 )}
@@ -765,11 +976,14 @@ export default function LandingPage() {
               {/* Generate Button */}
               <Button
                 onClick={handleGenerate}
-                disabled={!uploadedImage || !prompt.trim()}
+                disabled={uploadedImages.length === 0 || !prompt.trim()}
                 className="w-full h-14 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] !opacity-100 transition-all"
               >
                 <span className="flex items-center justify-center gap-2">
                   GENERATE RENDER
+                  {uploadedImages.length > 1 && (
+                    <span className="text-xs opacity-70">({uploadedImages.length} images)</span>
+                  )}
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </span>
               </Button>

@@ -214,3 +214,4 @@ async function processUpscale(renderId: string, imageUrl: string, scale: number)
   }
 }
 
+

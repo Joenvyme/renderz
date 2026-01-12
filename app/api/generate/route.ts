@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { generateWithNanoBanana, AspectRatio } from '@/lib/api/nano-banana';
+import { generateWithNanoBanana, AspectRatio, ImageInput, ImageRole } from '@/lib/api/nano-banana';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 
@@ -27,15 +27,39 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { imageUrl, prompt, aspectRatio } = body as {
-      imageUrl: string;
+    
+    // Support pour l'ancien format (imageUrl) et le nouveau (images[])
+    const { imageUrl, images, prompt, aspectRatio } = body as {
+      imageUrl?: string;
+      images?: ImageInput[];
       prompt: string;
       aspectRatio?: AspectRatio;
     };
 
-    if (!imageUrl || !prompt) {
+    // Normaliser: si imageUrl est fourni, le convertir en tableau images
+    let normalizedImages: ImageInput[];
+    if (images && images.length > 0) {
+      normalizedImages = images;
+    } else if (imageUrl) {
+      normalizedImages = [{ url: imageUrl, role: 'main' as ImageRole }];
+    } else {
       return NextResponse.json(
-        { error: 'Missing imageUrl or prompt' },
+        { error: 'Missing images or imageUrl' },
+        { status: 400 }
+      );
+    }
+
+    if (!prompt) {
+      return NextResponse.json(
+        { error: 'Missing prompt' },
+        { status: 400 }
+      );
+    }
+
+    // Limiter à 3 images max
+    if (normalizedImages.length > 3) {
+      return NextResponse.json(
+        { error: 'Maximum 3 images allowed' },
         { status: 400 }
       );
     }
@@ -75,14 +99,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Créer un enregistrement dans la DB avec l'ID utilisateur
+    // Stocker l'URL de la première image comme original_image_url pour compatibilité
     const { data: render, error: dbError } = await supabase
       .from('renders')
       .insert({
         user_id: session.user.id,
-        original_image_url: imageUrl,
+        original_image_url: normalizedImages[0].url,
         prompt,
         status: 'processing',
-        metadata: { aspectRatio: aspectRatio || '1:1' },
+        metadata: { 
+          aspectRatio: aspectRatio || '1:1',
+          images: normalizedImages, // Stocker toutes les images dans metadata
+          imageCount: normalizedImages.length
+        },
       })
       .select()
       .single();
@@ -96,7 +125,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Lancer la génération en arrière-plan (SANS upscaling automatique)
-    processRender(render.id, imageUrl, prompt, aspectRatio).catch(console.error);
+    processRender(render.id, normalizedImages, prompt, aspectRatio).catch(console.error);
 
     return NextResponse.json({
       success: true,
@@ -113,7 +142,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processRender(renderId: string, imageUrl: string, prompt: string, aspectRatio?: AspectRatio) {
+async function processRender(renderId: string, images: ImageInput[], prompt: string, aspectRatio?: AspectRatio) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -122,12 +151,13 @@ async function processRender(renderId: string, imageUrl: string, prompt: string,
   try {
     // Génération avec Nano Banana (Google Gemini) - SANS upscaling automatique
     console.log(`[${renderId}] Starting Nano Banana generation...`);
-    console.log(`[${renderId}] Image URL: ${imageUrl}`);
+    console.log(`[${renderId}] Images: ${images.length} image(s)`);
+    images.forEach((img, i) => console.log(`[${renderId}]   ${i + 1}. ${img.role}: ${img.url.substring(0, 50)}...`));
     console.log(`[${renderId}] Prompt: ${prompt.substring(0, 50)}...`);
     console.log(`[${renderId}] Aspect Ratio: ${aspectRatio || '1:1'}`);
     
     const nanoBananaResult = await generateWithNanoBanana({ 
-      imageUrl, 
+      images, 
       prompt,
       aspectRatio: aspectRatio || '1:1'
     });
