@@ -156,3 +156,5 @@ Une fois votre clé Google Gemini configurée :
 
 
 
+
+

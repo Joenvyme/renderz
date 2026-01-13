@@ -202,3 +202,5 @@ Cela simulera les réponses de Magnific sans faire d'appels réels.
 
 
 
+
+

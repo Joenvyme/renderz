@@ -1,7 +1,15 @@
 /**
  * Google Nano Banana API Client
- * Documentation: https://ai.google.dev/gemini-api/docs/image-generation?authuser=1&hl=fr
- * Génération d'images avec Gemini 2.5 Flash Image (Nano Banana)
+ * Documentation: 
+ * - Génération d'images: https://ai.google.dev/gemini-api/docs/image-generation?authuser=1&hl=fr
+ * - Bonnes pratiques Gemini 3: https://ai.google.dev/gemini-api/docs/gemini-3?hl=fr#image_generation_and_editing
+ * 
+ * Génération d'images avec Gemini 3 Pro Image Preview (Nano Banana Pro)
+ * 
+ * Bonnes pratiques appliquées :
+ * - Prompts concis et directs (Gemini 3 répond mieux aux instructions courtes)
+ * - Instructions placées après le contexte multimédia (meilleur ancrage du raisonnement)
+ * - Évite les techniques verbeuses d'ingénierie de prompts
  */
 
 import { MOCK_MODE, delay, MOCK_GENERATED_IMAGE } from './mock-mode';
@@ -52,7 +60,7 @@ export async function generateWithNanoBanana(
 ): Promise<NanoBananaGenerateResponse> {
   // MODE MOCK pour tester sans API
   if (MOCK_MODE) {
-    console.log('🍌 [MOCK] Nano Banana generation simulated...');
+    console.log('🍌 [MOCK] Gemini 3 Pro Image generation simulated...');
     await delay(2000);
     return {
       success: true,
@@ -84,46 +92,46 @@ export async function generateWithNanoBanana(
     });
     const imageParts = await Promise.all(imagePartsPromises);
 
-    // Construire le prompt en fonction du nombre d'images et de leurs rôles
+    // Construire le prompt selon les bonnes pratiques Gemini 3 :
+    // - Instructions directes et concises (Gemini 3 répond mieux aux prompts courts)
+    // - Instructions après le contexte (pour les grandes données multimodales)
+    // - Éviter les techniques verbeuses d'ingénierie de prompts
     let enhancedPrompt: string;
     
     if (images.length === 1) {
-      enhancedPrompt = `Based on the reference image provided, ${request.prompt}. Create a photorealistic, hyperrealistic render with professional lighting and materials. High quality, 8K resolution style.`;
+      // Prompt concis et direct pour Gemini 3
+      enhancedPrompt = `${request.prompt}. Photorealistic, professional quality.`;
     } else {
-      // Construire un prompt qui décrit le rôle de chaque image
-      const roleDescriptions = images.map((img, index) => {
-        switch (img.role) {
-          case 'main':
-            return `Image ${index + 1} is the main subject/content`;
-          case 'style':
-            return `Image ${index + 1} is the style reference (apply its visual style, colors, lighting)`;
-          case 'reference':
-            return `Image ${index + 1} is an additional reference for context`;
-          default:
-            return `Image ${index + 1} is a reference`;
-        }
-      }).join('. ');
-
-      enhancedPrompt = `You are provided with ${images.length} images. ${roleDescriptions}. 
+      // Pour plusieurs images, décrire brièvement les rôles
+      const roleMap: Record<ImageRole, string> = {
+        main: 'main subject',
+        style: 'style reference',
+        reference: 'reference'
+      };
       
-Based on these images, ${request.prompt}. 
+      const roleList = images.map((img, i) => 
+        `Image ${i + 1}: ${roleMap[img.role]}`
+      ).join(', ');
 
-Combine the elements thoughtfully: use the main image as the primary subject, apply any style references for visual aesthetics, and incorporate additional references as needed. Create a photorealistic, hyperrealistic render with professional lighting and materials. High quality, 8K resolution style.`;
+      // Instructions concises placées après la description des images
+      enhancedPrompt = `${roleList}. ${request.prompt}. Photorealistic, professional quality.`;
     }
 
-    console.log(`🍌 Generating with ${images.length} image(s)...`);
+    console.log(`🍌 Generating with Gemini 3 Pro Image (${images.length} image(s))...`);
     console.log(`   Roles: ${images.map(i => i.role).join(', ')}`);
 
-    // Construire les parts: d'abord le texte, puis toutes les images
+    // Construire les parts selon les bonnes pratiques Gemini 3 :
+    // - Pour les données multimodales (images), placer les instructions APRÈS le contexte
+    // - Cela ancre mieux le raisonnement du modèle aux données fournies
     const parts: any[] = [
-      { text: enhancedPrompt },
-      ...imageParts
+      ...imageParts,  // Images d'abord (contexte)
+      { text: enhancedPrompt }  // Instructions après (bonne pratique Gemini 3)
     ];
 
-    // Appel à l'API Gemini 2.5 Flash Image (Nano Banana)
+    // Appel à l'API Gemini 3 Pro Image Preview (Nano Banana Pro)
     // Documentation: https://ai.google.dev/gemini-api/docs/image-generation
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: {
@@ -146,14 +154,14 @@ Combine the elements thoughtfully: use the main image as the primary subject, ap
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(
-        `Nano Banana API error: ${response.statusText} - ${JSON.stringify(errorData)}`
+        `Gemini 3 Pro Image API error: ${response.statusText} - ${JSON.stringify(errorData)}`
       );
     }
 
     const data = await response.json();
 
     // Log la réponse complète pour debug
-    console.log('🍌 API Response:', JSON.stringify(data, null, 2).substring(0, 1000));
+    console.log('🍌 Gemini 3 Pro API Response:', JSON.stringify(data, null, 2).substring(0, 1000));
 
     // Vérifier s'il y a un blocage de contenu
     if (data.promptFeedback?.blockReason) {
@@ -177,7 +185,7 @@ Combine the elements thoughtfully: use the main image as the primary subject, ap
     if (!responseParts || responseParts.length === 0) {
       // Log plus de détails
       console.error('🍌 No parts in response. Full response:', JSON.stringify(data, null, 2));
-      throw new Error(`No image returned from Nano Banana API. Finish reason: ${data.candidates?.[0]?.finishReason || 'unknown'}`);
+      throw new Error(`No image returned from Gemini 3 Pro Image API. Finish reason: ${data.candidates?.[0]?.finishReason || 'unknown'}`);
     }
 
     // Trouver la partie qui contient l'image (inlineData)
@@ -202,7 +210,7 @@ Combine the elements thoughtfully: use the main image as the primary subject, ap
       generatedImageUrl: uploadedUrl,
     };
   } catch (error) {
-    console.error('Nano Banana generation error:', error);
+    console.error('Gemini 3 Pro Image generation error:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

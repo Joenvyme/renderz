@@ -247,3 +247,5 @@ vercel env add MAGNIFIC_API_KEY
 
 
 
+
+

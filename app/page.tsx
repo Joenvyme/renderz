@@ -68,9 +68,13 @@ export default function LandingPage() {
   const [currentRenderId, setCurrentRenderId] = useState<string | null>(null);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("1:1");
   const [isUpscaling, setIsUpscaling] = useState(false);
+  const [originalPrompt, setOriginalPrompt] = useState<string>("");
+  const [modificationPrompt, setModificationPrompt] = useState<string>("");
+  const [isReprompting, setIsReprompting] = useState(false);
+  const [showUpscaleToast, setShowUpscaleToast] = useState(false);
 
   // Fonction pour faire le polling d'un render
-  const pollRenderStatus = async (renderId: string) => {
+  const pollRenderStatus = async (renderId: string, isReprompt: boolean = false) => {
     console.log('🔄 Starting polling for render:', renderId);
     setIsGenerating(true);
     setCurrentRenderId(renderId);
@@ -101,6 +105,7 @@ export default function LandingPage() {
           
           // IMPORTANT: D'abord arrêter le chargement
           setIsGenerating(false);
+          setIsReprompting(false); // Réinitialiser aussi isReprompting
           setCurrentRenderId(null);
           
           // Puis mettre le résultat
@@ -111,7 +116,18 @@ export default function LandingPage() {
             status: render.status,
           });
           
-          console.log('✅ States updated! isGenerating=false, renderResult set');
+          // Sauvegarder le prompt original pour le reprompt suivant
+          if (prompt && !originalPrompt) {
+            setOriginalPrompt(prompt);
+          }
+          
+          // Si c'était un reprompt, réinitialiser le prompt de modification
+          // pour permettre un nouveau reprompt
+          if (isReprompt) {
+            setModificationPrompt("");
+          }
+          
+          console.log('✅ States updated! isGenerating=false, isReprompting=false, renderResult set');
           return; // Sortir immédiatement
         }
         
@@ -120,6 +136,7 @@ export default function LandingPage() {
           console.error('❌ Render failed');
           localStorage.removeItem(STORAGE_KEYS.RENDER_ID);
           setIsGenerating(false);
+          setIsReprompting(false); // Réinitialiser aussi isReprompting en cas d'erreur
           setCurrentRenderId(null);
           alert('Generation failed. Please try again.');
           return;
@@ -134,6 +151,7 @@ export default function LandingPage() {
     console.warn('⏰ Polling timeout');
     localStorage.removeItem(STORAGE_KEYS.RENDER_ID);
     setIsGenerating(false);
+    setIsReprompting(false); // Réinitialiser aussi isReprompting en cas de timeout
     setCurrentRenderId(null);
     alert('Generation is taking longer than expected. Check your profile to see the result.');
   };
@@ -180,6 +198,16 @@ export default function LandingPage() {
       handleGenerate();
     }
   }, [session, pendingGeneration]);
+
+  // Fermer automatiquement le toast après 4 secondes
+  useEffect(() => {
+    if (showUpscaleToast) {
+      const timer = setTimeout(() => {
+        setShowUpscaleToast(false);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [showUpscaleToast]);
 
   // Sauvegarder les données avant d'ouvrir le modal d'auth
   const saveAndShowAuth = () => {
@@ -309,6 +337,11 @@ export default function LandingPage() {
     
     setIsGenerating(true);
     setRenderResult(null);
+    
+    // Sauvegarder le prompt original pour le reprompt
+    if (prompt && !originalPrompt) {
+      setOriginalPrompt(prompt);
+    }
 
     try {
       // 1. Upload de toutes les images
@@ -383,6 +416,9 @@ export default function LandingPage() {
     setPrompt("");
     setAspectRatio("1:1");
     setIsUpscaling(false);
+    setOriginalPrompt("");
+    setModificationPrompt("");
+    setIsReprompting(false);
     localStorage.removeItem(STORAGE_KEYS.IMAGES);
     localStorage.removeItem(STORAGE_KEYS.PROMPT);
     localStorage.removeItem(STORAGE_KEYS.RENDER_ID);
@@ -393,11 +429,123 @@ export default function LandingPage() {
   const handleRegenerate = () => {
     setRenderResult(null);
     setIsUpscaling(false);
+    setModificationPrompt("");
     handleGenerate();
+  };
+
+  // Fonction pour reprompter avec une modification spécifique (bonnes pratiques Gemini 3)
+  // Utilise le rendu généré comme référence principale et applique la modification
+  const handleReprompt = async () => {
+    if (!modificationPrompt.trim()) return;
+    if (!renderResult?.generated_image_url) {
+      alert("No generated image to modify");
+      return;
+    }
+    if (!session) {
+      alert("Please sign in to generate renders");
+      return;
+    }
+
+    // IMPORTANT: Sauvegarder l'URL de l'image générée AVANT de la mettre à null
+    const currentGeneratedImageUrl = renderResult.generated_image_url;
+    
+    setIsReprompting(true);
+    setRenderResult(null);
+    setIsUpscaling(false);
+
+    try {
+      // Utiliser le rendu généré comme image principale (référence)
+      // Le prompt de modification est concis et direct (bonnes pratiques Gemini 3)
+      const modificationPromptText = modificationPrompt.trim();
+      
+      // Construire le tableau d'images avec le rendu généré comme référence principale
+      const images: { url: string; role: ImageRole }[] = [
+        { url: currentGeneratedImageUrl, role: 'main' }
+      ];
+
+      // Optionnellement, ajouter les images originales comme références supplémentaires
+      // (limité à 2 images supplémentaires pour rester sous la limite de 3)
+      if (uploadedImages.length > 0 && uploadedImages.length <= 2) {
+        const uploadedUrls: { url: string; role: ImageRole }[] = [];
+        
+        for (const img of uploadedImages) {
+          const blob = await fetch(img.dataUrl).then(r => r.blob());
+          const formData = new FormData();
+          formData.append('file', blob, `image-${img.role}.png`);
+
+          const uploadRes = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (uploadRes.ok) {
+            const uploadData = await uploadRes.json();
+            uploadedUrls.push({ url: uploadData.url, role: img.role });
+          }
+        }
+
+        // Ajouter les images originales comme références (pas comme main)
+        uploadedUrls.forEach(img => {
+          if (img.role !== 'main') {
+            images.push({ url: img.url, role: img.role });
+          }
+        });
+      }
+
+      console.log('🔄 Reprompt: Using generated image as main reference');
+      console.log(`   Modification: ${modificationPromptText}`);
+      console.log(`   Total images: ${images.length}`);
+
+      // Lancer la génération avec le rendu généré comme référence et la modification
+      const generateRes = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          images, 
+          prompt: modificationPromptText, // Prompt concis : juste la modification
+          aspectRatio 
+        }),
+      });
+
+      const generateData = await generateRes.json();
+
+      if (!generateRes.ok) {
+        if (generateRes.status === 403 && generateData.maxAllowed) {
+          alert(`Limit reached! You have used ${generateData.currentCount}/${generateData.maxAllowed} renders.`);
+          setIsReprompting(false);
+          return;
+        }
+        throw new Error(generateData.message || 'Reprompt failed');
+      }
+      
+      const { renderId } = generateData;
+      console.log('✓ Reprompt started, renderId:', renderId);
+
+      // Mettre à jour le prompt original pour la prochaine modification
+      const newPrompt = `${originalPrompt || prompt}. ${modificationPromptText}`;
+      setPrompt(newPrompt);
+      setOriginalPrompt(newPrompt);
+      
+      // Ne pas réinitialiser modificationPrompt ici, on le fera après le polling réussi
+      // Cela permet de garder le texte si l'utilisateur veut modifier à nouveau
+
+      // Polling pour suivre le statut (indiquer que c'est un reprompt)
+      await pollRenderStatus(renderId, true);
+
+    } catch (error) {
+      console.error('Reprompt error:', error);
+      alert(error instanceof Error ? error.message : 'Error during reprompt.');
+      setIsReprompting(false);
+    }
   };
 
   // Fonction pour upscaler l'image générée
   const handleUpscale = async () => {
+    // TEMPORAIREMENT DÉSACTIVÉ - Afficher le toast "bientôt disponible"
+    setShowUpscaleToast(true);
+    
+    // Code original commenté pour référence
+    /*
     if (!renderResult?.id) return;
     
     setIsUpscaling(true);
@@ -449,6 +597,7 @@ export default function LandingPage() {
     } finally {
       setIsUpscaling(false);
     }
+    */
   };
 
   return (
@@ -601,33 +750,23 @@ export default function LandingPage() {
                         REGENERATE
                       </Button>
 
-                      {/* Upscale button */}
+                      {/* Upscale button - Temporairement désactivé */}
                       <Button
                         size="lg"
                         onClick={handleUpscale}
-                        disabled={isUpscaling}
-                        className="h-14 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a]"
+                        className="h-14 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] cursor-pointer"
                       >
-                        {isUpscaling ? (
-                          <>
-                            <Sparkles className="w-4 h-4 mr-2 animate-pulse" />
-                            UPSCALING...
-                          </>
-                        ) : (
-                          <>
-                            <Wand2 className="w-4 h-4 mr-2" />
-                            UPSCALE 4K
-                          </>
-                        )}
+                        <Wand2 className="w-4 h-4 mr-2" />
+                        UPSCALE 4K
                       </Button>
                     </div>
 
                     {/* Download standard version */}
                     <Button
                       asChild
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      className="w-full font-mono text-xs text-muted-foreground"
+                      className="w-full font-mono text-xs border-2 border-border hover:bg-muted/50 hover:border-primary/50 transition-colors"
                     >
                       <a
                         href={renderResult.generated_image_url}
@@ -639,6 +778,38 @@ export default function LandingPage() {
                         DOWNLOAD STANDARD VERSION
                       </a>
                     </Button>
+
+                    {/* Reprompt section - Modifier le rendu généré */}
+                    <div className="space-y-2 pt-2 border-t border-border">
+                      <label className="text-xs font-mono text-muted-foreground">
+                        Modify this render:
+                      </label>
+                      <Textarea
+                        value={modificationPrompt}
+                        onChange={(e) => setModificationPrompt(e.target.value)}
+                        placeholder="e.g., make it more vibrant, change lighting to sunset, add more details..."
+                        className="min-h-[60px] resize-none rounded-none font-mono text-xs"
+                        disabled={isReprompting || isGenerating}
+                      />
+                      <Button
+                        onClick={handleReprompt}
+                        disabled={!modificationPrompt.trim() || isReprompting || isGenerating}
+                        size="sm"
+                        className="w-full font-mono text-xs !bg-[#000000] hover:!bg-[#1a1a1a]"
+                      >
+                        {isReprompting ? (
+                          <>
+                            <RefreshCw className="w-3 h-3 mr-2 animate-spin" />
+                            APPLYING MODIFICATION...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-3 h-3 mr-2" />
+                            APPLY MODIFICATION
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   // Image upscalée - Afficher le bouton de téléchargement
@@ -706,7 +877,7 @@ export default function LandingPage() {
 
                 {/* Info footer */}
                 <div className="flex items-center justify-center gap-4 text-xs font-mono text-muted-foreground pt-2 border-t border-border">
-                  <span>GEMINI 2.5 FLASH</span>
+                  <span>GEMINI 3 PRO</span>
                   <span>·</span>
                   <span>
                     {renderResult.upscaled_image_url && renderResult.upscaled_image_url !== renderResult.generated_image_url
@@ -1001,6 +1172,20 @@ export default function LandingPage() {
           </p>
         </div>
       </footer>
+
+      {/* Toast "Bientôt disponible" pour l'upscale */}
+      {showUpscaleToast && (
+        <div className="fixed bottom-20 right-6 z-[100] animate-in slide-in-from-bottom-2 fade-in duration-300">
+          <div className="bg-black/90 backdrop-blur-sm border border-white/20 px-4 py-3 rounded-none shadow-lg">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-4 h-4 text-yellow-400 animate-pulse" />
+              <p className="text-sm font-mono text-white">
+                Bientôt disponible
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Auth Modal */}
       <AuthModal

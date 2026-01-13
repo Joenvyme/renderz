@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useSession, signOut } from "@/lib/auth-client";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
-import { ArrowLeft, User, Mail, Calendar, Image, Download, Loader2, LogOut, Camera, Trash2, Wand2, Eye, ExternalLink, Pencil, X } from "lucide-react";
+import { ArrowLeft, User, Mail, Calendar, Image, Download, Loader2, LogOut, Camera, Trash2, Wand2, Eye, Pencil, X, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 
@@ -41,6 +41,7 @@ export default function ProfilePage() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [newName, setNewName] = useState("");
   const [isSavingName, setIsSavingName] = useState(false);
+  const [showUpscaleToast, setShowUpscaleToast] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -60,6 +61,16 @@ export default function ProfilePage() {
       document.body.style.overflow = '';
     };
   }, [previewImage]);
+
+  // Fermer automatiquement le toast après 4 secondes
+  useEffect(() => {
+    if (showUpscaleToast) {
+      const timer = setTimeout(() => {
+        setShowUpscaleToast(false);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [showUpscaleToast]);
 
   useEffect(() => {
     if (session) {
@@ -102,6 +113,11 @@ export default function ProfilePage() {
 
   // Upscale a render from the profile
   const handleUpscale = async (renderId: string) => {
+    // TEMPORAIREMENT DÉSACTIVÉ - Afficher le toast "bientôt disponible"
+    setShowUpscaleToast(true);
+    
+    // Code original commenté pour référence
+    /*
     setUpscalingIds(prev => new Set(prev).add(renderId));
 
     try {
@@ -153,6 +169,7 @@ export default function ProfilePage() {
         return newSet;
       });
     }
+    */
   };
 
   // Check if a render can be upscaled
@@ -623,25 +640,15 @@ export default function ProfilePage() {
                       {/* Actions */}
                       {render.status === "completed" && render.generated_image_url && (
                         <div className="space-y-2">
-                          {/* Upscale button si pas encore upscalé */}
+                          {/* Upscale button si pas encore upscalé - Temporairement désactivé */}
                           {canUpscale(render) && (
                             <Button
                               size="sm"
-                              className="w-full font-mono text-xs !bg-[#000000] hover:!bg-[#1a1a1a]"
+                              className="w-full font-mono text-xs !bg-[#000000] hover:!bg-[#1a1a1a] cursor-pointer"
                               onClick={() => handleUpscale(render.id)}
-                              disabled={upscalingIds.has(render.id)}
                             >
-                              {upscalingIds.has(render.id) ? (
-                                <>
-                                  <Loader2 className="w-3 h-3 mr-2 animate-spin" />
-                                  UPSCALING...
-                                </>
-                              ) : (
-                                <>
-                                  <Wand2 className="w-3 h-3 mr-2" />
-                                  UPSCALE TO 4K
-                                </>
-                              )}
+                              <Wand2 className="w-3 h-3 mr-2" />
+                              UPSCALE TO 4K
                             </Button>
                           )}
 
@@ -730,33 +737,49 @@ export default function ProfilePage() {
             {/* Image Preview Modal */}
             {previewImage && (
               <div 
-                className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-8"
+                className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+                style={{ paddingTop: '4rem', paddingBottom: '3rem' }}
                 onClick={() => setPreviewImage(null)}
               >
-                <div className="relative w-full h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-                  <div className="absolute top-0 left-0 bg-black/70 px-3 py-1 text-sm font-mono text-white z-10">
+                <div className="relative w-full h-full flex items-center justify-center px-4" onClick={(e) => e.stopPropagation()}>
+                  {/* Type label - top left */}
+                  <div className="absolute top-4 left-4 bg-black/70 px-3 py-1 text-sm font-mono text-white z-10 rounded">
                     {previewImage.type}
                   </div>
-                  <button
-                    onClick={() => setPreviewImage(null)}
-                    className="absolute top-0 right-0 w-8 h-8 bg-white/10 hover:bg-white/20 transition-colors z-10 flex items-center justify-center"
-                  >
-                    <X className="w-5 h-5 text-white" />
-                  </button>
+                  
+                  {/* Action buttons - top right */}
+                  <div className="absolute top-4 right-4 flex gap-2 z-10">
+                    {/* Download button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadImage(
+                          previewImage.url,
+                          `renderz-${previewImage.type.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}.png`
+                        );
+                      }}
+                      className="w-10 h-10 bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center rounded"
+                      title="Download image"
+                    >
+                      <Download className="w-5 h-5 text-white" />
+                    </button>
+                    
+                    {/* Close button */}
+                    <button
+                      onClick={() => setPreviewImage(null)}
+                      className="w-10 h-10 bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center rounded"
+                      title="Close"
+                    >
+                      <X className="w-5 h-5 text-white" />
+                    </button>
+                  </div>
+                  
+                  {/* Image - centered and contained */}
                   <img
                     src={previewImage.url}
                     alt="Preview"
                     className="max-w-full max-h-full object-contain"
                   />
-                  <a
-                    href={previewImage.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="absolute bottom-0 right-0 w-8 h-8 bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <ExternalLink className="w-4 h-4 text-white" />
-                  </a>
                 </div>
               </div>
             )}
@@ -772,6 +795,20 @@ export default function ProfilePage() {
           </p>
         </div>
       </footer>
+
+      {/* Toast "Bientôt disponible" pour l'upscale */}
+      {showUpscaleToast && (
+        <div className="fixed bottom-20 right-6 z-[100] animate-in slide-in-from-bottom-2 fade-in duration-300">
+          <div className="bg-black/90 backdrop-blur-sm border border-white/20 px-4 py-3 rounded-none shadow-lg">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-4 h-4 text-yellow-400 animate-pulse" />
+              <p className="text-sm font-mono text-white">
+                Bientôt disponible
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
