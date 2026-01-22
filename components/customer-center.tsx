@@ -65,36 +65,46 @@ export function CustomerCenter({ isOpen, onClose }: CustomerCenterProps) {
               </div>
               {customerInfo?.entitlements?.[ENTITLEMENT_IDS.PRO] && (
                 <>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Statut</span>
-                    <span className="flex items-center gap-2">
-                      {customerInfo.entitlements[ENTITLEMENT_IDS.PRO].isActive ? (
-                        <>
-                          <Check className="h-4 w-4 text-green-500" />
-                          <span className="text-green-500">Actif</span>
-                        </>
-                      ) : (
-                        <>
-                          <XIcon className="h-4 w-4 text-red-500" />
-                          <span className="text-red-500">Inactif</span>
-                        </>
-                      )}
-                    </span>
-                  </div>
-                  {customerInfo.entitlements[ENTITLEMENT_IDS.PRO].expirationDate && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Expiration</span>
-                      <span className="font-semibold">
-                        {new Date(customerInfo.entitlements[ENTITLEMENT_IDS.PRO].expirationDate).toLocaleDateString("fr-FR")}
-                      </span>
-                    </div>
-                  )}
-                  {customerInfo.entitlements[ENTITLEMENT_IDS.PRO].willRenew && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Renouvellement</span>
-                      <span className="text-sm">Automatique</span>
-                    </div>
-                  )}
+                  {(() => {
+                    const proEntitlement = customerInfo.entitlements[ENTITLEMENT_IDS.PRO];
+                    return (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-muted-foreground">Statut</span>
+                          <span className="flex items-center gap-2">
+                            {proEntitlement.isActive ? (
+                              <>
+                                <Check className="h-4 w-4 text-green-500" />
+                                <span className="text-green-500">Actif</span>
+                              </>
+                            ) : (
+                              <>
+                                <XIcon className="h-4 w-4 text-red-500" />
+                                <span className="text-red-500">Inactif</span>
+                              </>
+                            )}
+                          </span>
+                        </div>
+                        {(() => {
+                          const expirationDate = proEntitlement.expirationDate;
+                          return expirationDate ? (
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-muted-foreground">Expiration</span>
+                              <span className="font-semibold">
+                                {new Date(expirationDate).toLocaleDateString("fr-FR")}
+                              </span>
+                            </div>
+                          ) : null;
+                        })()}
+                        {proEntitlement.willRenew && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-muted-foreground">Renouvellement</span>
+                            <span className="text-sm">Automatique</span>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </>
               )}
             </div>
