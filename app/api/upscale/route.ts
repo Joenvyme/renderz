@@ -66,6 +66,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Vérifier l'entitlement RevenueCat PRO (upscale réservé aux abonnés)
+    let isPro = false;
+    try {
+      const revenueCatRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/revenuecat/check`, {
+        headers: {
+          Cookie: request.headers.get('cookie') || '',
+        },
+      });
+      if (revenueCatRes.ok) {
+        const revenueCatData = await revenueCatRes.json();
+        isPro = revenueCatData.isPro === true;
+      }
+    } catch (error) {
+      console.error('Error checking RevenueCat:', error);
+    }
+
+    // Vérifier si l'utilisateur a des privilèges spéciaux
+    const hasUnlimitedRenders = ['joey.montani@gmail.com'].includes(session.user.email || '');
+
+    if (!isPro && !hasUnlimitedRenders) {
+      return NextResponse.json(
+        { 
+          error: 'Upscale réservé aux abonnés PRO',
+          message: 'L\'upscale 4K est disponible uniquement pour les abonnés PRO. Passez à un plan PRO pour accéder à cette fonctionnalité.',
+          requiresPro: true
+        },
+        { status: 403 }
+      );
+    }
+
     // Vérifier si Magnific est configuré
     if (!process.env.MAGNIFIC_API_KEY || process.env.MAGNIFIC_API_KEY === 'votre_cle_ici') {
       return NextResponse.json(

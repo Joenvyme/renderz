@@ -4,8 +4,8 @@ import { generateWithNanoBanana, AspectRatio, ImageInput, ImageRole } from '@/li
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 
-// Limite de rendus par utilisateur
-const MAX_RENDERS_PER_USER = 10;
+// Limite de rendus par mois pour tous les utilisateurs
+const MONTHLY_RENDERS_LIMIT = 200;
 
 // Utilisateurs sans limite de rendus
 const UNLIMITED_USERS = [
@@ -69,33 +69,57 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // Vérifier le nombre de rendus de l'utilisateur
-    const { count, error: countError } = await supabase
-      .from('renders')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', session.user.id);
-
-    if (countError) {
-      console.error('Error counting renders:', countError);
-      return NextResponse.json(
-        { error: 'Erreur lors de la vérification des limites' },
-        { status: 500 }
-      );
-    }
-
     // Vérifier si l'utilisateur a des rendus illimités
     const hasUnlimitedRenders = UNLIMITED_USERS.includes(session.user.email || '');
 
-    if (!hasUnlimitedRenders && count !== null && count >= MAX_RENDERS_PER_USER) {
-      return NextResponse.json(
-        { 
-          error: 'Limite atteinte',
-          message: `Vous avez atteint la limite de ${MAX_RENDERS_PER_USER} rendus. Supprimez des rendus existants ou passez à un plan supérieur.`,
-          currentCount: count,
-          maxAllowed: MAX_RENDERS_PER_USER
+    // Vérifier l'entitlement RevenueCat PRO
+    let isPro = false;
+    try {
+      const revenueCatRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/revenuecat/check`, {
+        headers: {
+          Cookie: request.headers.get('cookie') || '',
         },
-        { status: 403 }
-      );
+      });
+      if (revenueCatRes.ok) {
+        const revenueCatData = await revenueCatRes.json();
+        isPro = revenueCatData.isPro === true;
+      }
+    } catch (error) {
+      console.error('Error checking RevenueCat:', error);
+      // Continue même en cas d'erreur RevenueCat
+    }
+
+    // Vérifier la limite mensuelle pour tous les utilisateurs (sauf ceux avec rendus illimités)
+    if (!hasUnlimitedRenders) {
+      // Calculer le début du mois en cours
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      
+      const { count, error: countError } = await supabase
+        .from('renders')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', session.user.id)
+        .gte('created_at', startOfMonth.toISOString());
+
+      if (countError) {
+        console.error('Error counting renders:', countError);
+        return NextResponse.json(
+          { error: 'Erreur lors de la vérification des limites' },
+          { status: 500 }
+        );
+      }
+
+      if (count !== null && count >= MONTHLY_RENDERS_LIMIT) {
+        return NextResponse.json(
+          { 
+            error: 'Limite mensuelle atteinte',
+            message: `Vous avez atteint la limite de ${MONTHLY_RENDERS_LIMIT} rendus ce mois. Réessayez le mois prochain.`,
+            currentCount: count,
+            maxAllowed: MONTHLY_RENDERS_LIMIT
+          },
+          { status: 403 }
+        );
+      }
     }
 
     // Créer un enregistrement dans la DB avec l'ID utilisateur

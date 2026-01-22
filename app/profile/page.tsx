@@ -336,10 +336,10 @@ export default function ProfilePage() {
 
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-sm border-b border-border">
-        <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="container mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
           <Link href="/">
             <span
-              className="text-2xl font-bold tracking-tighter cursor-pointer hover:opacity-80 transition-opacity"
+              className="text-xl sm:text-2xl font-bold tracking-tighter cursor-pointer hover:opacity-80 transition-opacity"
               style={{ fontFamily: "system-ui, -apple-system, sans-serif", letterSpacing: "-0.05em" }}
             >
               RENDERZ
@@ -348,34 +348,34 @@ export default function ProfilePage() {
           <Button
             variant="outline"
             size="sm"
-            className="font-mono text-xs"
+            className="font-mono text-[10px] sm:text-xs px-2 sm:px-3"
             onClick={async () => {
               await signOut();
               window.location.href = "/";
             }}
           >
-            <LogOut className="w-3 h-3 mr-1" />
-            SIGN OUT
+            <LogOut className="w-3 h-3 sm:mr-1" />
+            <span className="hidden sm:inline">SIGN OUT</span>
           </Button>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="relative z-10 container mx-auto px-6 pt-32 pb-16">
-        <div className="max-w-5xl mx-auto space-y-8">
+      <main className="relative z-10 container mx-auto px-3 sm:px-6 pt-24 sm:pt-32 pb-16">
+        <div className="max-w-5xl mx-auto space-y-6 sm:space-y-8">
           {/* Back Button */}
           <Link href="/">
-            <Button variant="outline" size="sm" className="font-mono text-xs">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              BACK TO GENERATOR
+            <Button variant="outline" size="sm" className="font-mono text-[10px] sm:text-xs">
+              <ArrowLeft className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
+              <span className="ml-1 sm:ml-0">BACK TO GENERATOR</span>
             </Button>
           </Link>
 
           {/* Profile Info */}
-          <Card className="p-6 bg-white/5 backdrop-blur-[2px] border border-white">
-            <h1 className="text-3xl font-bold tracking-tight mb-6">My Profile</h1>
+          <Card className="p-4 sm:p-6 bg-white/5 backdrop-blur-[2px] border border-white">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4 sm:mb-6">My Profile</h1>
             
-            <div className="flex items-start gap-6">
+            <div className="flex flex-col sm:flex-row items-start gap-4 sm:gap-6">
               {/* Avatar with Upload */}
               <div className="relative group">
                 <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center border-2 border-border overflow-hidden">
@@ -513,26 +513,26 @@ export default function ProfilePage() {
 
           {/* Renders History */}
           <div className="space-y-4">
-            <h2 className="text-2xl font-bold tracking-tight">My Renders</h2>
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight">My Renders</h2>
 
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin" />
               </div>
             ) : renders.length === 0 ? (
-              <Card className="p-8 bg-white/5 backdrop-blur-[2px] border border-border text-center">
-                <Image className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground font-mono">
+              <Card className="p-6 sm:p-8 bg-white/5 backdrop-blur-[2px] border border-border text-center">
+                <Image className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-sm sm:text-base text-muted-foreground font-mono">
                   No renders yet
                 </p>
                 <Link href="/">
-                  <Button className="mt-4 font-mono text-sm">
+                  <Button className="mt-4 font-mono text-xs sm:text-sm">
                     CREATE MY FIRST RENDER
                   </Button>
                 </Link>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {renders.map((render) => (
                   <Card
                     key={render.id}
@@ -644,28 +644,28 @@ export default function ProfilePage() {
                           {canUpscale(render) && (
                             <Button
                               size="sm"
-                              className="w-full font-mono text-xs !bg-[#000000] hover:!bg-[#1a1a1a] cursor-pointer"
+                              className="w-full font-mono text-[10px] sm:text-xs !bg-[#000000] hover:!bg-[#1a1a1a] cursor-pointer h-8 sm:h-9"
                               onClick={() => handleUpscale(render.id)}
                             >
-                              <Wand2 className="w-3 h-3 mr-2" />
-                              UPSCALE TO 4K
+                              <Wand2 className="w-3 h-3 sm:mr-2" />
+                              <span className="ml-1 sm:ml-0">UPSCALE TO 4K</span>
                             </Button>
                           )}
 
                           {/* Download buttons */}
-                          <div className="flex gap-2">
+                          <div className="flex flex-col sm:flex-row gap-2">
                             {/* Standard download */}
                             <Button
                               variant="outline"
                               size="sm"
-                              className="flex-1 font-mono text-xs"
+                              className="flex-1 font-mono text-[10px] sm:text-xs h-8 sm:h-9"
                               onClick={() => downloadImage(
                                 render.generated_image_url!,
                                 `renderz-${render.id}-standard.png`
                               )}
                             >
-                              <Download className="w-3 h-3 mr-1" />
-                              STD
+                              <Download className="w-3 h-3 sm:mr-1" />
+                              <span className="ml-1 sm:ml-0">STD</span>
                             </Button>
 
                             {/* 4K download si upscalé */}
@@ -673,14 +673,14 @@ export default function ProfilePage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="flex-1 font-mono text-xs border-green-500/50 text-green-400 hover:bg-green-500/10"
+                                className="flex-1 font-mono text-[10px] sm:text-xs border-green-500/50 text-green-400 hover:bg-green-500/10 h-8 sm:h-9"
                                 onClick={() => downloadImage(
                                   render.upscaled_image_url!,
                                   `renderz-${render.id}-4k.png`
                                 )}
                               >
-                                <Download className="w-3 h-3 mr-1" />
-                                4K
+                                <Download className="w-3 h-3 sm:mr-1" />
+                                <span className="ml-1 sm:ml-0">4K</span>
                               </Button>
                             )}
 
@@ -688,7 +688,7 @@ export default function ProfilePage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="font-mono text-xs border-red-500/50 text-red-400 hover:bg-red-500/10"
+                              className="font-mono text-[10px] sm:text-xs border-red-500/50 text-red-400 hover:bg-red-500/10 h-8 sm:h-9"
                               onClick={() => handleDeleteRender(render.id)}
                               disabled={deletingIds.has(render.id)}
                             >
@@ -708,16 +708,16 @@ export default function ProfilePage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="flex-1 font-mono text-xs border-red-500/50 text-red-400 hover:bg-red-500/10"
+                            className="flex-1 font-mono text-[10px] sm:text-xs border-red-500/50 text-red-400 hover:bg-red-500/10 h-8 sm:h-9"
                             onClick={() => handleDeleteRender(render.id)}
                             disabled={deletingIds.has(render.id)}
                           >
                             {deletingIds.has(render.id) ? (
-                              <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                              <Loader2 className="w-3 h-3 sm:mr-2 animate-spin" />
                             ) : (
-                              <Trash2 className="w-3 h-3 mr-2" />
+                              <Trash2 className="w-3 h-3 sm:mr-2" />
                             )}
-                            DELETE
+                            <span className="ml-1 sm:ml-0">DELETE</span>
                           </Button>
                         </div>
                       )}
@@ -738,17 +738,17 @@ export default function ProfilePage() {
             {previewImage && (
               <div 
                 className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
-                style={{ paddingTop: '4rem', paddingBottom: '3rem' }}
+                style={{ paddingTop: '3.5rem', paddingBottom: '2.5rem' }}
                 onClick={() => setPreviewImage(null)}
               >
-                <div className="relative w-full h-full flex items-center justify-center px-4" onClick={(e) => e.stopPropagation()}>
+                <div className="relative w-full h-full flex items-center justify-center px-2 sm:px-4" onClick={(e) => e.stopPropagation()}>
                   {/* Type label - top left */}
-                  <div className="absolute top-4 left-4 bg-black/70 px-3 py-1 text-sm font-mono text-white z-10 rounded">
+                  <div className="absolute top-2 sm:top-4 left-2 sm:left-4 bg-black/70 px-2 sm:px-3 py-1 text-xs sm:text-sm font-mono text-white z-10 rounded">
                     {previewImage.type}
                   </div>
                   
                   {/* Action buttons - top right */}
-                  <div className="absolute top-4 right-4 flex gap-2 z-10">
+                  <div className="absolute top-2 sm:top-4 right-2 sm:right-4 flex gap-1.5 sm:gap-2 z-10">
                     {/* Download button */}
                     <button
                       onClick={(e) => {
@@ -758,19 +758,19 @@ export default function ProfilePage() {
                           `renderz-${previewImage.type.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}.png`
                         );
                       }}
-                      className="w-10 h-10 bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center rounded"
+                      className="w-8 h-8 sm:w-10 sm:h-10 bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center rounded"
                       title="Download image"
                     >
-                      <Download className="w-5 h-5 text-white" />
+                      <Download className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                     </button>
                     
                     {/* Close button */}
                     <button
                       onClick={() => setPreviewImage(null)}
-                      className="w-10 h-10 bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center rounded"
+                      className="w-8 h-8 sm:w-10 sm:h-10 bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center rounded"
                       title="Close"
                     >
-                      <X className="w-5 h-5 text-white" />
+                      <X className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                     </button>
                   </div>
                   
@@ -789,20 +789,21 @@ export default function ProfilePage() {
 
       {/* Footer */}
       <footer className="fixed bottom-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-sm border-t border-border">
-        <div className="container mx-auto px-6 h-12 flex items-center justify-center">
-          <p className="text-xs font-mono text-muted-foreground">
-            © 2026 RENDERZ · ARCHITECTURE + TECHNOLOGY
+        <div className="container mx-auto px-3 sm:px-6 h-10 sm:h-12 flex items-center justify-center">
+          <p className="text-[10px] sm:text-xs font-mono text-muted-foreground text-center">
+            <span className="hidden sm:inline">© 2026 RENDERZ · ARCHITECTURE + TECHNOLOGY</span>
+            <span className="sm:hidden">© 2026 RENDERZ</span>
           </p>
         </div>
       </footer>
 
       {/* Toast "Bientôt disponible" pour l'upscale */}
       {showUpscaleToast && (
-        <div className="fixed bottom-20 right-6 z-[100] animate-in slide-in-from-bottom-2 fade-in duration-300">
+        <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-6 sm:w-auto z-[100] animate-in slide-in-from-bottom-2 fade-in duration-300">
           <div className="bg-black/90 backdrop-blur-sm border border-white/20 px-4 py-3 rounded-none shadow-lg">
             <div className="flex items-center gap-3">
-              <Sparkles className="w-4 h-4 text-yellow-400 animate-pulse" />
-              <p className="text-sm font-mono text-white">
+              <Sparkles className="w-4 h-4 text-yellow-400 animate-pulse flex-shrink-0" />
+              <p className="text-xs sm:text-sm font-mono text-white">
                 Bientôt disponible
               </p>
             </div>

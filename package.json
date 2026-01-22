@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",
+    "@revenuecat/purchases-js": "^1.24.0",
     "@supabase/auth-helpers-nextjs": "^0.8.0",
     "@supabase/supabase-js": "^2.39.0",
     "@types/pg": "^8.16.0",
@@ -36,6 +37,4 @@
     "typescript": "^5"
   }
 }
-
-
 

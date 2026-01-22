@@ -11,6 +11,9 @@ import { StripedPattern } from "@/components/magicui/striped-pattern";
 import { AuthModal } from "@/components/auth-modal";
 import { useSession, signOut } from "@/lib/auth-client";
 import { ASPECT_RATIOS, AspectRatio, ImageRole } from "@/lib/api/nano-banana";
+import { useRevenueCat } from "@/lib/hooks/use-revenuecat";
+import { Paywall } from "@/components/paywall";
+import { CustomerCenter } from "@/components/customer-center";
 
 interface RenderResult {
   id: string;
@@ -72,6 +75,13 @@ export default function LandingPage() {
   const [modificationPrompt, setModificationPrompt] = useState<string>("");
   const [isReprompting, setIsReprompting] = useState(false);
   const [showUpscaleToast, setShowUpscaleToast] = useState(false);
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [showCustomerCenter, setShowCustomerCenter] = useState(false);
+  const [paywallContext, setPaywallContext] = useState<'upgrade' | 'upscale' | 'limit_reached' | null>(null);
+  const [recommendedPlan, setRecommendedPlan] = useState<'starter' | 'pro' | 'premium' | null>('pro');
+  
+  // RevenueCat hook
+  const { isPro, isLoading: isLoadingRevenueCat } = useRevenueCat();
 
   // Fonction pour faire le polling d'un render
   const pollRenderStatus = async (renderId: string, isReprompt: boolean = false) => {
@@ -385,13 +395,11 @@ export default function LandingPage() {
 
       if (!generateRes.ok) {
         console.error('Generate error:', generateData);
-        // Gérer la limite de rendus
-        if (generateRes.status === 403 && generateData.maxAllowed) {
-          alert(`Limit reached! You have used ${generateData.currentCount}/${generateData.maxAllowed} renders. Delete existing renders in your profile or upgrade to a higher plan.`);
-          setIsGenerating(false);
-          return;
-        }
-        throw new Error(generateData.message || 'Generation failed');
+        // Afficher simplement le message d'erreur sans ouvrir le paywall
+        setIsGenerating(false);
+        const errorMessage = generateData.message || generateData.error || 'Generation failed';
+        alert(errorMessage);
+        return;
       }
       
       const { renderId } = generateData;
@@ -559,7 +567,11 @@ export default function LandingPage() {
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Upscaling failed');
+        // Afficher simplement le message d'erreur sans ouvrir le paywall
+        setIsUpscaling(false);
+        const errorMessage = errorData.message || errorData.error || 'Upscaling failed';
+        alert(errorMessage);
+        return;
       }
 
       // Polling pour suivre l'upscaling
@@ -605,49 +617,70 @@ export default function LandingPage() {
       <StripedPattern className="absolute inset-0 [mask-image:radial-gradient(800px_circle_at_center,white,transparent)]" />
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-sm border-b border-border">
-        <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="container mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-2xl font-bold tracking-tighter" style={{ fontFamily: 'system-ui, -apple-system, sans-serif', letterSpacing: '-0.05em' }}>
+            <span className="text-xl sm:text-2xl font-bold tracking-tighter" style={{ fontFamily: 'system-ui, -apple-system, sans-serif', letterSpacing: '-0.05em' }}>
               RENDERZ
             </span>
           </div>
           {session ? (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 sm:gap-3">
+              {!isPro ? (
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled
+                  className="font-mono text-[10px] sm:text-xs opacity-50 cursor-not-allowed px-2 sm:px-3"
+                >
+                  <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Upgrade</span>
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowCustomerCenter(true)}
+                  className="font-mono text-[10px] sm:text-xs px-2 sm:px-3"
+                >
+                  <User className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">PRO</span>
+                </Button>
+              )}
               <Link href="/profile">
                 <Button 
                   variant="outline" 
                   size="sm"
-                  className="font-mono text-xs"
+                  className="font-mono text-[10px] sm:text-xs px-2 sm:px-3"
                 >
                   {session.user.image ? (
                     <img 
                       src={session.user.image} 
                       alt="Profile" 
-                      className="w-5 h-5 rounded-full object-cover mr-1"
+                      className="w-4 h-4 sm:w-5 sm:h-5 rounded-full object-cover sm:mr-1"
                     />
                   ) : (
-                    <User className="w-4 h-4 mr-1" />
+                    <User className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1" />
                   )}
-                  PROFILE
+                  <span className="hidden sm:inline">PROFILE</span>
                 </Button>
               </Link>
               <Button 
                 variant="outline" 
                 size="sm"
-                className="font-mono text-xs"
+                className="font-mono text-[10px] sm:text-xs px-2 sm:px-3"
                 onClick={async () => {
                   await signOut();
                   window.location.reload();
                 }}
               >
-                <LogOut className="w-3 h-3 mr-1" />
-                SIGN OUT
+                <LogOut className="w-3 h-3 sm:mr-1" />
+                <span className="hidden sm:inline">SIGN OUT</span>
               </Button>
             </div>
           ) : (
             <Button 
               variant="outline" 
-              className="font-mono text-xs"
+              className="font-mono text-[10px] sm:text-xs px-3 sm:px-4"
               onClick={() => setShowAuthModal(true)}
             >
               SIGN IN
@@ -657,14 +690,14 @@ export default function LandingPage() {
       </header>
 
       {/* Main Content */}
-      <main className="relative z-10 container mx-auto px-6 pt-32 pb-16">
-        <div className="max-w-4xl mx-auto space-y-8">
+      <main className="relative z-10 container mx-auto px-3 sm:px-6 pt-24 sm:pt-32 pb-16">
+        <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
           {/* Title Section */}
-          <div className="text-center space-y-4">
-            <h1 className="text-6xl font-bold tracking-tight">
+          <div className="text-center space-y-3 sm:space-y-4">
+            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-bold tracking-tight px-2">
               Your <AuroraText>AI</AuroraText> <AuroraText>rendering</AuroraText> assistant.
             </h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            <p className="text-sm sm:text-base lg:text-lg text-muted-foreground max-w-2xl mx-auto px-4">
               Show concepts easily and get client approvals faster.
             </p>
           </div>
@@ -673,7 +706,7 @@ export default function LandingPage() {
           {renderResult && renderResult.generated_image_url ? (
             /* ========== RÉSULTAT - REMPLACE LE FORMULAIRE ========== */
             <Card className="max-w-2xl mx-auto overflow-hidden bg-white/5 backdrop-blur-sm border border-border">
-              <div className="p-6 space-y-6">
+              <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
                 {/* Header */}
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
@@ -737,27 +770,27 @@ export default function LandingPage() {
                     </div>
 
                     {/* Action buttons grid */}
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                       {/* Regenerate button */}
                       <Button
                         variant="outline"
                         size="lg"
                         onClick={handleRegenerate}
                         disabled={isGenerating}
-                        className="h-14 font-mono text-sm tracking-wider"
+                        className="h-12 sm:h-14 font-mono text-xs sm:text-sm tracking-wider"
                       >
-                        <RefreshCw className={`w-4 h-4 mr-2 ${isGenerating ? 'animate-spin' : ''}`} />
-                        REGENERATE
+                        <RefreshCw className={`w-3 h-3 sm:w-4 sm:h-4 sm:mr-2 ${isGenerating ? 'animate-spin' : ''}`} />
+                        <span className="ml-1 sm:ml-0">REGENERATE</span>
                       </Button>
 
                       {/* Upscale button - Temporairement désactivé */}
                       <Button
                         size="lg"
                         onClick={handleUpscale}
-                        className="h-14 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] cursor-pointer"
+                        className="h-12 sm:h-14 font-mono text-xs sm:text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] cursor-pointer"
                       >
-                        <Wand2 className="w-4 h-4 mr-2" />
-                        UPSCALE 4K
+                        <Wand2 className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
+                        <span className="ml-1 sm:ml-0">UPSCALE 4K</span>
                       </Button>
                     </div>
 
@@ -845,12 +878,12 @@ export default function LandingPage() {
                     </Button>
 
                     {/* Both versions download */}
-                    <div className="flex gap-3">
+                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                       <Button
                         asChild
                         variant="outline"
                         size="sm"
-                        className="flex-1 font-mono text-xs"
+                        className="flex-1 font-mono text-[10px] sm:text-xs h-10 sm:h-9"
                       >
                         <a
                           href={renderResult.generated_image_url}
@@ -858,18 +891,18 @@ export default function LandingPage() {
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          <Download className="w-3 h-3 mr-2" />
-                          STANDARD
+                          <Download className="w-3 h-3 sm:mr-2" />
+                          <span className="ml-1 sm:ml-0">STANDARD</span>
                         </a>
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={handleNewGeneration}
-                        className="flex-1 font-mono text-xs"
+                        className="flex-1 font-mono text-[10px] sm:text-xs h-10 sm:h-9"
                       >
-                        <RefreshCw className="w-3 h-3 mr-2" />
-                        NEW RENDER
+                        <RefreshCw className="w-3 h-3 sm:mr-2" />
+                        <span className="ml-1 sm:ml-0">NEW RENDER</span>
                       </Button>
                     </div>
                   </div>
@@ -936,7 +969,7 @@ export default function LandingPage() {
             </Card>
           ) : (
             /* ========== FORMULAIRE NORMAL ========== */
-            <Card className="max-w-2xl mx-auto p-6 space-y-4 bg-white/5 backdrop-blur-[2px] border border-white">
+            <Card className="max-w-2xl mx-auto p-4 sm:p-6 space-y-4 bg-white/5 backdrop-blur-[2px] border border-white">
               {/* Upload Zone - Images multiples */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -950,7 +983,7 @@ export default function LandingPage() {
 
                 {/* Images uploadées */}
                 {uploadedImages.length > 0 && (
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
                     {uploadedImages.map((img) => {
                       const RoleIcon = ROLE_CONFIG[img.role].icon;
                       return (
@@ -1094,31 +1127,31 @@ export default function LandingPage() {
 
               {/* Aspect Ratio Selector */}
               <div className="space-y-3">
-                <label className="text-sm font-mono uppercase tracking-wider">
+                <label className="text-xs sm:text-sm font-mono uppercase tracking-wider">
                   Aspect Ratio
                 </label>
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                   {ASPECT_RATIOS.map((ratio) => (
                     <button
                       key={ratio.value}
                       type="button"
                       onClick={() => setAspectRatio(ratio.value)}
                       className={`
-                        p-3 border-2 transition-all duration-200 text-center
+                        p-2 sm:p-3 border-2 transition-all duration-200 text-center
                         ${aspectRatio === ratio.value 
                           ? "border-primary bg-primary/10" 
                           : "border-border hover:border-primary/50"
                         }
                       `}
                     >
-                      <div className="text-xs font-mono font-bold">{ratio.label}</div>
-                      <div className="text-[10px] text-muted-foreground font-mono mt-1">
+                      <div className="text-[10px] sm:text-xs font-mono font-bold">{ratio.label}</div>
+                      <div className="text-[9px] sm:text-[10px] text-muted-foreground font-mono mt-0.5 sm:mt-1">
                         {ratio.value}
                       </div>
                     </button>
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground font-mono">
+                <p className="text-[10px] sm:text-xs text-muted-foreground font-mono">
                   Output: {ASPECT_RATIOS.find(r => r.value === aspectRatio)?.resolution}
                 </p>
               </div>
@@ -1148,14 +1181,15 @@ export default function LandingPage() {
               <Button
                 onClick={handleGenerate}
                 disabled={uploadedImages.length === 0 || !prompt.trim()}
-                className="w-full h-14 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] !opacity-100 transition-all"
+                className="w-full h-12 sm:h-14 font-mono text-xs sm:text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] !opacity-100 transition-all"
               >
-                <span className="flex items-center justify-center gap-2">
-                  GENERATE RENDER
+                <span className="flex items-center justify-center gap-1.5 sm:gap-2">
+                  <span className="hidden sm:inline">GENERATE RENDER</span>
+                  <span className="sm:hidden">GENERATE</span>
                   {uploadedImages.length > 1 && (
-                    <span className="text-xs opacity-70">({uploadedImages.length} images)</span>
+                    <span className="text-[10px] sm:text-xs opacity-70">({uploadedImages.length})</span>
                   )}
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 group-hover:translate-x-1 transition-transform" />
                 </span>
               </Button>
             </Card>
@@ -1166,20 +1200,21 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="fixed bottom-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-sm border-t border-border">
-        <div className="container mx-auto px-6 h-12 flex items-center justify-center">
-          <p className="text-xs font-mono text-muted-foreground">
-            © 2026 RENDERZ · ARCHITECTURE + TECHNOLOGY
+        <div className="container mx-auto px-3 sm:px-6 h-10 sm:h-12 flex items-center justify-center">
+          <p className="text-[10px] sm:text-xs font-mono text-muted-foreground text-center">
+            <span className="hidden sm:inline">© 2026 RENDERZ · ARCHITECTURE + TECHNOLOGY</span>
+            <span className="sm:hidden">© 2026 RENDERZ</span>
           </p>
         </div>
       </footer>
 
       {/* Toast "Bientôt disponible" pour l'upscale */}
       {showUpscaleToast && (
-        <div className="fixed bottom-20 right-6 z-[100] animate-in slide-in-from-bottom-2 fade-in duration-300">
+        <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-6 sm:w-auto z-[100] animate-in slide-in-from-bottom-2 fade-in duration-300">
           <div className="bg-black/90 backdrop-blur-sm border border-white/20 px-4 py-3 rounded-none shadow-lg">
             <div className="flex items-center gap-3">
-              <Sparkles className="w-4 h-4 text-yellow-400 animate-pulse" />
-              <p className="text-sm font-mono text-white">
+              <Sparkles className="w-4 h-4 text-yellow-400 animate-pulse flex-shrink-0" />
+              <p className="text-xs sm:text-sm font-mono text-white">
                 Bientôt disponible
               </p>
             </div>
@@ -1196,6 +1231,31 @@ export default function LandingPage() {
           // La génération sera lancée automatiquement via le useEffect
           // qui surveille session + pendingGeneration
         }}
+      />
+
+      {/* Paywall */}
+      <Paywall
+        isOpen={showPaywall}
+        onClose={() => {
+          setShowPaywall(false);
+          setPaywallContext(null);
+          setRecommendedPlan('pro');
+        }}
+        onSuccess={() => {
+          setShowPaywall(false);
+          setPaywallContext(null);
+          setRecommendedPlan('pro');
+          // Recharger la page pour mettre à jour les entitlements
+          window.location.reload();
+        }}
+        recommendedPlan={recommendedPlan}
+        context={paywallContext}
+      />
+
+      {/* Customer Center */}
+      <CustomerCenter
+        isOpen={showCustomerCenter}
+        onClose={() => setShowCustomerCenter(false)}
       />
     </div>
   );
