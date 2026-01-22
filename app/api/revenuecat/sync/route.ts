@@ -34,13 +34,16 @@ export async function POST(request: NextRequest) {
     // Récupérer les infos client mises à jour
     const customerInfo = await purchases.getCustomerInfo();
 
+    // Utiliser une assertion de type pour accéder aux propriétés qui peuvent ne pas être dans le type strict
+    const customerInfoAny = customerInfo as any;
+
     return NextResponse.json({
       success: true,
       userId: session.user.id,
       customerInfo: {
         entitlements: customerInfo.entitlements,
         activeSubscriptions: customerInfo.activeSubscriptions,
-        allPurchasedProductIdentifiers: customerInfo.allPurchasedProductIdentifiers,
+        allPurchasedProductIdentifiers: customerInfoAny.allPurchasedProductIdentifiers || [],
       },
     });
   } catch (error) {

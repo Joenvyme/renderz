@@ -37,13 +37,16 @@ export async function GET(request: NextRequest) {
     const proEntitlement = (customerInfo.entitlements as Record<string, any>)[ENTITLEMENT_ID];
     const isPro = proEntitlement?.isActive === true;
 
+    // Utiliser une assertion de type pour accéder aux propriétés qui peuvent ne pas être dans le type strict
+    const customerInfoAny = customerInfo as any;
+
     return NextResponse.json({
       isPro,
       customerInfo: {
         entitlements: customerInfo.entitlements,
         activeSubscriptions: customerInfo.activeSubscriptions,
-        allPurchasedProductIdentifiers: customerInfo.allPurchasedProductIdentifiers,
-        latestExpirationDate: customerInfo.latestExpirationDate,
+        allPurchasedProductIdentifiers: customerInfoAny.allPurchasedProductIdentifiers || [],
+        latestExpirationDate: customerInfoAny.latestExpirationDate,
       },
     });
   } catch (error) {
