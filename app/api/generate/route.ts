@@ -72,23 +72,6 @@ export async function POST(request: NextRequest) {
     // Vérifier si l'utilisateur a des rendus illimités
     const hasUnlimitedRenders = UNLIMITED_USERS.includes(session.user.email || '');
 
-    // Vérifier l'entitlement RevenueCat PRO
-    let isPro = false;
-    try {
-      const revenueCatRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/revenuecat/check`, {
-        headers: {
-          Cookie: request.headers.get('cookie') || '',
-        },
-      });
-      if (revenueCatRes.ok) {
-        const revenueCatData = await revenueCatRes.json();
-        isPro = revenueCatData.isPro === true;
-      }
-    } catch (error) {
-      console.error('Error checking RevenueCat:', error);
-      // Continue même en cas d'erreur RevenueCat
-    }
-
     // Vérifier la limite mensuelle pour tous les utilisateurs (sauf ceux avec rendus illimités)
     if (!hasUnlimitedRenders) {
       // Calculer le début du mois en cours

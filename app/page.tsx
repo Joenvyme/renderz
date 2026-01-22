@@ -11,9 +11,6 @@ import { StripedPattern } from "@/components/magicui/striped-pattern";
 import { AuthModal } from "@/components/auth-modal";
 import { useSession, signOut } from "@/lib/auth-client";
 import { ASPECT_RATIOS, AspectRatio, ImageRole } from "@/lib/api/nano-banana";
-import { useRevenueCat } from "@/lib/hooks/use-revenuecat";
-import { Paywall } from "@/components/paywall";
-import { CustomerCenter } from "@/components/customer-center";
 
 interface RenderResult {
   id: string;
@@ -75,13 +72,6 @@ export default function LandingPage() {
   const [modificationPrompt, setModificationPrompt] = useState<string>("");
   const [isReprompting, setIsReprompting] = useState(false);
   const [showUpscaleToast, setShowUpscaleToast] = useState(false);
-  const [showPaywall, setShowPaywall] = useState(false);
-  const [showCustomerCenter, setShowCustomerCenter] = useState(false);
-  const [paywallContext, setPaywallContext] = useState<'upgrade' | 'upscale' | 'limit_reached' | null>(null);
-  const [recommendedPlan, setRecommendedPlan] = useState<'starter' | 'pro' | 'premium' | null>('pro');
-  
-  // RevenueCat hook
-  const { isPro, isLoading: isLoadingRevenueCat } = useRevenueCat();
 
   // Fonction pour faire le polling d'un render
   const pollRenderStatus = async (renderId: string, isReprompt: boolean = false) => {
@@ -395,7 +385,7 @@ export default function LandingPage() {
 
       if (!generateRes.ok) {
         console.error('Generate error:', generateData);
-        // Afficher simplement le message d'erreur sans ouvrir le paywall
+        // Afficher simplement le message d'erreur
         setIsGenerating(false);
         const errorMessage = generateData.message || generateData.error || 'Generation failed';
         alert(errorMessage);
@@ -567,7 +557,7 @@ export default function LandingPage() {
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        // Afficher simplement le message d'erreur sans ouvrir le paywall
+        // Afficher simplement le message d'erreur
         setIsUpscaling(false);
         const errorMessage = errorData.message || errorData.error || 'Upscaling failed';
         alert(errorMessage);
@@ -625,27 +615,6 @@ export default function LandingPage() {
           </div>
           {session ? (
             <div className="flex items-center gap-1.5 sm:gap-3">
-              {!isPro ? (
-                <Button
-                  variant="default"
-                  size="sm"
-                  disabled
-                  className="font-mono text-[10px] sm:text-xs opacity-50 cursor-not-allowed px-2 sm:px-3"
-                >
-                  <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Upgrade</span>
-                </Button>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowCustomerCenter(true)}
-                  className="font-mono text-[10px] sm:text-xs px-2 sm:px-3"
-                >
-                  <User className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
-                  <span className="hidden sm:inline">PRO</span>
-                </Button>
-              )}
               <Link href="/profile">
                 <Button 
                   variant="outline" 
@@ -1233,30 +1202,6 @@ export default function LandingPage() {
         }}
       />
 
-      {/* Paywall */}
-      <Paywall
-        isOpen={showPaywall}
-        onClose={() => {
-          setShowPaywall(false);
-          setPaywallContext(null);
-          setRecommendedPlan('pro');
-        }}
-        onSuccess={() => {
-          setShowPaywall(false);
-          setPaywallContext(null);
-          setRecommendedPlan('pro');
-          // Recharger la page pour mettre à jour les entitlements
-          window.location.reload();
-        }}
-        recommendedPlan={recommendedPlan}
-        context={paywallContext}
-      />
-
-      {/* Customer Center */}
-      <CustomerCenter
-        isOpen={showCustomerCenter}
-        onClose={() => setShowCustomerCenter(false)}
-      />
     </div>
   );
 }
