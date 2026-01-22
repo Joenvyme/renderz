@@ -51,10 +51,10 @@ export function useRevenueCat(): UseRevenueCatReturn {
 
       // Charger les infos client (bonne pratique: toujours vérifier après identification)
       const info = await purchases.getCustomerInfo();
-      setCustomerInfo(info);
+      setCustomerInfo(info as RevenueCatCustomerInfo);
 
       // Vérifier l'entitlement PRO (bonne pratique: se baser sur CustomerInfo)
-      const proEntitlement = info.entitlements[ENTITLEMENT_IDS.PRO];
+      const proEntitlement = (info.entitlements as Record<string, any>)[ENTITLEMENT_IDS.PRO];
       setIsPro(proEntitlement?.isActive === true);
 
       // Charger les produits disponibles via Offerings (bonne pratique RevenueCat)
@@ -177,10 +177,10 @@ export function useRevenueCat(): UseRevenueCatReturn {
       }
 
       const { customerInfo: newCustomerInfo } = await purchases.purchasePackage(packageToPurchase);
-      setCustomerInfo(newCustomerInfo);
+      setCustomerInfo(newCustomerInfo as RevenueCatCustomerInfo);
 
       // Vérifier l'entitlement PRO
-      const proEntitlement = newCustomerInfo.entitlements[ENTITLEMENT_IDS.PRO];
+      const proEntitlement = (newCustomerInfo.entitlements as Record<string, any>)[ENTITLEMENT_IDS.PRO];
       setIsPro(proEntitlement?.isActive === true);
 
       return { success: true };
@@ -200,10 +200,10 @@ export function useRevenueCat(): UseRevenueCatReturn {
       setError(null);
       const purchases = await getPurchasesInstance();
       const info = await purchases.restorePurchases();
-      setCustomerInfo(info);
+      setCustomerInfo(info as RevenueCatCustomerInfo);
 
       // Vérifier l'entitlement PRO
-      const proEntitlement = info.entitlements[ENTITLEMENT_IDS.PRO];
+      const proEntitlement = (info.entitlements as Record<string, any>)[ENTITLEMENT_IDS.PRO];
       setIsPro(proEntitlement?.isActive === true);
 
       return { success: true };

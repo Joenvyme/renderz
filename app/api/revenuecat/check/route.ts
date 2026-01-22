@@ -33,7 +33,8 @@ export async function GET(request: NextRequest) {
     const customerInfo = await purchases.getCustomerInfo();
 
     // Vérifier l'entitlement PRO
-    const proEntitlement = customerInfo.entitlements[ENTITLEMENT_ID];
+    // Utiliser une assertion de type pour accéder à l'entitlement dynamiquement
+    const proEntitlement = (customerInfo.entitlements as Record<string, any>)[ENTITLEMENT_ID];
     const isPro = proEntitlement?.isActive === true;
 
     return NextResponse.json({
