@@ -20,7 +20,7 @@ export async function GET() {
       );
     }
 
-    const categories = [...new Set((data || []).map(item => item.category))];
+    const categories = Array.from(new Set((data || []).map(item => item.category)));
     return NextResponse.json({ categories });
   } catch (error) {
     return NextResponse.json(

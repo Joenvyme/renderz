@@ -24,9 +24,9 @@ export async function GET() {
       );
     }
 
-    const suppliers = [...new Set((data || [])
+    const suppliers = Array.from(new Set((data || [])
       .map(item => item.supplier_id)
-      .filter(id => id && id.trim() !== ''))]; // Filtrer les valeurs nulles ou vides
+      .filter(id => id && id.trim() !== ''))); // Filtrer les valeurs nulles ou vides
     
     console.log('Fournisseurs trouvés:', suppliers);
     console.log('Nombre de fournisseurs:', suppliers.length);

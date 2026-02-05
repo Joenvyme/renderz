@@ -20,7 +20,7 @@ export async function GET() {
       );
     }
 
-    const styles = [...new Set((data || []).map(item => item.style))];
+    const styles = Array.from(new Set((data || []).map(item => item.style)));
     return NextResponse.json({ styles });
   } catch (error) {
     return NextResponse.json(
