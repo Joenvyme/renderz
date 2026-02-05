@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Upload, Sparkles, ArrowRight, Download, LogOut, User, RefreshCw, Wand2, Check, X, Plus, Image as ImageIcon, Palette, Layers } from "lucide-react";
+import { Upload, Sparkles, ArrowRight, Download, LogOut, User, RefreshCw, Wand2, Check, X, Plus, Image as ImageIcon, Palette, Layers, Sofa, Zap } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,6 +9,9 @@ import { Card } from "@/components/ui/card";
 import { AuroraText } from "@/components/ui/aurora-text";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
 import { AuthModal } from "@/components/auth-modal";
+import { FurnitureCatalog } from "@/components/furniture-catalog";
+import { BeforeAfterSlider } from "@/components/before-after-slider";
+import { AnimatedBeamDemo } from "@/components/database-integration-demo";
 import { useSession, signOut } from "@/lib/auth-client";
 import { ASPECT_RATIOS, AspectRatio, ImageRole } from "@/lib/api/nano-banana";
 
@@ -72,6 +75,9 @@ export default function LandingPage() {
   const [modificationPrompt, setModificationPrompt] = useState<string>("");
   const [isReprompting, setIsReprompting] = useState(false);
   const [showUpscaleToast, setShowUpscaleToast] = useState(false);
+  const [selectedFurniture, setSelectedFurniture] = useState<any[]>([]);
+  const [showFurnitureCatalog, setShowFurnitureCatalog] = useState(false);
+  const [showCatalogToast, setShowCatalogToast] = useState(false);
 
   // Fonction pour faire le polling d'un render
   const pollRenderStatus = async (renderId: string, isReprompt: boolean = false) => {
@@ -370,7 +376,17 @@ export default function LandingPage() {
         console.log(`✓ ${img.role} image uploaded:`, url);
       }
 
-      // 2. Lancer la génération avec toutes les images
+      // 2. Enrichir le prompt avec les meubles sélectionnés
+      let enhancedPrompt = prompt;
+      if (selectedFurniture.length > 0) {
+        const furnitureDescriptions = selectedFurniture
+          .map(item => item.promptEnhancement)
+          .join(', ');
+        enhancedPrompt = `${prompt}. Include these furniture items: ${furnitureDescriptions}`;
+        console.log('🪑 Enhanced prompt with furniture:', selectedFurniture.length, 'items');
+      }
+
+      // 3. Lancer la génération avec toutes les images
       console.log('🚀 Starting generation with', uploadedUrls.length, 'image(s)...');
       
       const images = uploadedUrls.map(item => ({ url: item.url, role: item.role }));
@@ -378,7 +394,7 @@ export default function LandingPage() {
       const generateRes = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ images, prompt, aspectRatio }),
+        body: JSON.stringify({ images, prompt: enhancedPrompt, aspectRatio }),
       });
 
       const generateData = await generateRes.json();
@@ -603,13 +619,15 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-white overflow-hidden">
-      <StripedPattern className="absolute inset-0 [mask-image:radial-gradient(800px_circle_at_center,white,transparent)]" />
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-sm border-b border-border">
+    <>
+      {/* Section 1: Hero avec fond à rayures (plein écran) */}
+      <div className="relative min-h-screen bg-white overflow-hidden">
+        <StripedPattern className="absolute inset-0 [mask-image:radial-gradient(800px_circle_at_center,white,transparent)]" />
+        {/* Header */}
+        <header className="fixed top-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-sm border-b border-border">
         <div className="container mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xl sm:text-2xl font-bold tracking-tighter" style={{ fontFamily: 'system-ui, -apple-system, sans-serif', letterSpacing: '-0.05em' }}>
+            <span className="text-xl sm:text-2xl font-bold tracking-tighter" style={{ fontFamily: "'Funnel Display', system-ui, sans-serif", letterSpacing: '-0.05em' }}>
               RENDERZ
             </span>
           </div>
@@ -659,17 +677,20 @@ export default function LandingPage() {
       </header>
 
       {/* Main Content */}
-      <main className="relative z-10 container mx-auto px-3 sm:px-6 pt-24 sm:pt-32 pb-16">
-        <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
+      <main className="relative z-10 container mx-auto px-2 sm:px-4 pt-32 sm:pt-40 lg:pt-48 pb-16">
+        <div className="max-w-6xl mx-auto space-y-6 sm:space-y-8">
           {/* Title Section */}
-          <div className="text-center space-y-3 sm:space-y-4">
-            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-bold tracking-tight px-2">
+          <div className="text-center space-y-4 sm:space-y-6">
+            <h1 className="text-3xl sm:text-5xl lg:text-6xl xl:text-7xl 2xl:text-8xl font-bold tracking-tight whitespace-normal sm:whitespace-nowrap px-2">
               Your <AuroraText>AI</AuroraText> <AuroraText>rendering</AuroraText> assistant.
             </h1>
-            <p className="text-sm sm:text-base lg:text-lg text-muted-foreground max-w-2xl mx-auto px-4">
+            <p className="text-lg sm:text-xl lg:text-2xl xl:text-3xl 2xl:text-4xl font-semibold text-black text-center" style={{ textShadow: '0 2px 8px rgba(255,255,255,0.6), 0 4px 16px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)' }}>
               Show concepts easily and get client approvals faster.
             </p>
           </div>
+          
+          {/* Espacement supplémentaire avant le formulaire */}
+          <div className="pt-4 sm:pt-6 lg:pt-8"></div>
 
           {/* Affichage conditionnel : Résultat OU Chargement OU Formulaire */}
           {renderResult && renderResult.generated_image_url ? (
@@ -726,10 +747,10 @@ export default function LandingPage() {
                   // Image générée mais pas encore upscalée
                   <div className="space-y-3">
                     {/* Status info */}
-                    <div className="border border-border bg-muted/30 p-3">
-                      <div className="flex items-start gap-3">
-                        <div className="w-1 h-10 bg-black"></div>
-                        <div className="flex-1 space-y-0.5 font-mono text-xs">
+                    <div className="border border-border bg-muted/30 p-2.5 sm:p-3">
+                      <div className="flex items-start gap-2 sm:gap-3">
+                        <div className="w-0.5 sm:w-1 h-8 sm:h-10 bg-black flex-shrink-0"></div>
+                        <div className="flex-1 space-y-0.5 font-mono text-[10px] sm:text-xs">
                           <p className="text-black font-medium">🎨 STANDARD QUALITY</p>
                           <p className="text-muted-foreground">
                             Like this result? Upscale to 4K or regenerate a new version.
@@ -768,7 +789,7 @@ export default function LandingPage() {
                       asChild
                       variant="outline"
                       size="sm"
-                      className="w-full font-mono text-xs border-2 border-border hover:bg-muted/50 hover:border-primary/50 transition-colors"
+                      className="w-full font-mono text-[10px] sm:text-xs h-9 sm:h-10 border-2 border-border hover:bg-muted/50 hover:border-primary/50 transition-colors"
                     >
                       <a
                         href={renderResult.generated_image_url}
@@ -776,38 +797,41 @@ export default function LandingPage() {
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        <Download className="w-3 h-3 mr-2" />
-                        DOWNLOAD STANDARD VERSION
+                        <Download className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-1.5 sm:mr-2" />
+                        <span className="hidden sm:inline">DOWNLOAD STANDARD VERSION</span>
+                        <span className="sm:hidden">DOWNLOAD</span>
                       </a>
                     </Button>
 
                     {/* Reprompt section - Modifier le rendu généré */}
                     <div className="space-y-2 pt-2 border-t border-border">
-                      <label className="text-xs font-mono text-muted-foreground">
+                      <label className="text-[10px] sm:text-xs font-mono text-muted-foreground">
                         Modify this render:
                       </label>
                       <Textarea
                         value={modificationPrompt}
                         onChange={(e) => setModificationPrompt(e.target.value)}
                         placeholder="e.g., make it more vibrant, change lighting to sunset, add more details..."
-                        className="min-h-[60px] resize-none rounded-none font-mono text-xs"
+                        className="min-h-[50px] sm:min-h-[60px] resize-none rounded-none font-mono text-[10px] sm:text-xs"
                         disabled={isReprompting || isGenerating}
                       />
                       <Button
                         onClick={handleReprompt}
                         disabled={!modificationPrompt.trim() || isReprompting || isGenerating}
                         size="sm"
-                        className="w-full font-mono text-xs !bg-[#000000] hover:!bg-[#1a1a1a]"
+                        className="w-full font-mono text-[10px] sm:text-xs h-9 sm:h-10 !bg-[#000000] hover:!bg-[#1a1a1a]"
                       >
                         {isReprompting ? (
                           <>
-                            <RefreshCw className="w-3 h-3 mr-2 animate-spin" />
-                            APPLYING MODIFICATION...
+                            <RefreshCw className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-1.5 sm:mr-2 animate-spin" />
+                            <span className="hidden sm:inline">APPLYING MODIFICATION...</span>
+                            <span className="sm:hidden">APPLYING...</span>
                           </>
                         ) : (
                           <>
-                            <Sparkles className="w-3 h-3 mr-2" />
-                            APPLY MODIFICATION
+                            <Sparkles className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-1.5 sm:mr-2" />
+                            <span className="hidden sm:inline">APPLY MODIFICATION</span>
+                            <span className="sm:hidden">APPLY</span>
                           </>
                         )}
                       </Button>
@@ -815,12 +839,12 @@ export default function LandingPage() {
                   </div>
                 ) : (
                   // Image upscalée - Afficher le bouton de téléchargement
-                  <div className="space-y-4">
+                  <div className="space-y-3 sm:space-y-4">
                     {/* Success status */}
-                    <div className="border border-green-500/50 bg-green-500/10 p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-1 h-12 bg-green-500"></div>
-                        <div className="flex-1 space-y-1 font-mono text-xs">
+                    <div className="border border-green-500/50 bg-green-500/10 p-3 sm:p-4">
+                      <div className="flex items-start gap-2 sm:gap-3">
+                        <div className="w-0.5 sm:w-1 h-10 sm:h-12 bg-green-500 flex-shrink-0"></div>
+                        <div className="flex-1 space-y-0.5 sm:space-y-1 font-mono text-[10px] sm:text-xs">
                           <p className="text-green-400 font-medium">✓ UPSCALING COMPLETE</p>
                           <p className="text-muted-foreground">
                             Maximum quality image available (4096x4096, ~15MB)
@@ -833,7 +857,7 @@ export default function LandingPage() {
                     <Button
                       asChild
                       size="lg"
-                      className="w-full h-14 font-mono text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a]"
+                      className="w-full h-12 sm:h-14 font-mono text-xs sm:text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a]"
                     >
                       <a
                         href={renderResult.upscaled_image_url}
@@ -841,8 +865,9 @@ export default function LandingPage() {
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        <Download className="w-5 h-5 mr-2" />
-                        DOWNLOAD 4K IMAGE
+                        <Download className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2" />
+                        <span className="hidden sm:inline">DOWNLOAD 4K IMAGE</span>
+                        <span className="sm:hidden">DOWNLOAD 4K</span>
                       </a>
                     </Button>
 
@@ -852,7 +877,7 @@ export default function LandingPage() {
                         asChild
                         variant="outline"
                         size="sm"
-                        className="flex-1 font-mono text-[10px] sm:text-xs h-10 sm:h-9"
+                        className="flex-1 font-mono text-[10px] sm:text-xs h-9 sm:h-10"
                       >
                         <a
                           href={renderResult.generated_image_url}
@@ -860,7 +885,7 @@ export default function LandingPage() {
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          <Download className="w-3 h-3 sm:mr-2" />
+                          <Download className="w-2.5 h-2.5 sm:w-3 sm:h-3 sm:mr-1.5 lg:mr-2" />
                           <span className="ml-1 sm:ml-0">STANDARD</span>
                         </a>
                       </Button>
@@ -868,9 +893,9 @@ export default function LandingPage() {
                         variant="outline"
                         size="sm"
                         onClick={handleNewGeneration}
-                        className="flex-1 font-mono text-[10px] sm:text-xs h-10 sm:h-9"
+                        className="flex-1 font-mono text-[10px] sm:text-xs h-9 sm:h-10"
                       >
-                        <RefreshCw className="w-3 h-3 sm:mr-2" />
+                        <RefreshCw className="w-2.5 h-2.5 sm:w-3 sm:h-3 sm:mr-1.5 lg:mr-2" />
                         <span className="ml-1 sm:ml-0">NEW RENDER</span>
                       </Button>
                     </div>
@@ -878,7 +903,7 @@ export default function LandingPage() {
                 )}
 
                 {/* Info footer */}
-                <div className="flex items-center justify-center gap-4 text-xs font-mono text-muted-foreground pt-2 border-t border-border">
+                <div className="flex items-center justify-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono text-muted-foreground pt-2 border-t border-border">
                   <span>GEMINI 3 PRO</span>
                   <span>·</span>
                   <span>
@@ -903,12 +928,12 @@ export default function LandingPage() {
                 </div>
 
                 {/* Status text */}
-                <div className="text-center space-y-3">
-                  <h3 className="text-xl font-bold tracking-tight">Generating...</h3>
-                  <p className="text-sm text-muted-foreground">
+                <div className="text-center space-y-2 sm:space-y-3">
+                  <h3 className="text-lg sm:text-xl font-bold tracking-tight">Generating...</h3>
+                  <p className="text-xs sm:text-sm text-muted-foreground">
                     Your render is being created.
                   </p>
-                  <p className="text-xs text-muted-foreground font-mono">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground font-mono">
                     ⏱️ This may take up to 10 minutes.
                   </p>
                 </div>
@@ -918,8 +943,8 @@ export default function LandingPage() {
               <div className="border-t border-border"></div>
 
               {/* New render section */}
-              <div className="text-center space-y-4">
-                <p className="text-sm text-muted-foreground">
+              <div className="text-center space-y-3 sm:space-y-4">
+                <p className="text-xs sm:text-sm text-muted-foreground px-2">
                   Your current render is not lost! It will be available in your{" "}
                   <Link href="/profile" className="text-primary hover:underline font-medium">
                     profile
@@ -929,16 +954,17 @@ export default function LandingPage() {
                 <Button
                   variant="outline"
                   onClick={handleNewGeneration}
-                  className="font-mono text-sm"
+                  className="font-mono text-xs sm:text-sm h-9 sm:h-10"
                 >
-                  <Upload className="w-4 h-4 mr-2" />
-                  CREATE NEW RENDER
+                  <Upload className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
+                  <span className="hidden sm:inline">CREATE NEW RENDER</span>
+                  <span className="sm:hidden">NEW RENDER</span>
                 </Button>
               </div>
             </Card>
           ) : (
             /* ========== FORMULAIRE NORMAL ========== */
-            <Card className="max-w-2xl mx-auto p-4 sm:p-6 space-y-4 bg-white/5 backdrop-blur-[2px] border border-white">
+            <Card className="max-w-2xl mx-auto p-4 sm:p-6 space-y-4 bg-white/20 backdrop-blur-sm gradient-shadow">
               {/* Upload Zone - Images multiples */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -982,13 +1008,13 @@ export default function LandingPage() {
                             </button>
                           </div>
                           {/* Sélecteur de rôle */}
-                          <div className="mt-2 flex gap-1">
+                          <div className="mt-1.5 sm:mt-2 flex gap-0.5 sm:gap-1">
                             {(Object.keys(ROLE_CONFIG) as ImageRole[]).map((role) => (
                               <button
                                 key={role}
                                 onClick={() => changeImageRole(img.id, role)}
                                 className={`
-                                  flex-1 py-1 text-[10px] font-mono uppercase transition-all
+                                  flex-1 py-0.5 sm:py-1 text-[9px] sm:text-[10px] font-mono uppercase transition-all
                                   ${img.role === role 
                                     ? 'bg-primary text-primary-foreground' 
                                     : 'bg-muted hover:bg-muted/80 text-muted-foreground'
@@ -1026,9 +1052,9 @@ export default function LandingPage() {
                           onChange={handleFileSelect}
                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                         />
-                        <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                          <Plus className="w-6 h-6" />
-                          <span className="text-xs font-mono">ADD</span>
+                        <div className="flex flex-col items-center gap-1.5 sm:gap-2 text-muted-foreground">
+                          <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
+                          <span className="text-[10px] sm:text-xs font-mono">ADD</span>
                         </div>
                       </div>
                     )}
@@ -1042,11 +1068,11 @@ export default function LandingPage() {
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     className={`
-                      relative border-2 border-dashed rounded-none p-12
+                      relative border border-dashed rounded-lg p-8 sm:p-12
                       transition-all duration-200 cursor-pointer
                       ${isDragging 
                         ? "border-primary bg-primary/5" 
-                        : "border-border hover:border-primary/50"
+                        : "border-border/90 hover:border-primary/50 bg-muted/20 hover:bg-muted/60"
                       }
                     `}
                   >
@@ -1058,117 +1084,220 @@ export default function LandingPage() {
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
                     
-                    <div className="flex flex-col items-center justify-center space-y-4 text-center">
-                      <div className="relative">
-                        <div className="absolute inset-0 tech-gradient opacity-20 blur-xl"></div>
-                        <Upload className="w-12 h-12 relative z-10" />
+                    <div className="flex flex-col items-center justify-center space-y-4 sm:space-y-5 text-center">
+                      {/* Icône Upload unique */}
+                      <div className="flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-background/60 backdrop-blur-sm border border-border/50">
+                        <Upload className="w-5 h-5 sm:w-6 sm:h-6 text-muted-foreground" />
                       </div>
-                      <div className="space-y-2">
-                        <p className="text-lg font-medium">
-                          Drop your reference images here
-                        </p>
-                        <p className="text-sm text-muted-foreground font-mono">
-                          UP TO 3 IMAGES · MAIN + STYLE + REFERENCE
-                        </p>
-                      </div>
+                      
+                      {/* Texte descriptif */}
+                      <p className="text-sm sm:text-base text-muted-foreground max-w-md mx-auto">
+                        Add sketch, draw, pictures anything you want to start working with
+                      </p>
                     </div>
                   </div>
                 )}
 
                 {/* Légende des rôles */}
                 {uploadedImages.length > 0 && (
-                  <div className="flex flex-wrap gap-4 text-xs font-mono text-muted-foreground pt-2">
-                    <div className="flex items-center gap-1.5">
-                      <ImageIcon className="w-3 h-3" />
+                  <div className="flex flex-wrap gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono text-muted-foreground pt-2">
+                    <div className="flex items-center gap-1 sm:gap-1.5">
+                      <ImageIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                       <span>MAIN: primary content</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <Palette className="w-3 h-3" />
+                    <div className="flex items-center gap-1 sm:gap-1.5">
+                      <Palette className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                       <span>STYLE: visual style</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <Layers className="w-3 h-3" />
+                    <div className="flex items-center gap-1 sm:gap-1.5">
+                      <Layers className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                       <span>REF: additional context</span>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Aspect Ratio Selector */}
-              <div className="space-y-3">
-                <label className="text-xs sm:text-sm font-mono uppercase tracking-wider">
-                  Aspect Ratio
-                </label>
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                  {ASPECT_RATIOS.map((ratio) => (
-                    <button
-                      key={ratio.value}
-                      type="button"
-                      onClick={() => setAspectRatio(ratio.value)}
-                      className={`
-                        p-2 sm:p-3 border-2 transition-all duration-200 text-center
-                        ${aspectRatio === ratio.value 
-                          ? "border-primary bg-primary/10" 
-                          : "border-border hover:border-primary/50"
-                        }
-                      `}
-                    >
-                      <div className="text-[10px] sm:text-xs font-mono font-bold">{ratio.label}</div>
-                      <div className="text-[9px] sm:text-[10px] text-muted-foreground font-mono mt-0.5 sm:mt-1">
-                        {ratio.value}
+              {/* Afficher le reste du formulaire uniquement si au moins une image est uploadée */}
+              {uploadedImages.length > 0 && (
+                <>
+                  {/* Prompt Input */}
+                  <div className="space-y-2 sm:space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs sm:text-sm font-mono uppercase tracking-wider">
+                        Generation instructions
+                      </label>
+                      <span className="text-[10px] sm:text-xs font-mono text-muted-foreground">
+                        {prompt.length} / 500
+                      </span>
+                    </div>
+                    <Textarea
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
+                      placeholder="Describe the style, mood, and details you want in your photorealistic render..."
+                      className="min-h-[100px] sm:min-h-[120px] resize-none rounded-none font-mono text-xs sm:text-sm"
+                    />
+                    <p className="text-[10px] sm:text-xs text-muted-foreground font-mono">
+                      Example: "Photorealistic architectural render, golden hour lighting, modern materials"
+                    </p>
+                  </div>
+
+                  {/* Aspect Ratio Selector */}
+                  <div className="space-y-2 sm:space-y-3">
+                    <label className="text-xs sm:text-sm font-mono uppercase tracking-wider">
+                      Aspect Ratio
+                    </label>
+                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2">
+                      {ASPECT_RATIOS.map((ratio) => (
+                        <button
+                          key={ratio.value}
+                          type="button"
+                          onClick={() => setAspectRatio(ratio.value)}
+                          className={`
+                            p-1.5 sm:p-2 lg:p-3 border-2 transition-all duration-200 text-center
+                            ${aspectRatio === ratio.value 
+                              ? "border-primary bg-primary/10" 
+                              : "border-border hover:border-primary/50"
+                            }
+                          `}
+                        >
+                          <div className="text-[9px] sm:text-[10px] lg:text-xs font-mono font-bold">{ratio.label}</div>
+                          <div className="text-[8px] sm:text-[9px] lg:text-[10px] text-muted-foreground font-mono mt-0.5 sm:mt-1">
+                            {ratio.value}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[9px] sm:text-[10px] lg:text-xs text-muted-foreground font-mono">
+                      Output: {ASPECT_RATIOS.find(r => r.value === aspectRatio)?.resolution}
+                    </p>
+                  </div>
+
+                  {/* Furniture Catalog */}
+                  <div className="space-y-2 sm:space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs sm:text-sm font-mono uppercase tracking-wider">
+                        Furniture Catalog
+                      </label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          // Afficher le toast "bientôt disponible" au lieu d'ouvrir le catalogue
+                          setShowCatalogToast(true);
+                          // Ne pas ouvrir le catalogue
+                          // setShowFurnitureCatalog(!showFurnitureCatalog);
+                        }}
+                        className="font-mono text-[10px] sm:text-xs h-7 sm:h-8 lg:h-9"
+                      >
+                        <Sofa className="w-2.5 h-2.5 sm:w-3 sm:h-3 sm:mr-1.5 lg:mr-2" />
+                        <span className="hidden sm:inline">
+                          {showFurnitureCatalog ? "HIDE" : "BROWSE"}
+                        </span>
+                        <span className="sm:hidden">{showFurnitureCatalog ? "HIDE" : "CATALOG"}</span>
+                        {selectedFurniture.length > 0 && (
+                          <span className="ml-1 sm:ml-1.5 lg:ml-2 px-1 sm:px-1.5 py-0.5 bg-primary text-primary-foreground text-[8px] sm:text-[9px] lg:text-[10px] rounded">
+                            {selectedFurniture.length}
+                          </span>
+                        )}
+                      </Button>
+                    </div>
+                    {showFurnitureCatalog && (
+                      <div className="border border-border bg-white/5 p-3 sm:p-4 max-h-[300px] sm:max-h-[400px] overflow-y-auto">
+                        <FurnitureCatalog
+                          selectedItems={selectedFurniture}
+                          onSelectionChange={setSelectedFurniture}
+                        />
                       </div>
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[10px] sm:text-xs text-muted-foreground font-mono">
-                  Output: {ASPECT_RATIOS.find(r => r.value === aspectRatio)?.resolution}
-                </p>
-              </div>
+                    )}
+                    {selectedFurniture.length > 0 && !showFurnitureCatalog && (
+                      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                        {selectedFurniture.map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-center gap-1.5 sm:gap-2 px-1.5 sm:px-2 py-0.5 sm:py-1 bg-muted/50 border border-border text-[10px] sm:text-xs font-mono"
+                          >
+                            <span className="line-clamp-1">{item.name}</span>
+                            <button
+                              onClick={() => setSelectedFurniture(selectedFurniture.filter(f => f.id !== item.id))}
+                              className="hover:text-red-500 flex-shrink-0"
+                            >
+                              <X className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
-              {/* Prompt Input */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-mono uppercase tracking-wider">
-                    Generation instructions
-                  </label>
-                  <span className="text-xs font-mono text-muted-foreground">
-                    {prompt.length} / 500
-                  </span>
-                </div>
-                <Textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
-                  placeholder="Describe the style, mood, and details you want in your photorealistic render..."
-                  className="min-h-[120px] resize-none rounded-none font-mono text-sm"
-                />
-                <p className="text-xs text-muted-foreground font-mono">
-                  Example: "Photorealistic architectural render, golden hour lighting, modern materials"
-                </p>
-              </div>
-
-              {/* Generate Button */}
-              <Button
-                onClick={handleGenerate}
-                disabled={uploadedImages.length === 0 || !prompt.trim()}
-                className="w-full h-12 sm:h-14 font-mono text-xs sm:text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] !opacity-100 transition-all"
-              >
-                <span className="flex items-center justify-center gap-1.5 sm:gap-2">
-                  <span className="hidden sm:inline">GENERATE RENDER</span>
-                  <span className="sm:hidden">GENERATE</span>
-                  {uploadedImages.length > 1 && (
-                    <span className="text-[10px] sm:text-xs opacity-70">({uploadedImages.length})</span>
-                  )}
-                  <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 group-hover:translate-x-1 transition-transform" />
-                </span>
-              </Button>
+                  {/* Generate Button */}
+                  <Button
+                    onClick={handleGenerate}
+                    disabled={uploadedImages.length === 0 || !prompt.trim()}
+                    className="w-full h-12 sm:h-14 font-mono text-xs sm:text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] !opacity-100 transition-all"
+                  >
+                    <span className="flex items-center justify-center gap-1.5 sm:gap-2">
+                      <span className="hidden sm:inline">GENERATE RENDER</span>
+                      <span className="sm:hidden">GENERATE</span>
+                      {uploadedImages.length > 1 && (
+                        <span className="text-[10px] sm:text-xs opacity-70">({uploadedImages.length})</span>
+                      )}
+                      <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 group-hover:translate-x-1 transition-transform" />
+                    </span>
+                  </Button>
+                </>
+              )}
             </Card>
           )}
 
         </div>
       </main>
+      </div>
+
+      {/* Section 2: Landing page avec fond blanc */}
+      <section className="bg-white py-16 sm:py-24">
+        <div className="container mx-auto px-3 sm:px-6">
+          <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
+            <div className="text-center space-y-2 mb-8 sm:mb-12">
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold tracking-tight text-black">
+                Transform your <AuroraText>visions</AuroraText> into reality
+              </h2>
+            </div>
+            
+            <div className="max-w-4xl mx-auto">
+              <BeforeAfterSlider
+                beforeImage="/exemple-render.jpeg"
+                afterImage="/exemple-draw.png"
+                beforeLabel="Original"
+                afterLabel="AI Render"
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Section 3: Database Integration */}
+      <section className="bg-white py-16 sm:py-24">
+        <div className="container mx-auto px-3 sm:px-6">
+          <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
+            <div className="text-center space-y-2 mb-8 sm:mb-12">
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold tracking-tight text-black">
+                Integrate your <AuroraText>database</AuroraText> into renders
+              </h2>
+              <p className="text-base sm:text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto">
+                Connect your furniture catalog and automatically enrich your prompts
+              </p>
+            </div>
+            
+            <div className="max-w-4xl mx-auto">
+              <AnimatedBeamDemo />
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Footer */}
-      <footer className="fixed bottom-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-sm border-t border-border">
+      <footer className="bg-white border-t border-border">
         <div className="container mx-auto px-3 sm:px-6 h-10 sm:h-12 flex items-center justify-center">
           <p className="text-[10px] sm:text-xs font-mono text-muted-foreground text-center">
             <span className="hidden sm:inline">© 2026 RENDERZ · ARCHITECTURE + TECHNOLOGY</span>
@@ -1191,6 +1320,20 @@ export default function LandingPage() {
         </div>
       )}
 
+      {/* Toast "Bientôt disponible" pour le catalogue */}
+      {showCatalogToast && (
+        <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-6 sm:w-auto z-[100] animate-in slide-in-from-bottom-2 fade-in duration-300">
+          <div className="bg-black/90 backdrop-blur-sm border border-white/20 px-4 py-3 rounded-none shadow-lg">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-4 h-4 text-yellow-400 animate-pulse flex-shrink-0" />
+              <p className="text-xs sm:text-sm font-mono text-white">
+                Bientôt disponible
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Auth Modal */}
       <AuthModal
         isOpen={showAuthModal}
@@ -1201,8 +1344,7 @@ export default function LandingPage() {
           // qui surveille session + pendingGeneration
         }}
       />
-
-    </div>
+    </>
   );
 }
 

@@ -67,6 +67,44 @@ export interface Database {
           metadata?: Json | null
         }
       }
+      furniture_catalog: {
+        Row: {
+          id: string
+          supplier_id: string
+          name: string
+          category: string
+          style: string
+          image_url: string
+          prompt_enhancement: string
+          metadata: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          supplier_id: string
+          name: string
+          category: string
+          style: string
+          image_url?: string
+          prompt_enhancement: string
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          supplier_id?: string
+          name?: string
+          category?: string
+          style?: string
+          image_url?: string
+          prompt_enhancement?: string
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never
@@ -79,6 +117,7 @@ export interface Database {
     }
   }
 }
+
 
 
 

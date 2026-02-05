@@ -9,6 +9,7 @@ import { StripedPattern } from "@/components/magicui/striped-pattern";
 import { ArrowLeft, User, Mail, Calendar, Image, Download, Loader2, LogOut, Camera, Trash2, Wand2, Eye, Pencil, X, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
+import { RenderGenerator } from "@/components/render-generator";
 
 interface RenderMetadata {
   aspectRatio?: string;
@@ -363,14 +364,6 @@ export default function ProfilePage() {
       {/* Main Content */}
       <main className="relative z-10 container mx-auto px-3 sm:px-6 pt-24 sm:pt-32 pb-16">
         <div className="max-w-5xl mx-auto space-y-6 sm:space-y-8">
-          {/* Back Button */}
-          <Link href="/">
-            <Button variant="outline" size="sm" className="font-mono text-[10px] sm:text-xs">
-              <ArrowLeft className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
-              <span className="ml-1 sm:ml-0">BACK TO GENERATOR</span>
-            </Button>
-          </Link>
-
           {/* Profile Info */}
           <Card className="p-4 sm:p-6 bg-white/5 backdrop-blur-[2px] border border-white">
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4 sm:mb-6">My Profile</h1>
@@ -510,6 +503,17 @@ export default function ProfilePage() {
               </div>
             </div>
           </Card>
+
+          {/* Render Generator */}
+          <div className="space-y-4">
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Create New Render</h2>
+            <RenderGenerator 
+              onGenerateSuccess={() => {
+                // Refresh renders list after successful generation
+                fetchRenders();
+              }}
+            />
+          </div>
 
           {/* Renders History */}
           <div className="space-y-4">

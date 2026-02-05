@@ -79,7 +79,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     try {
       await signIn.social({
         provider: "google",
-        callbackURL: "/",
+        callbackURL: "/profile",
       });
     } catch (err) {
       setError("Error signing in with Google");
@@ -118,6 +118,8 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       
       onSuccess();
       onClose();
+      // Rediriger vers la page profil après connexion réussie
+      window.location.href = "/profile";
     } catch (err) {
       setError("An error occurred. Please try again.");
     } finally {

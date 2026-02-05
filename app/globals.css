@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -95,6 +97,44 @@
 
   .animate-aurora {
     animation: aurora 6s ease-in-out infinite;
+  }
+
+  /* Gradient Shadow Effect for Render Generator */
+  .gradient-shadow {
+    box-shadow: 
+      -12px -8px 30px rgba(147, 51, 234, 0.25),
+      12px 8px 30px rgba(59, 130, 246, 0.25),
+      -8px 12px 30px rgba(34, 211, 238, 0.2),
+      8px -12px 30px rgba(147, 51, 234, 0.2),
+      0 8px 30px rgba(0, 0, 0, 0.12);
+    animation: gradient-shadow-pulse 6s ease-in-out infinite;
+  }
+
+  @keyframes gradient-shadow-pulse {
+    0%, 100% {
+      box-shadow: 
+        -12px -8px 30px rgba(147, 51, 234, 0.25),
+        12px 8px 30px rgba(59, 130, 246, 0.25),
+        -8px 12px 30px rgba(34, 211, 238, 0.2),
+        8px -12px 30px rgba(147, 51, 234, 0.2),
+        0 8px 30px rgba(0, 0, 0, 0.12);
+    }
+    33% {
+      box-shadow: 
+        -12px -8px 30px rgba(59, 130, 246, 0.25),
+        12px 8px 30px rgba(34, 211, 238, 0.25),
+        -8px 12px 30px rgba(147, 51, 234, 0.2),
+        8px -12px 30px rgba(59, 130, 246, 0.2),
+        0 8px 30px rgba(0, 0, 0, 0.12);
+    }
+    66% {
+      box-shadow: 
+        -12px -8px 30px rgba(34, 211, 238, 0.25),
+        12px 8px 30px rgba(147, 51, 234, 0.25),
+        -8px 12px 30px rgba(59, 130, 246, 0.2),
+        8px -12px 30px rgba(34, 211, 238, 0.2),
+        0 8px 30px rgba(0, 0, 0, 0.12);
+    }
   }
 
   /* Shimmer Button Animations */

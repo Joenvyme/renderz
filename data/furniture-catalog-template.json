@@ -1,0 +1,39 @@
+[
+  {
+    "name": "Exemple: Canapé Sectionnel Gris",
+    "category": "sofa",
+    "style": "modern",
+    "imageUrl": "",
+    "promptEnhancement": "modern grey sectional sofa, contemporary design, comfortable cushions, fabric upholstery, clean lines",
+    "metadata": {
+      "materials": ["fabric", "metal"],
+      "color": "grey",
+      "dimensions": {
+        "width": 280,
+        "height": 90,
+        "depth": 100
+      },
+      "brand": "",
+      "reference": ""
+    }
+  },
+  {
+    "name": "Exemple: Table Basse en Chêne",
+    "category": "coffee-table",
+    "style": "scandinavian",
+    "imageUrl": "",
+    "promptEnhancement": "scandinavian wooden coffee table, light oak finish, minimalist design, thin legs",
+    "metadata": {
+      "materials": ["oak wood"],
+      "color": "light oak",
+      "dimensions": {
+        "width": 120,
+        "height": 45,
+        "depth": 60
+      },
+      "brand": "",
+      "reference": ""
+    }
+  }
+]
+
