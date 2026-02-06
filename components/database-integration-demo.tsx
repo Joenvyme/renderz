@@ -42,33 +42,33 @@ export function AnimatedBeamDemo() {
     >
       <div className="flex size-full max-w-4xl flex-col items-stretch justify-between gap-0.5 sm:gap-1 lg:gap-1.5">
         <div className="flex flex-row items-center justify-between">
-          <Circle ref={div1Ref}>
+          <Circle ref={div1Ref} className="invisible pointer-events-none">
             <FileJson className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-blue-600" />
           </Circle>
-          <Circle ref={div5Ref}>
+          <Circle ref={div5Ref} className="invisible pointer-events-none">
             <FileText className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-orange-600" />
           </Circle>
         </div>
         <div className="flex flex-row items-center justify-between">
-          <Circle ref={div2Ref}>
+          <Circle ref={div2Ref} className="invisible pointer-events-none">
             <Code2 className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-purple-600" />
           </Circle>
-          <Circle ref={div4Ref} className="size-20 sm:size-24 lg:size-28">
+          <Circle ref={div4Ref} className="size-14 sm:size-16 lg:size-18">
             <div className="flex items-center justify-center w-full h-full">
-              <span className="text-lg sm:text-xl lg:text-2xl font-bold tracking-tighter" style={{ fontFamily: "'Funnel Display', system-ui, sans-serif", letterSpacing: '-0.05em' }}>
+              <span className="text-sm sm:text-base lg:text-lg font-bold tracking-tighter" style={{ fontFamily: "'Funnel Display', system-ui, sans-serif", letterSpacing: '-0.05em' }}>
                 RDZ
               </span>
             </div>
           </Circle>
-          <Circle ref={div6Ref}>
+          <Circle ref={div6Ref} className="invisible pointer-events-none">
             <Webhook className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-green-600" />
           </Circle>
         </div>
         <div className="flex flex-row items-center justify-between">
-          <Circle ref={div3Ref}>
+          <Circle ref={div3Ref} className="invisible pointer-events-none">
             <Database className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-cyan-600" />
           </Circle>
-          <Circle ref={div7Ref}>
+          <Circle ref={div7Ref} className="invisible pointer-events-none">
             <FileCode className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-pink-600" />
           </Circle>
         </div>

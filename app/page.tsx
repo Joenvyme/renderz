@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Upload, Sparkles, ArrowRight, Download, LogOut, User, RefreshCw, Wand2, Check, X, Plus, Image as ImageIcon, Palette, Layers, Sofa, Zap } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { AuroraText } from "@/components/ui/aurora-text";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
@@ -61,6 +62,7 @@ const MAX_IMAGES = 3;
 
 export default function LandingPage() {
   const { data: session, isPending } = useSession();
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<UploadedImageItem[]>([]);
   const [prompt, setPrompt] = useState("");
@@ -76,6 +78,13 @@ export default function LandingPage() {
   const [isReprompting, setIsReprompting] = useState(false);
   const [showUpscaleToast, setShowUpscaleToast] = useState(false);
   const [selectedFurniture, setSelectedFurniture] = useState<any[]>([]);
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactMessage, setContactMessage] = useState("");
+  const [isSubmittingContact, setIsSubmittingContact] = useState(false);
+  const [contactSuccess, setContactSuccess] = useState(false);
+  const [contactError, setContactError] = useState("");
   const [showFurnitureCatalog, setShowFurnitureCatalog] = useState(false);
   const [showCatalogToast, setShowCatalogToast] = useState(false);
 
@@ -618,10 +627,49 @@ export default function LandingPage() {
     */
   };
 
+  const handleContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingContact(true);
+    setContactError("");
+    setContactSuccess(false);
+
+    try {
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: contactName,
+          email: contactEmail,
+          phone: contactPhone,
+          message: contactMessage,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Error sending message');
+      }
+
+      setContactSuccess(true);
+      setContactName("");
+      setContactEmail("");
+      setContactPhone("");
+      setContactMessage("");
+      
+      // Réinitialiser le message de succès après 5 secondes
+      setTimeout(() => setContactSuccess(false), 5000);
+    } catch (error) {
+      setContactError(error instanceof Error ? error.message : 'Error sending message');
+    } finally {
+      setIsSubmittingContact(false);
+    }
+  };
+
   return (
-    <>
+    <div ref={scrollContainerRef} className="h-screen overflow-y-auto snap-y snap-mandatory scroll-smooth">
       {/* Section 1: Hero avec fond à rayures (plein écran) */}
-      <div className="relative min-h-screen bg-white overflow-hidden">
+      <div className="relative min-h-screen bg-white overflow-hidden snap-start">
         <StripedPattern className="absolute inset-0 [mask-image:radial-gradient(800px_circle_at_center,white,transparent)]" />
         {/* Header */}
         <header className="fixed top-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-sm border-b border-border">
@@ -1254,21 +1302,25 @@ export default function LandingPage() {
       </div>
 
       {/* Section 2: Landing page avec fond blanc */}
-      <section className="bg-white py-16 sm:py-24">
+      <section className="bg-white py-16 sm:py-24 snap-start min-h-screen flex items-center">
         <div className="container mx-auto px-3 sm:px-6">
-          <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
+          <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
             <div className="text-center space-y-2 mb-8 sm:mb-12">
               <h2 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold tracking-tight text-black">
                 Transform your <AuroraText>visions</AuroraText> into reality
               </h2>
+              <p className="text-base sm:text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto">
+                From sketches to photorealistic renders, and from 3D base models to stunning visualizations
+              </p>
             </div>
             
             <div className="max-w-4xl mx-auto">
               <BeforeAfterSlider
-                beforeImage="/exemple-render.jpeg"
-                afterImage="/exemple-draw.png"
-                beforeLabel="Original"
+                beforeImage="/exemple-draw.png"
+                afterImage="/exemple-render.jpeg"
+                beforeLabel="Sketch"
                 afterLabel="AI Render"
+                hideLabels
                 className="w-full"
               />
             </div>
@@ -1276,22 +1328,211 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Section 3: Database Integration */}
-      <section className="bg-white py-16 sm:py-24">
+      {/* Section 3: 4K Upscaling Feature */}
+      <section className="bg-white py-16 sm:py-24 snap-start min-h-screen flex items-center">
+        <div className="container mx-auto px-3 sm:px-6">
+          <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
+            <div className="text-center space-y-2 mb-8 sm:mb-12">
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold tracking-tight text-black">
+                Upgrade to <AuroraText>4K</AuroraText> quality
+              </h2>
+              <p className="text-base sm:text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto">
+                Transform your standard renders into ultra-high resolution 4K images with enhanced detail and clarity
+              </p>
+            </div>
+            
+            <div className="max-w-4xl mx-auto">
+              <BeforeAfterSlider
+                beforeImage="/1K.png"
+                afterImage="/4K.png"
+                beforeLabel="LOW RESOLUTION"
+                afterLabel="4K Upscaled"
+                hideLabels
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Section 4: Furniture Catalog Feature */}
+      <section className="bg-white py-16 sm:py-24 snap-start min-h-screen flex items-center">
+        <div className="container mx-auto px-3 sm:px-6">
+          <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
+            <div className="text-center space-y-2 mb-8 sm:mb-12">
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold tracking-tight text-black">
+                Enhance with <AuroraText>furniture</AuroraText> catalog
+              </h2>
+              <p className="text-base sm:text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto">
+                Transform empty spaces into fully furnished renders by selecting items from your catalog
+              </p>
+            </div>
+            
+            <div className="max-w-4xl mx-auto">
+              <BeforeAfterSlider
+                beforeImage="/render-empty.png"
+                afterImage="/render-fourniture.png"
+                beforeLabel="Empty"
+                afterLabel="Fourniture"
+                hideLabels
+                className="w-full"
+                beforeObjectFit="cover"
+                afterObjectFit="cover"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Section 5: Database Integration */}
+      <section className="bg-white py-16 sm:py-24 snap-start min-h-screen flex items-center">
         <div className="container mx-auto px-3 sm:px-6">
           <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
             <div className="text-center space-y-2 mb-8 sm:mb-12">
+              <span className="inline-block px-3 py-1 text-xs sm:text-sm font-semibold uppercase tracking-wider text-white bg-black rounded-full mb-3 sm:mb-4">
+                New
+              </span>
               <h2 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold tracking-tight text-black">
-                Integrate your <AuroraText>database</AuroraText> into renders
+                Your <AuroraText>brand</AuroraText>, your platform
               </h2>
               <p className="text-base sm:text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto">
-                Connect your furniture catalog and automatically enrich your prompts
+                Integrate your product database, customize with your company branding, and offer a white-label rendering platform to your clients
               </p>
             </div>
             
             <div className="max-w-4xl mx-auto">
               <AnimatedBeamDemo />
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="bg-white py-20 sm:py-28 snap-start min-h-screen flex items-center">
+        <div className="container mx-auto px-3 sm:px-6">
+          <div className="max-w-3xl mx-auto text-center space-y-6 sm:space-y-8">
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold tracking-tight text-black">
+              Ready to <AuroraText>transform</AuroraText> your workflow?
+            </h2>
+            <p className="text-base sm:text-lg lg:text-xl text-muted-foreground max-w-xl mx-auto">
+              Start creating stunning renders in seconds. No design skills required.
+            </p>
+            <button
+              onClick={() => scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="inline-flex items-center justify-center gap-2 px-8 sm:px-10 py-3 sm:py-4 bg-black text-white font-semibold text-sm sm:text-base tracking-wide uppercase hover:bg-black/85 transition-colors duration-200"
+            >
+              Get started now
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Contact Form Section */}
+      <section className="bg-white py-16 sm:py-24 snap-start min-h-screen flex items-center">
+        <div className="container mx-auto px-3 sm:px-6">
+          <div className="max-w-2xl mx-auto space-y-6 sm:space-y-8">
+            <div className="text-center space-y-2">
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold tracking-tight text-black">
+                Get in <AuroraText>touch</AuroraText>
+              </h2>
+              <p className="text-base sm:text-lg lg:text-xl text-muted-foreground max-w-xl mx-auto">
+                Have a question or want to learn more? Send us a message and we'll get back to you.
+              </p>
+            </div>
+
+            <Card className="p-6 sm:p-8 bg-white/20 backdrop-blur-sm border border-border/60">
+              <form onSubmit={handleContactSubmit} className="space-y-4 sm:space-y-6">
+                <div className="space-y-2">
+                  <label htmlFor="contact-name" className="text-sm font-semibold text-foreground uppercase tracking-wider">
+                    Name
+                  </label>
+                  <Input
+                    id="contact-name"
+                    type="text"
+                    value={contactName}
+                    onChange={(e) => setContactName(e.target.value)}
+                    required
+                    className="w-full"
+                    placeholder="Your name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="contact-email" className="text-sm font-semibold text-foreground uppercase tracking-wider">
+                    Email
+                  </label>
+                  <Input
+                    id="contact-email"
+                    type="email"
+                    value={contactEmail}
+                    onChange={(e) => setContactEmail(e.target.value)}
+                    required
+                    className="w-full"
+                    placeholder="your@email.com"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="contact-phone" className="text-sm font-semibold text-foreground uppercase tracking-wider">
+                    Phone Number
+                  </label>
+                  <Input
+                    id="contact-phone"
+                    type="tel"
+                    value={contactPhone}
+                    onChange={(e) => setContactPhone(e.target.value)}
+                    required
+                    className="w-full"
+                    placeholder="+41 XX XXX XX XX"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="contact-message" className="text-sm font-semibold text-foreground uppercase tracking-wider">
+                    Message
+                  </label>
+                  <Textarea
+                    id="contact-message"
+                    value={contactMessage}
+                    onChange={(e) => setContactMessage(e.target.value)}
+                    required
+                    className="w-full min-h-[120px] sm:min-h-[150px]"
+                    placeholder="Your message..."
+                  />
+                </div>
+
+                {contactError && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-600 text-sm">
+                    {contactError}
+                  </div>
+                )}
+
+                {contactSuccess && (
+                  <div className="p-3 bg-green-500/10 border border-green-500/20 text-green-600 text-sm">
+                    Message sent successfully! We'll get back to you soon.
+                  </div>
+                )}
+
+                <Button
+                  type="submit"
+                  disabled={isSubmittingContact}
+                  className="w-full h-12 sm:h-14 font-mono text-xs sm:text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] !opacity-100 transition-all"
+                >
+                  {isSubmittingContact ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Sending...</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <span>SEND MESSAGE</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </span>
+                  )}
+                </Button>
+              </form>
+            </Card>
           </div>
         </div>
       </section>
@@ -1344,7 +1585,7 @@ export default function LandingPage() {
           // qui surveille session + pendingGeneration
         }}
       />
-    </>
+    </div>
   );
 }
 

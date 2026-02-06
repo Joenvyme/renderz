@@ -8,6 +8,9 @@ interface BeforeAfterSliderProps {
   beforeLabel?: string;
   afterLabel?: string;
   className?: string;
+  beforeObjectFit?: "cover" | "contain";
+  afterObjectFit?: "cover" | "contain";
+  hideLabels?: boolean;
 }
 
 export function BeforeAfterSlider({
@@ -16,6 +19,9 @@ export function BeforeAfterSlider({
   beforeLabel = "Before",
   afterLabel = "After",
   className = "",
+  beforeObjectFit = "cover",
+  afterObjectFit = "cover",
+  hideLabels = false,
 }: BeforeAfterSliderProps) {
   const [sliderPosition, setSliderPosition] = useState(50);
 
@@ -30,37 +36,38 @@ export function BeforeAfterSlider({
     setSliderPosition(Math.max(0, Math.min(100, percentage)));
   };
 
+  // Utilise le même objectFit pour les deux images si l'un est "contain"
+  const effectiveFit = beforeObjectFit === "contain" || afterObjectFit === "contain" ? "contain" : "cover";
+
   return (
     <div className={`relative w-full ${className}`}>
       {/* Container pour les deux images */}
       <div 
-        className="relative w-full aspect-video sm:aspect-[16/9] overflow-hidden border border-border bg-muted/30"
+        className="relative w-full aspect-[16/9] overflow-hidden border border-border bg-muted/30"
         onMouseMove={handleMouseMove}
       >
-        {/* Image "Before" (en arrière-plan) */}
-        <div className="absolute inset-0">
-          <img
-            src={beforeImage}
-            alt={beforeLabel}
-            className="w-full h-full object-cover"
-            draggable={false}
-          />
-        </div>
-
-        {/* Image "After" (avec masque) */}
+        {/* Image "After" (en arrière-plan, visible à droite) */}
         <div
-          className="absolute inset-0 overflow-hidden"
+          className="absolute inset-0"
           style={{
+            backgroundImage: `url(${afterImage})`,
+            backgroundSize: effectiveFit,
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }}
+        />
+
+        {/* Image "Before" (avec masque, visible à gauche) */}
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `url(${beforeImage})`,
+            backgroundSize: effectiveFit,
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
             clipPath: `inset(0 ${100 - sliderPosition}% 0 0)`,
           }}
-        >
-          <img
-            src={afterImage}
-            alt={afterLabel}
-            className="w-full h-full object-cover"
-            draggable={false}
-          />
-        </div>
+        />
 
         {/* Slider control */}
         <div
@@ -88,16 +95,20 @@ export function BeforeAfterSlider({
         />
 
         {/* Labels */}
-        <div className="absolute top-3 sm:top-4 left-3 sm:left-4 bg-black/70 backdrop-blur-sm px-2 sm:px-3 py-1 sm:py-1.5 rounded-none border border-white/20">
-          <span className="text-[10px] sm:text-xs font-mono text-white uppercase tracking-wider">
-            {beforeLabel}
-          </span>
-        </div>
-        <div className="absolute top-3 sm:top-4 right-3 sm:right-4 bg-black/70 backdrop-blur-sm px-2 sm:px-3 py-1 sm:py-1.5 rounded-none border border-white/20">
-          <span className="text-[10px] sm:text-xs font-mono text-white uppercase tracking-wider">
-            {afterLabel}
-          </span>
-        </div>
+        {!hideLabels && (
+          <>
+            <div className="absolute top-3 sm:top-4 left-3 sm:left-4 bg-black/70 backdrop-blur-sm px-2 sm:px-3 py-1 sm:py-1.5 rounded-none border border-white/20">
+              <span className="text-[10px] sm:text-xs font-mono text-white uppercase tracking-wider">
+                {beforeLabel}
+              </span>
+            </div>
+            <div className="absolute top-3 sm:top-4 right-3 sm:right-4 bg-black/70 backdrop-blur-sm px-2 sm:px-3 py-1 sm:py-1.5 rounded-none border border-white/20">
+              <span className="text-[10px] sm:text-xs font-mono text-white uppercase tracking-wider">
+                {afterLabel}
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

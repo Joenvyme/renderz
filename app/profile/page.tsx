@@ -114,11 +114,16 @@ export default function ProfilePage() {
 
   // Upscale a render from the profile
   const handleUpscale = async (renderId: string) => {
-    // TEMPORAIREMENT DÉSACTIVÉ - Afficher le toast "bientôt disponible"
-    setShowUpscaleToast(true);
+    // Vérifier si l'utilisateur a accès à l'upscaling 4K
+    const has4KAccess = session?.user?.email === 'joey.montani@gmail.com';
     
-    // Code original commenté pour référence
-    /*
+    if (!has4KAccess) {
+      // Afficher le toast "bientôt disponible" pour les autres utilisateurs
+      setShowUpscaleToast(true);
+      return;
+    }
+
+    // Activer l'upscaling pour l'utilisateur autorisé
     setUpscalingIds(prev => new Set(prev).add(renderId));
 
     try {
@@ -170,7 +175,6 @@ export default function ProfilePage() {
         return newSet;
       });
     }
-    */
   };
 
   // Check if a render can be upscaled
