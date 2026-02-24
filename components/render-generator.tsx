@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, Sparkles, ArrowRight, X, Plus, Image as ImageIcon, Palette, Layers, Sofa } from "lucide-react";
+import { Upload, Sparkles, ArrowRight, X, Plus, Image as ImageIcon, Palette, Layers, Sofa, FolderOpen, Ratio, Gem, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
@@ -36,11 +36,31 @@ const ROLE_CONFIG: Record<ImageRole, { label: string; description: string; icon:
 
 const MAX_IMAGES = 3;
 
-interface RenderGeneratorProps {
-  onGenerateSuccess?: () => void;
+interface ProjectOption {
+  id: string;
+  name: string;
 }
 
-export function RenderGenerator({ onGenerateSuccess }: RenderGeneratorProps) {
+interface RenderGeneratorProps {
+  onGenerateSuccess?: () => void;
+  projects?: ProjectOption[];
+  selectedProjectId?: string | null;
+  onProjectChange?: (projectId: string | null) => void;
+  compact?: boolean;
+  externalReferenceImage?: {
+    token: string;
+    url: string;
+  } | null;
+}
+
+export function RenderGenerator({
+  onGenerateSuccess,
+  projects,
+  selectedProjectId,
+  onProjectChange,
+  compact,
+  externalReferenceImage,
+}: RenderGeneratorProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const [isDragging, setIsDragging] = useState(false);
@@ -51,6 +71,9 @@ export function RenderGenerator({ onGenerateSuccess }: RenderGeneratorProps) {
   const [selectedFurniture, setSelectedFurniture] = useState<any[]>([]);
   const [showFurnitureCatalog, setShowFurnitureCatalog] = useState(false);
   const [showCatalogToast, setShowCatalogToast] = useState(false);
+  const [quality, setQuality] = useState<"standard" | "hd">("standard");
+  const [showCompactFormat, setShowCompactFormat] = useState(false);
+  const [showCompactQuality, setShowCompactQuality] = useState(false);
 
   // Fermer automatiquement le toast après 4 secondes
   useEffect(() => {
@@ -61,6 +84,25 @@ export function RenderGenerator({ onGenerateSuccess }: RenderGeneratorProps) {
       return () => clearTimeout(timer);
     }
   }, [showCatalogToast]);
+
+  // Injecter une image de référence depuis la grille (profile page)
+  useEffect(() => {
+    if (!externalReferenceImage?.url) return;
+
+    setUploadedImages((prev) => {
+      if (prev.length >= MAX_IMAGES) return prev;
+      if (prev.some((img) => img.dataUrl === externalReferenceImage.url)) return prev;
+
+      return [
+        ...prev,
+        {
+          id: `ext-${externalReferenceImage.token}`,
+          dataUrl: externalReferenceImage.url,
+          role: "reference",
+        },
+      ];
+    });
+  }, [externalReferenceImage?.token, externalReferenceImage?.url]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -169,6 +211,12 @@ export function RenderGenerator({ onGenerateSuccess }: RenderGeneratorProps) {
       const uploadedUrls: { url: string; role: ImageRole }[] = [];
       
       for (const img of uploadedImages) {
+        // If the image already is a public URL from an existing render, reuse it directly.
+        if (img.dataUrl.startsWith("http://") || img.dataUrl.startsWith("https://")) {
+          uploadedUrls.push({ url: img.dataUrl, role: img.role });
+          continue;
+        }
+
         const blob = await fetch(img.dataUrl).then(r => r.blob());
         const formData = new FormData();
         formData.append('file', blob, `image-${img.role}.png`);
@@ -202,7 +250,8 @@ export function RenderGenerator({ onGenerateSuccess }: RenderGeneratorProps) {
         body: JSON.stringify({ 
           images: uploadedUrls, 
           prompt: enhancedPrompt, 
-          aspectRatio 
+          aspectRatio,
+          projectId: selectedProjectId && selectedProjectId !== "unassigned" ? selectedProjectId : undefined,
         }),
       });
 
@@ -234,7 +283,167 @@ export function RenderGenerator({ onGenerateSuccess }: RenderGeneratorProps) {
   };
 
   return (
-    <Card className="p-4 sm:p-6 space-y-4 bg-white/20 backdrop-blur-sm gradient-shadow">
+    <Card className={compact ? "space-y-3 p-3 sm:p-4 bg-transparent backdrop-blur-none border-0 shadow-none" : "space-y-3 p-4 sm:p-6 space-y-4 bg-white/10 backdrop-blur-xl border-white/20 gradient-shadow"}>
+      {/* Compact layout: images above, prompt below */}
+      {compact ? (
+        <div className="flex flex-col gap-2">
+          {/* Upload zone + images row */}
+          <div className="flex gap-2 items-center">
+            {uploadedImages.map((img) => (
+              <div key={img.id} className="relative group">
+                <div className="relative w-12 h-12 border border-border overflow-hidden bg-muted/30">
+                  <img src={img.dataUrl} alt={`${img.role}`} className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => removeImage(img.id)}
+                    className="absolute top-0 right-0 w-4 h-4 bg-black/70 hover:bg-red-600 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100"
+                  >
+                    <X className="w-2.5 h-2.5 text-white" />
+                  </button>
+                  <div className="absolute bottom-0 inset-x-0 bg-black/70 px-0.5 py-px">
+                    <span className="text-[7px] font-mono text-white uppercase">{img.role}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {uploadedImages.length < MAX_IMAGES && (
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`relative w-12 h-12 border-2 border-dashed flex items-center justify-center cursor-pointer transition-all ${isDragging ? "border-primary bg-primary/5" : "border-border/90 hover:border-primary/50 bg-muted/20"}`}
+              >
+                <input type="file" accept="image/*" multiple onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                {uploadedImages.length === 0 ? (
+                  <Upload className="w-4 h-4 text-muted-foreground" />
+                ) : (
+                  <Plus className="w-3.5 h-3.5 text-muted-foreground" />
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Prompt + Generate */}
+          <div className="flex gap-2 items-end">
+            <Textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
+              placeholder="Describe the style, mood, and details you want..."
+              className="flex-1 min-h-[64px] max-h-[64px] resize-none rounded-none font-mono text-xs leading-relaxed"
+            />
+            <Button
+              onClick={handleGenerate}
+              disabled={uploadedImages.length === 0 || !prompt.trim() || isGenerating}
+              className="h-[64px] px-4 sm:px-6 font-mono text-xs tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] !opacity-100 transition-all flex-shrink-0"
+            >
+              {isGenerating ? (
+                <Sparkles className="w-4 h-4 animate-spin" />
+              ) : (
+                <ArrowRight className="w-4 h-4" />
+              )}
+            </Button>
+          </div>
+            {/* Compact controls: icon buttons */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Project selector */}
+              {projects && projects.length > 0 && (
+                <select
+                  value={selectedProjectId || ""}
+                  onChange={(e) => onProjectChange?.(e.target.value || null)}
+                  className="h-7 text-[10px] font-mono bg-muted/30 border border-border px-1.5 text-muted-foreground rounded-sm"
+                >
+                  <option value="">No project</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
+
+              {/* Format (aspect ratio) button */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => { setShowCompactFormat(!showCompactFormat); setShowCompactQuality(false); }}
+                  className={`h-7 px-2 flex items-center gap-1.5 text-[10px] font-mono border rounded-sm transition-all ${
+                    showCompactFormat ? "bg-black text-white border-black" : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
+                  }`}
+                >
+                  <Ratio className="w-3 h-3" />
+                  <span>{aspectRatio}</span>
+                  <ChevronDown className="w-2.5 h-2.5" />
+                </button>
+                {showCompactFormat && (
+                  <div className="absolute bottom-full left-0 mb-1.5 bg-white border border-border shadow-lg p-1.5 z-50 min-w-[140px]">
+                    {ASPECT_RATIOS.map((ratio) => (
+                      <button
+                        key={ratio.value}
+                        type="button"
+                        onClick={() => { setAspectRatio(ratio.value); setShowCompactFormat(false); }}
+                        className={`w-full px-2 py-1.5 text-left text-[10px] font-mono flex items-center justify-between transition-all ${
+                          aspectRatio === ratio.value
+                            ? "bg-black text-white"
+                            : "text-foreground hover:bg-muted/60"
+                        }`}
+                      >
+                        <span>{ratio.label}</span>
+                        <span className="text-[9px] opacity-70">{ratio.value}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Quality button */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => { setShowCompactQuality(!showCompactQuality); setShowCompactFormat(false); }}
+                  className={`h-7 px-2 flex items-center gap-1.5 text-[10px] font-mono border rounded-sm transition-all ${
+                    showCompactQuality ? "bg-black text-white border-black" : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
+                  }`}
+                >
+                  <Gem className="w-3 h-3" />
+                  <span>{quality === "hd" ? "HD" : "STD"}</span>
+                  <ChevronDown className="w-2.5 h-2.5" />
+                </button>
+                {showCompactQuality && (
+                  <div className="absolute bottom-full left-0 mb-1.5 bg-white border border-border shadow-lg p-1.5 z-50 min-w-[120px]">
+                    <button
+                      type="button"
+                      onClick={() => { setQuality("standard"); setShowCompactQuality(false); }}
+                      className={`w-full px-2 py-1.5 text-left text-[10px] font-mono flex items-center gap-2 transition-all ${
+                        quality === "standard" ? "bg-black text-white" : "text-foreground hover:bg-muted/60"
+                      }`}
+                    >
+                      <span>Standard</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setQuality("hd"); setShowCompactQuality(false); }}
+                      className={`w-full px-2 py-1.5 text-left text-[10px] font-mono flex items-center gap-2 transition-all ${
+                        quality === "hd" ? "bg-black text-white" : "text-foreground hover:bg-muted/60"
+                      }`}
+                    >
+                      <span>HD</span>
+                      <span className="text-[8px] opacity-60">haute qualité</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Furniture Catalog button */}
+              <button
+                type="button"
+                onClick={() => setShowCatalogToast(true)}
+                className="h-7 px-2 flex items-center gap-1.5 text-[10px] font-mono border rounded-sm bg-muted/30 border-border text-muted-foreground hover:bg-muted/60 transition-all"
+              >
+                <Sofa className="w-3 h-3" />
+                <span className="hidden sm:inline">Catalog</span>
+              </button>
+            </div>
+        </div>
+      ) : (
+        /* Full layout (non-compact) */
+        <>
       {/* Upload Zone */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -384,6 +593,47 @@ export function RenderGenerator({ onGenerateSuccess }: RenderGeneratorProps) {
       {/* Reste du formulaire */}
       {uploadedImages.length > 0 && (
         <>
+          {/* Project Selector */}
+          {projects && projects.length > 0 && (
+            <div className="space-y-2 sm:space-y-3">
+              <label className="text-xs sm:text-sm font-mono uppercase tracking-wider flex items-center gap-1.5">
+                <FolderOpen className="w-3 h-3" />
+                Project
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
+                <button
+                  type="button"
+                  onClick={() => onProjectChange?.(null)}
+                  className={`
+                    p-1.5 sm:p-2 border-2 transition-all duration-200 text-center
+                    ${!selectedProjectId || selectedProjectId === "unassigned"
+                      ? "border-primary bg-primary/10"
+                      : "border-border hover:border-primary/50"
+                    }
+                  `}
+                >
+                  <div className="text-[9px] sm:text-[10px] lg:text-xs font-mono">No project</div>
+                </button>
+                {projects.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    onClick={() => onProjectChange?.(project.id)}
+                    className={`
+                      p-1.5 sm:p-2 border-2 transition-all duration-200 text-center
+                      ${selectedProjectId === project.id
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-primary/50"
+                      }
+                    `}
+                  >
+                    <div className="text-[9px] sm:text-[10px] lg:text-xs font-mono truncate">{project.name}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Prompt Input */}
           <div className="space-y-2 sm:space-y-3">
             <div className="flex items-center justify-between">
@@ -506,6 +756,8 @@ export function RenderGenerator({ onGenerateSuccess }: RenderGeneratorProps) {
               </span>
             )}
           </Button>
+        </>
+      )}
         </>
       )}
 

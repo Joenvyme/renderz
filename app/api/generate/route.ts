@@ -29,11 +29,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     
     // Support pour l'ancien format (imageUrl) et le nouveau (images[])
-    const { imageUrl, images, prompt, aspectRatio } = body as {
+    const { imageUrl, images, prompt, aspectRatio, projectId } = body as {
       imageUrl?: string;
       images?: ImageInput[];
       prompt: string;
       aspectRatio?: AspectRatio;
+      projectId?: string;
     };
 
     // Normaliser: si imageUrl est fourni, le convertir en tableau images
@@ -114,6 +115,7 @@ export async function POST(request: NextRequest) {
         original_image_url: normalizedImages[0].url,
         prompt,
         status: 'processing',
+        project_id: projectId || null,
         metadata: { 
           aspectRatio: aspectRatio || '1:1',
           images: normalizedImages, // Stocker toutes les images dans metadata

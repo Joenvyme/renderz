@@ -43,6 +43,7 @@ export interface Database {
           status: 'pending' | 'processing' | 'completed' | 'failed'
           created_at: string
           metadata: Json | null
+          project_id: string | null
         }
         Insert: {
           id?: string
@@ -54,6 +55,7 @@ export interface Database {
           status?: 'pending' | 'processing' | 'completed' | 'failed'
           created_at?: string
           metadata?: Json | null
+          project_id?: string | null
         }
         Update: {
           id?: string
@@ -65,6 +67,36 @@ export interface Database {
           status?: 'pending' | 'processing' | 'completed' | 'failed'
           created_at?: string
           metadata?: Json | null
+          project_id?: string | null
+        }
+      }
+      projects: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          description: string | null
+          cover_image_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          description?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          description?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          updated_at?: string
         }
       }
       furniture_catalog: {
