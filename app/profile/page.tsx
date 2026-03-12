@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { useSession, signOut } from "@/lib/auth-client";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
 import {
@@ -13,26 +12,27 @@ import {
   Loader2,
   LogOut,
   Trash2,
-  Wand2,
   Eye,
   X,
   Sparkles,
-  Calendar,
   Menu,
   Heart,
-  FolderInput,
-  Inbox,
 } from "lucide-react";
 import Link from "next/link";
 import { RenderGenerator } from "@/components/render-generator";
 import { ProjectSidebar, Project } from "@/components/project-sidebar";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
+import { RenderStudio } from "@/components/render-studio";
 
 interface RenderMetadata {
   aspectRatio?: string;
   upscale_error?: string;
   upscale_started_at?: string;
   favorite?: boolean;
+  video_status?: "processing" | "completed" | "failed";
+  video_url?: string;
+  video_error?: string;
+  video_prompt?: string;
   [key: string]: unknown;
 }
 
@@ -57,13 +57,11 @@ export default function ProfilePage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreRenders, setHasMoreRenders] = useState(false);
   const [nextOffset, setNextOffset] = useState(0);
-  const [upscalingIds, setUpscalingIds] = useState<Set<string>>(new Set());
   const [favoritingIds, setFavoritingIds] = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
-  const [previewImage, setPreviewImage] = useState<{ url: string; type: string } | null>(null);
+  const [studioRender, setStudioRender] = useState<Render | null>(null);
   const [showUpscaleToast, setShowUpscaleToast] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [externalReferenceImage, setExternalReferenceImage] = useState<{ token: string; url: string } | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Projects state
@@ -76,9 +74,8 @@ export default function ProfilePage() {
   // Project for render generator
   const [generatorProjectId, setGeneratorProjectId] = useState<string | null>(null);
 
-  // Move to project menu
-  const [moveMenuRenderId, setMoveMenuRenderId] = useState<string | null>(null);
   const [pendingDeleteRenderId, setPendingDeleteRenderId] = useState<string | null>(null);
+  const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!isPending && !session) {
@@ -87,7 +84,7 @@ export default function ProfilePage() {
   }, [session, isPending, router]);
 
   useEffect(() => {
-    if (previewImage) {
+    if (studioRender) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -95,7 +92,7 @@ export default function ProfilePage() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [previewImage]);
+  }, [studioRender]);
 
   useEffect(() => {
     if (showUpscaleToast) {
@@ -122,7 +119,7 @@ export default function ProfilePage() {
   const fetchRenders = useCallback(async (offset = 0, replace = true) => {
     if (replace) {
       setIsLoading(true);
-      setMoveMenuRenderId(null);
+      setLoadedImages(new Set());
     } else {
       setIsLoadingMore(true);
     }
@@ -208,86 +205,26 @@ export default function ProfilePage() {
     await fetchRenders();
   };
 
-  const downloadImage = (url: string, filename: string) => {
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  };
-
-  const handleUpscale = async (renderId: string) => {
-    const has4KAccess = session?.user?.email === "joey.montani@gmail.com";
-    if (!has4KAccess) {
-      setShowUpscaleToast(true);
-      return;
-    }
-
-    setUpscalingIds((prev) => new Set(prev).add(renderId));
-
+  const downloadImage = async (url: string, filename: string) => {
     try {
-      const res = await fetch("/api/upscale", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ renderId, scale: 4 }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Upscaling failed");
-      }
-
-      let completed = false;
-      let attempts = 0;
-      const maxAttempts = 60;
-
-      while (!completed && attempts < maxAttempts) {
-        attempts++;
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        const statusRes = await fetch(`/api/render/${renderId}`);
-        if (!statusRes.ok) continue;
-        const render = await statusRes.json();
-        if (render.status === "completed" && render.upscaled_image_url && render.upscaled_image_url !== render.generated_image_url) {
-          completed = true;
-          setRenders((prev) => prev.map((r) => (r.id === renderId ? render : r)));
-        } else if (render.metadata?.upscale_error) {
-          throw new Error(render.metadata.upscale_error);
-        }
-      }
-      if (!completed) {
-        alert("Upscaling is taking longer than expected. Refresh the page later.");
-      }
-    } catch (error) {
-      console.error("Upscale error:", error);
-      alert(error instanceof Error ? error.message : "Upscaling failed");
-    } finally {
-      setUpscalingIds((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(renderId);
-        return newSet;
-      });
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      // Fallback: open in new tab if fetch fails (CORS)
+      window.open(url, "_blank");
     }
-  };
-
-  const canUpscale = (render: Render) => {
-    return render.status === "completed" && render.generated_image_url && (!render.upscaled_image_url || render.upscaled_image_url === render.generated_image_url);
   };
 
   const isFavorite = (render: Render) => {
     return Boolean(render.metadata?.favorite);
-  };
-
-  const isUpscaled = (render: Render) => {
-    return render.upscaled_image_url && render.upscaled_image_url !== render.generated_image_url;
   };
 
   const handleDeleteRender = async (renderId: string) => {
@@ -308,34 +245,6 @@ export default function ProfilePage() {
         newSet.delete(renderId);
         return newSet;
       });
-    }
-  };
-
-  const handleMoveRender = async (renderId: string, projectId: string | null) => {
-    try {
-      const res = await fetch(`/api/render/${renderId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: projectId }),
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to move render");
-      }
-      // Update local state
-      setRenders((prev) =>
-        prev.map((r) => (r.id === renderId ? { ...r, project_id: projectId } : r))
-      );
-      setMoveMenuRenderId(null);
-      // Refresh projects to update render counts
-      fetchProjects();
-      // If we're in a filtered view, re-fetch to remove moved items
-      if (selectedProjectId !== null) {
-        fetchRenders();
-      }
-    } catch (error) {
-      console.error("Move render error:", error);
-      alert(error instanceof Error ? error.message : "Failed to move render");
     }
   };
 
@@ -384,18 +293,54 @@ export default function ProfilePage() {
     }
   };
 
-  const handleUseAsReference = (render: Render) => {
-    const imageUrl = isUpscaled(render) ? render.upscaled_image_url : render.generated_image_url;
-    if (!imageUrl) return;
-
-    setExternalReferenceImage({
-      token: `${render.id}-${Date.now()}`,
-      url: imageUrl,
-    });
-
-    // Bring the fixed generator into user focus after adding the reference.
-    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+  const getAspectRatio = (render: Render): string => {
+    const ratio = render.metadata?.aspectRatio;
+    if (!ratio || !ratio.includes(":")) return "1/1";
+    return ratio.replace(":", "/");
   };
+
+  const handleImageLoaded = useCallback((renderId: string) => {
+    setLoadedImages((prev) => new Set(prev).add(renderId));
+  }, []);
+
+  interface GridItem {
+    render: Render;
+    variant: "standard" | "4k";
+    imageUrl: string;
+    key: string;
+  }
+
+  const gridItems: GridItem[] = renders.flatMap((render) => {
+    const items: GridItem[] = [];
+    if (render.generated_image_url) {
+      items.push({
+        render,
+        variant: "standard",
+        imageUrl: render.generated_image_url,
+        key: `${render.id}-std`,
+      });
+    }
+    if (
+      render.upscaled_image_url &&
+      render.upscaled_image_url !== render.generated_image_url
+    ) {
+      items.push({
+        render,
+        variant: "4k",
+        imageUrl: render.upscaled_image_url,
+        key: `${render.id}-4k`,
+      });
+    }
+    if (!render.generated_image_url) {
+      items.push({
+        render,
+        variant: "standard",
+        imageUrl: "",
+        key: render.id,
+      });
+    }
+    return items;
+  });
 
   const isFavoritesView = favoritesOnly || selectedProjectId === "favorites";
 
@@ -558,215 +503,117 @@ export default function ProfilePage() {
                 </div>
               ) : (
                 <>
-                  <div className="columns-2 sm:columns-3 lg:columns-4 xl:columns-5 gap-3 sm:gap-4">
-                    {renders.map((render) => (
+                  <div className="columns-2 sm:columns-3 lg:columns-4 xl:columns-5 gap-1 sm:gap-1.5">
+                    {gridItems.map((item) => (
                       <div
-                        key={render.id}
-                        className="group relative bg-white border border-border overflow-hidden hover:shadow-lg transition-shadow mb-3 sm:mb-4 break-inside-avoid"
+                        key={item.key}
+                        className="group relative overflow-hidden mb-1 sm:mb-1.5 break-inside-avoid cursor-pointer"
+                        onClick={() => item.imageUrl && setStudioRender(item.render)}
                       >
-                      {/* Image */}
-                      <div className="relative bg-muted">
-                        {render.generated_image_url ? (
-                          <>
-                            <img
-                              src={isUpscaled(render) ? render.upscaled_image_url! : render.generated_image_url}
-                              alt="Render"
-                              className="w-full h-auto block"
-                            />
-                            {/* Hover overlay */}
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  onClick={() =>
-                                    setPreviewImage({
-                                      url: render.generated_image_url!,
-                                      type: "Standard",
-                                    })
-                                  }
-                                  className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
-                                  title="View"
-                                >
-                                  <Eye className="w-4 h-4 text-white" />
-                                </button>
-                                {isUpscaled(render) && (
-                                  <button
-                                    onClick={() =>
-                                      setPreviewImage({
-                                        url: render.upscaled_image_url!,
-                                        type: "4K Upscaled",
-                                      })
-                                    }
-                                    className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
-                                    title="View 4K"
-                                  >
-                                    <Wand2 className="w-4 h-4 text-white" />
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() =>
-                                    downloadImage(
-                                      isUpscaled(render) ? render.upscaled_image_url! : render.generated_image_url!,
-                                      `renderz-${render.id}.png`
-                                    )
-                                  }
-                                  className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
-                                  title="Download"
-                                >
-                                  <Download className="w-4 h-4 text-white" />
-                                </button>
-                                <button
-                                  onClick={() => handleUseAsReference(render)}
-                                  className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
-                                  title="Use as reference"
-                                >
-                                  <Image className="w-4 h-4 text-white" />
-                                </button>
-                              </div>
-                              {/* Action buttons row */}
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  onClick={() => handleToggleFavorite(render)}
-                                  disabled={favoritingIds.has(render.id)}
-                                  className={`px-2 py-1 text-[10px] font-mono transition-colors ${
-                                    isFavorite(render)
-                                      ? "bg-pink-500/90 text-white hover:bg-pink-500"
-                                      : "bg-white text-black hover:bg-white/90"
-                                  }`}
-                                  title={isFavorite(render) ? "Remove favorite" : "Add favorite"}
-                                >
-                                  {favoritingIds.has(render.id) ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                  ) : (
-                                    <Heart className={`w-3 h-3 ${isFavorite(render) ? "fill-current" : ""}`} />
-                                  )}
-                                </button>
-                                {canUpscale(render) && (
-                                  <button
-                                    onClick={() => handleUpscale(render.id)}
-                                    disabled={upscalingIds.has(render.id)}
-                                    className="px-2 py-1 text-[10px] font-mono bg-white text-black hover:bg-white/90 transition-colors"
-                                  >
-                                    {upscalingIds.has(render.id) ? (
-                                      <Loader2 className="w-3 h-3 animate-spin" />
-                                    ) : (
-                                      "4K"
-                                    )}
-                                  </button>
-                                )}
+                        <div
+                          className="relative bg-muted overflow-hidden"
+                          style={{ aspectRatio: getAspectRatio(item.render) }}
+                        >
+                          {item.imageUrl ? (
+                            <>
+                              {!loadedImages.has(item.key) && (
+                                <div className="absolute inset-0 bg-muted animate-pulse" />
+                              )}
+                              <img
+                                src={item.imageUrl}
+                                alt="Render"
+                                className={`w-full h-full object-cover block transition-opacity duration-300 ${
+                                  loadedImages.has(item.key) ? "opacity-100" : "opacity-0"
+                                }`}
+                                onLoad={() => handleImageLoaded(item.key)}
+                              />
+                              {/* Hover overlay */}
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setMoveMenuRenderId(moveMenuRenderId === render.id ? null : render.id);
+                                    setStudioRender(item.render);
                                   }}
-                                  className="px-2 py-1 text-[10px] font-mono bg-blue-500/80 text-white hover:bg-blue-500 transition-colors"
-                                  title="Move to project"
+                                  className="px-4 py-2 bg-white text-black font-mono text-xs tracking-wider hover:bg-white/90 transition-colors rounded"
                                 >
-                                  <FolderInput className="w-3 h-3" />
+                                  <Eye className="w-4 h-4 inline mr-1.5" />
+                                  STUDIO
                                 </button>
-                                <button
-                                  onClick={() => setPendingDeleteRenderId(render.id)}
-                                  disabled={deletingIds.has(render.id)}
-                                  className="px-2 py-1 text-[10px] font-mono bg-red-500/80 text-white hover:bg-red-500 transition-colors"
-                                >
-                                  {deletingIds.has(render.id) ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="w-3 h-3" />
-                                  )}
-                                </button>
-                              </div>
-
-                              {/* Move to project dropdown */}
-                              {moveMenuRenderId === render.id && (
-                                <div
-                                  className="absolute left-1/2 -translate-x-1/2 top-[65%] bg-white border border-border shadow-xl py-1 min-w-[160px] z-30 max-h-[140px] overflow-y-auto"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
+                                <div className="flex items-center gap-1.5">
                                   <button
-                                    onClick={() => handleMoveRender(render.id, null)}
-                                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs font-mono hover:bg-muted/50 transition-colors text-left ${
-                                      !render.project_id ? "text-muted-foreground" : "text-foreground"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleFavorite(item.render);
+                                    }}
+                                    disabled={favoritingIds.has(item.render.id)}
+                                    className={`px-2 py-1 text-[10px] font-mono transition-colors rounded-sm ${
+                                      isFavorite(item.render)
+                                        ? "bg-pink-500/90 text-white hover:bg-pink-500"
+                                        : "bg-white/90 text-black hover:bg-white"
                                     }`}
-                                    disabled={!render.project_id}
                                   >
-                                    <Inbox className="w-3 h-3 flex-shrink-0" />
-                                    Unassigned
+                                    {favoritingIds.has(item.render.id) ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Heart className={`w-3 h-3 ${isFavorite(item.render) ? "fill-current" : ""}`} />
+                                    )}
                                   </button>
-                                  {projects.map((p) => (
-                                    <button
-                                      key={p.id}
-                                      onClick={() => handleMoveRender(render.id, p.id)}
-                                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs font-mono hover:bg-muted/50 transition-colors text-left ${
-                                        render.project_id === p.id ? "text-muted-foreground" : "text-foreground"
-                                      }`}
-                                      disabled={render.project_id === p.id}
-                                    >
-                                      <FolderInput className="w-3 h-3 flex-shrink-0" />
-                                      <span className="truncate">{p.name}</span>
-                                    </button>
-                                  ))}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      downloadImage(item.imageUrl, `renderz-${item.render.id}${item.variant === "4k" ? "-4k" : ""}.png`);
+                                    }}
+                                    className="px-2 py-1 text-[10px] font-mono bg-white/90 text-black hover:bg-white transition-colors rounded-sm"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPendingDeleteRenderId(item.render.id);
+                                    }}
+                                    disabled={deletingIds.has(item.render.id)}
+                                    className="px-2 py-1 text-[10px] font-mono bg-red-500/80 text-white hover:bg-red-500 transition-colors rounded-sm"
+                                  >
+                                    {deletingIds.has(item.render.id) ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="w-3 h-3" />
+                                    )}
+                                  </button>
                                 </div>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="w-full aspect-square flex flex-col items-center justify-center gap-2">
+                              {item.render.status === "failed" ? (
+                                <>
+                                  <X className="w-6 h-6 text-red-400" />
+                                  <p className="text-[10px] font-mono text-muted-foreground">Render failed</p>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPendingDeleteRenderId(item.render.id);
+                                    }}
+                                    disabled={deletingIds.has(item.render.id)}
+                                    className="mt-1 px-3 py-1.5 text-[10px] font-mono bg-red-500/80 text-white hover:bg-red-500 transition-colors flex items-center gap-1"
+                                  >
+                                    {deletingIds.has(item.render.id) ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <>
+                                        <Trash2 className="w-3 h-3" />
+                                        DELETE
+                                      </>
+                                    )}
+                                  </button>
+                                </>
+                              ) : (
+                                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                               )}
                             </div>
-                          </>
-                        ) : (
-                          <div className="w-full aspect-square flex flex-col items-center justify-center gap-2">
-                            {render.status === "failed" ? (
-                              <>
-                                <X className="w-6 h-6 text-red-400" />
-                                <p className="text-[10px] font-mono text-muted-foreground">Render failed</p>
-                                <button
-                                  onClick={() => setPendingDeleteRenderId(render.id)}
-                                  disabled={deletingIds.has(render.id)}
-                                  className="mt-1 px-3 py-1.5 text-[10px] font-mono bg-red-500/80 text-white hover:bg-red-500 transition-colors flex items-center gap-1"
-                                >
-                                  {deletingIds.has(render.id) ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                  ) : (
-                                    <>
-                                      <Trash2 className="w-3 h-3" />
-                                      DELETE
-                                    </>
-                                  )}
-                                </button>
-                              </>
-                            ) : (
-                              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                            )}
-                          </div>
-                        )}
-
-                        {/* Badges */}
-                        <div className="absolute top-1.5 left-1.5 flex gap-1">
-                          {isUpscaled(render) ? (
-                            <div className="px-1.5 py-0.5 text-[9px] font-mono bg-green-500 text-white">4K</div>
-                          ) : render.status === "completed" && render.generated_image_url ? (
-                            <div className="px-1.5 py-0.5 text-[9px] font-mono bg-yellow-500 text-black">STD</div>
-                          ) : null}
+                          )}
                         </div>
-
-                        <div
-                          className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 text-[9px] font-mono ${
-                            render.status === "completed"
-                              ? "bg-green-500/80 text-white"
-                              : render.status === "failed"
-                              ? "bg-red-500 text-white"
-                              : "bg-yellow-500 text-black"
-                          }`}
-                        >
-                          {render.status === "completed" ? "✓" : render.status === "failed" ? "✗" : "⏳"}
-                        </div>
-                      </div>
-
-                      {/* Info bar */}
-                      <div className="px-2 py-1.5 border-t border-border">
-                        <p className="text-[10px] font-mono text-muted-foreground truncate">
-                          {render.prompt || "No prompt"}
-                        </p>
-                        <p className="text-[9px] font-mono text-muted-foreground/60 mt-0.5">
-                          {formatDate(render.created_at)}
-                        </p>
-                      </div>
                       </div>
                     ))}
                   </div>
@@ -806,7 +653,6 @@ export default function ProfilePage() {
                 }
                 onProjectChange={setGeneratorProjectId}
                 compact
-                externalReferenceImage={externalReferenceImage}
               />
               </div>
             </div>
@@ -814,36 +660,26 @@ export default function ProfilePage() {
         </main>
       </div>
 
-      {/* Image Preview Modal */}
-      {previewImage && (
-        <div
-          className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center"
-          onClick={() => setPreviewImage(null)}
-        >
-          <div className="relative w-full h-full flex items-center justify-center px-2 sm:px-4 pt-14" onClick={(e) => e.stopPropagation()}>
-            <div className="absolute top-2 sm:top-4 left-2 sm:left-4 bg-black/70 px-2 sm:px-3 py-1 text-xs sm:text-sm font-mono text-white z-10 rounded">
-              {previewImage.type}
-            </div>
-            <div className="absolute top-2 sm:top-4 right-2 sm:right-4 flex gap-1.5 sm:gap-2 z-10">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  downloadImage(previewImage.url, `renderz-${previewImage.type.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}.png`);
-                }}
-                className="w-8 h-8 sm:w-10 sm:h-10 bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center rounded"
-              >
-                <Download className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-              </button>
-              <button
-                onClick={() => setPreviewImage(null)}
-                className="w-8 h-8 sm:w-10 sm:h-10 bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center rounded"
-              >
-                <X className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-              </button>
-            </div>
-            <img src={previewImage.url} alt="Preview" className="max-w-full max-h-full object-contain" />
-          </div>
-        </div>
+      {/* Render Studio */}
+      {studioRender && (
+        <RenderStudio
+          render={studioRender}
+          projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+          onClose={() => setStudioRender(null)}
+          onRenderUpdate={(updated) => {
+            setRenders((prev) =>
+              prev.map((r) => (r.id === updated.id ? updated : r))
+            );
+            setStudioRender(updated);
+          }}
+          onRenderDelete={(renderId) => {
+            setRenders((prev) => prev.filter((r) => r.id !== renderId));
+          }}
+          onNewRenderCreated={() => {
+            fetchRenders();
+            fetchProjects();
+          }}
+        />
       )}
 
       <ConfirmActionDialog

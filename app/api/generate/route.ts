@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { generateWithNanoBanana, AspectRatio, ImageInput, ImageRole } from '@/lib/api/nano-banana';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
+import { notifyRenderCompleted } from '@/lib/api/notifications';
 
 // Limite de rendus par mois pour tous les utilisateurs
 const MONTHLY_RENDERS_LIMIT = 200;
@@ -134,7 +135,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Lancer la génération en arrière-plan (SANS upscaling automatique)
-    processRender(render.id, normalizedImages, prompt, aspectRatio).catch(console.error);
+    processRender(render.id, normalizedImages, prompt, aspectRatio, {
+      userName: session.user.name || '',
+      userEmail: session.user.email || '',
+    }).catch(console.error);
 
     return NextResponse.json({
       success: true,
@@ -151,7 +155,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processRender(renderId: string, images: ImageInput[], prompt: string, aspectRatio?: AspectRatio) {
+async function processRender(renderId: string, images: ImageInput[], prompt: string, aspectRatio?: AspectRatio, userInfo?: { userName: string; userEmail: string }) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -201,6 +205,14 @@ async function processRender(renderId: string, images: ImageInput[], prompt: str
         status: updateData?.status,
         has_generated_url: !!updateData?.generated_image_url
       });
+
+      // Send push notification
+      notifyRenderCompleted({
+        userName: userInfo?.userName || '',
+        userEmail: userInfo?.userEmail || '',
+        renderId,
+        imageUrl: nanoBananaResult.generatedImageUrl,
+      }).catch(() => {});
     }
     
     // Vérifier immédiatement que la mise à jour a fonctionné

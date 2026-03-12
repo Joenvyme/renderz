@@ -735,6 +735,12 @@ export default function LandingPage() {
             <p className="text-lg sm:text-xl lg:text-2xl xl:text-3xl 2xl:text-4xl font-semibold text-black text-center" style={{ textShadow: '0 2px 8px rgba(255,255,255,0.6), 0 4px 16px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)' }}>
               Show concepts easily and get client approvals faster.
             </p>
+            <div className="flex justify-center">
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 text-xs sm:text-sm font-medium bg-white/70 border border-border/70 text-black backdrop-blur-sm">
+                Made with heart in the Swiss mountains 🇨🇭
+              </span>
+            </div>
+
           </div>
           
           {/* Espacement supplémentaire avant le formulaire */}
@@ -1539,10 +1545,13 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="bg-white border-t border-border">
-        <div className="container mx-auto px-3 sm:px-6 h-10 sm:h-12 flex items-center justify-center">
+        <div className="container mx-auto px-3 sm:px-6 py-3 sm:py-4 flex flex-col items-center justify-center gap-1">
           <p className="text-[10px] sm:text-xs font-mono text-muted-foreground text-center">
             <span className="hidden sm:inline">© 2026 RENDERZ · ARCHITECTURE + TECHNOLOGY</span>
             <span className="sm:hidden">© 2026 RENDERZ</span>
+          </p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground/80 text-center">
+            Made with heart in the Swiss mountains 🇨🇭
           </p>
         </div>
       </footer>
