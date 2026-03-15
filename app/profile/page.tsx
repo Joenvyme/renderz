@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, useRef, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useSession, signOut } from "@/lib/auth-client";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
@@ -17,6 +17,8 @@ import {
   Sparkles,
   Menu,
   Heart,
+  Clapperboard,
+  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 import { RenderGenerator } from "@/components/render-generator";
@@ -48,9 +50,18 @@ interface Render {
   metadata?: RenderMetadata;
 }
 
-export default function ProfilePage() {
+export default function ProfilePageWrapper() {
+  return (
+    <Suspense>
+      <ProfilePage />
+    </Suspense>
+  );
+}
+
+function ProfilePage() {
   const PAGE_SIZE = 24;
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session, isPending } = useSession();
   const [renders, setRenders] = useState<Render[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -76,6 +87,8 @@ export default function ProfilePage() {
 
   const [pendingDeleteRenderId, setPendingDeleteRenderId] = useState<string | null>(null);
   const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set());
+  const [pendingStudioRenderIds, setPendingStudioRenderIds] = useState<Set<string>>(new Set());
+  const [readyRenderToast, setReadyRenderToast] = useState<Render | null>(null);
 
   useEffect(() => {
     if (!isPending && !session) {
@@ -100,6 +113,53 @@ export default function ProfilePage() {
       return () => clearTimeout(timer);
     }
   }, [showUpscaleToast]);
+
+  // Handle ?studio=renderId from landing page redirect
+  useEffect(() => {
+    const studioRenderId = searchParams.get("studio");
+    if (!studioRenderId || !session) return;
+
+    // Clear the query param from URL
+    router.replace("/profile", { scroll: false });
+
+    let cancelled = false;
+    const pollForRender = async () => {
+      const maxAttempts = 180; // 6 min max
+      for (let i = 0; i < maxAttempts; i++) {
+        if (cancelled) return;
+        try {
+          const res = await fetch(`/api/render/${studioRenderId}`);
+          if (!res.ok) break;
+          const data = await res.json();
+          const render = data.render ?? data;
+          if (render && render.id) {
+            setStudioRender(render);
+            if (render.status === "completed" || render.status === "failed") return;
+            if (render.status === "completed") {
+              fetchRenders(0, true);
+              return;
+            }
+          }
+        } catch { /* continue polling */ }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    };
+
+    // Set a placeholder render immediately so the studio opens in loading mode
+    setStudioRender({
+      id: studioRenderId,
+      original_image_url: null,
+      generated_image_url: null,
+      upscaled_image_url: null,
+      prompt: null,
+      status: "processing",
+      created_at: new Date().toISOString(),
+      project_id: null,
+    });
+
+    pollForRender();
+    return () => { cancelled = true; };
+  }, [searchParams, session]);
 
   const fetchProjects = async () => {
     setIsLoadingProjects(true);
@@ -157,6 +217,47 @@ export default function ProfilePage() {
     if (isLoading || isLoadingMore || !hasMoreRenders) return;
     fetchRenders(nextOffset, false);
   }, [fetchRenders, hasMoreRenders, isLoading, isLoadingMore, nextOffset]);
+
+  useEffect(() => {
+    if (!pendingStudioRenderIds.size) return;
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled) return;
+      const ids = Array.from(pendingStudioRenderIds);
+      for (const id of ids) {
+        try {
+          const res = await fetch(`/api/render/${id}`);
+          if (!res.ok) continue;
+          const render = await res.json();
+          if (render?.status === "completed") {
+            setPendingStudioRenderIds((prev) => {
+              const next = new Set(prev);
+              next.delete(id);
+              return next;
+            });
+            setReadyRenderToast(render);
+            fetchRenders(0, true);
+          } else if (render?.status === "failed") {
+            setPendingStudioRenderIds((prev) => {
+              const next = new Set(prev);
+              next.delete(id);
+              return next;
+            });
+          }
+        } catch {
+          // keep polling
+        }
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [pendingStudioRenderIds, fetchRenders]);
 
   useEffect(() => {
     if (session) {
@@ -305,7 +406,7 @@ export default function ProfilePage() {
 
   interface GridItem {
     render: Render;
-    variant: "standard" | "4k";
+    variant: "standard" | "4k" | "video";
     imageUrl: string;
     key: string;
   }
@@ -329,6 +430,14 @@ export default function ProfilePage() {
         variant: "4k",
         imageUrl: render.upscaled_image_url,
         key: `${render.id}-4k`,
+      });
+    }
+    if (render.metadata?.video_url) {
+      items.push({
+        render,
+        variant: "video",
+        imageUrl: render.upscaled_image_url || render.generated_image_url || "",
+        key: `${render.id}-video`,
       });
     }
     if (!render.generated_image_url) {
@@ -444,23 +553,24 @@ export default function ProfilePage() {
         {!sidebarOpen && (
           <button
             onClick={() => setSidebarOpen(true)}
-            className="hidden lg:flex fixed top-[72px] left-3 z-40 p-2 bg-white border border-border rounded-sm shadow-sm hover:bg-white transition-colors"
+            className="hidden lg:flex fixed top-[72px] left-2 z-40 h-10 w-10 items-center justify-center bg-white border border-border rounded-sm shadow-sm hover:bg-muted/50 transition-colors"
             title="Show sidebar"
           >
-            <Menu className="w-4 h-4" />
+            <ChevronRight className="w-4 h-4" />
           </button>
         )}
 
         {/* Main content */}
         <main
-          className="flex flex-col min-w-0 min-h-[calc(100vh-3.5rem)] sm:min-h-[calc(100vh-4rem)] transition-all duration-300"
-          style={{ marginLeft: sidebarOpen ? "260px" : "0" }}
+          className={`flex flex-col min-w-0 min-h-[calc(100vh-3.5rem)] sm:min-h-[calc(100vh-4rem)] transition-all duration-300 ${
+            sidebarOpen ? "lg:ml-[260px]" : "lg:ml-[52px]"
+          }`}
         >
           {/* Content area */}
-          <div className="pb-[240px]">
+          <div className="pb-[140px] sm:pb-[200px] lg:pb-[240px]">
             {/* Renders Grid */}
-            <div className="p-4 sm:p-8">
-              <div className="mb-4 flex items-center gap-2">
+            <div className="p-2 sm:p-4 lg:p-8">
+              <div className="mb-2 sm:mb-4 flex items-center gap-1.5 sm:gap-2">
                 <button
                   onClick={() => {
                     setFavoritesOnly(false);
@@ -468,7 +578,7 @@ export default function ProfilePage() {
                       setSelectedProjectId(null);
                     }
                   }}
-                  className={`px-3 py-1.5 text-xs font-mono border transition-colors ${
+                  className={`px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-mono border transition-colors ${
                     !isFavoritesView
                       ? "bg-black text-white border-black"
                       : "bg-white text-foreground border-border hover:bg-muted/50"
@@ -478,13 +588,13 @@ export default function ProfilePage() {
                 </button>
                 <button
                   onClick={() => setFavoritesOnly(true)}
-                  className={`px-3 py-1.5 text-xs font-mono border transition-colors flex items-center gap-1.5 ${
+                  className={`px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-mono border transition-colors flex items-center gap-1 sm:gap-1.5 ${
                     isFavoritesView
                       ? "bg-black text-white border-black"
                       : "bg-white text-foreground border-border hover:bg-muted/50"
                   }`}
                 >
-                  <Heart className={`w-3.5 h-3.5 ${isFavoritesView ? "fill-current" : ""}`} />
+                  <Heart className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isFavoritesView ? "fill-current" : ""}`} />
                   Favorites
                 </button>
               </div>
@@ -503,12 +613,12 @@ export default function ProfilePage() {
                 </div>
               ) : (
                 <>
-                  <div className="columns-2 sm:columns-3 lg:columns-4 xl:columns-5 gap-1 sm:gap-1.5">
+                  <div className="columns-2 sm:columns-3 lg:columns-4 xl:columns-5 gap-0.5 sm:gap-1 lg:gap-1.5">
                     {gridItems.map((item) => (
                       <div
                         key={item.key}
-                        className="group relative overflow-hidden mb-1 sm:mb-1.5 break-inside-avoid cursor-pointer"
-                        onClick={() => item.imageUrl && setStudioRender(item.render)}
+                        className="group relative overflow-hidden mb-0.5 sm:mb-1 lg:mb-1.5 break-inside-avoid cursor-pointer"
+                        onClick={() => (item.imageUrl || item.variant === "video") && setStudioRender(item.render)}
                       >
                         <div
                           className="relative bg-muted overflow-hidden"
@@ -527,6 +637,11 @@ export default function ProfilePage() {
                                 }`}
                                 onLoad={() => handleImageLoaded(item.key)}
                               />
+                              {item.variant === "video" && (
+                                <div className="absolute top-1 right-1 sm:top-2 sm:right-2 bg-black/70 text-white p-0.5 sm:p-1 rounded-sm border border-white/20">
+                                  <Clapperboard className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                                </div>
+                              )}
                               {/* Hover overlay */}
                               <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
                                 <button
@@ -561,6 +676,10 @@ export default function ProfilePage() {
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      if (item.variant === "video" && item.render.metadata?.video_url) {
+                                        downloadImage(item.render.metadata.video_url, `renderz-${item.render.id}-video.mp4`);
+                                        return;
+                                      }
                                       downloadImage(item.imageUrl, `renderz-${item.render.id}${item.variant === "4k" ? "-4k" : ""}.png`);
                                     }}
                                     className="px-2 py-1 text-[10px] font-mono bg-white/90 text-black hover:bg-white transition-colors rounded-sm"
@@ -590,27 +709,30 @@ export default function ProfilePage() {
                                 <>
                                   <X className="w-6 h-6 text-red-400" />
                                   <p className="text-[10px] font-mono text-muted-foreground">Render failed</p>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setPendingDeleteRenderId(item.render.id);
-                                    }}
-                                    disabled={deletingIds.has(item.render.id)}
-                                    className="mt-1 px-3 py-1.5 text-[10px] font-mono bg-red-500/80 text-white hover:bg-red-500 transition-colors flex items-center gap-1"
-                                  >
-                                    {deletingIds.has(item.render.id) ? (
-                                      <Loader2 className="w-3 h-3 animate-spin" />
-                                    ) : (
-                                      <>
-                                        <Trash2 className="w-3 h-3" />
-                                        DELETE
-                                      </>
-                                    )}
-                                  </button>
                                 </>
                               ) : (
-                                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                                <>
+                                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                                  <p className="text-[10px] font-mono text-muted-foreground/80">Generating...</p>
+                                </>
                               )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPendingDeleteRenderId(item.render.id);
+                                }}
+                                disabled={deletingIds.has(item.render.id)}
+                                className="mt-1 px-3 py-1.5 text-[10px] font-mono bg-red-500/80 text-white hover:bg-red-500 transition-colors flex items-center gap-1"
+                              >
+                                {deletingIds.has(item.render.id) ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <>
+                                    <Trash2 className="w-3 h-3" />
+                                    DELETE
+                                  </>
+                                )}
+                              </button>
                             </div>
                           )}
                         </div>
@@ -634,11 +756,11 @@ export default function ProfilePage() {
           </div>
 
           {/* Fixed Render Generator at bottom */}
-          <div className="fixed bottom-0 z-30 transition-all duration-300"
-            style={{ left: sidebarOpen ? "260px" : "0", right: "0" }}
-          >
+          <div className={`fixed bottom-0 left-0 right-0 z-30 transition-all duration-300 ${
+            sidebarOpen ? "lg:left-[260px]" : "lg:left-[52px]"
+          }`}>
             <div className="flex justify-center w-full">
-              <div className="p-4 sm:p-6 m-4 sm:m-6 w-full max-w-[1200px] bg-white/60 backdrop-blur-xl border border-border/50 shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
+              <div className="p-2 sm:p-4 lg:p-6 m-2 sm:m-4 lg:m-6 w-full max-w-[1200px] bg-white/60 backdrop-blur-xl border border-border/50 shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
               <RenderGenerator
                 onGenerateSuccess={() => {
                   fetchRenders();
@@ -665,7 +787,12 @@ export default function ProfilePage() {
         <RenderStudio
           render={studioRender}
           projects={projects.map((p) => ({ id: p.id, name: p.name }))}
-          onClose={() => setStudioRender(null)}
+          onClose={() => {
+            if (studioRender.status === "processing" || studioRender.status === "pending") {
+              setPendingStudioRenderIds((prev) => new Set(prev).add(studioRender.id));
+            }
+            setStudioRender(null);
+          }}
           onRenderUpdate={(updated) => {
             setRenders((prev) =>
               prev.map((r) => (r.id === updated.id ? updated : r))
@@ -678,6 +805,9 @@ export default function ProfilePage() {
           onNewRenderCreated={() => {
             fetchRenders();
             fetchProjects();
+          }}
+          onRenderQueued={(renderId) => {
+            setPendingStudioRenderIds((prev) => new Set(prev).add(renderId));
           }}
         />
       )}
@@ -709,6 +839,24 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {readyRenderToast && (
+        <button
+          onClick={() => {
+            setStudioRender(readyRenderToast);
+            setReadyRenderToast(null);
+          }}
+          className="fixed bottom-20 right-4 sm:right-6 z-[110] max-w-[320px] bg-black/90 text-white border border-white/20 px-4 py-3 shadow-lg backdrop-blur-sm animate-in slide-in-from-bottom-2 fade-in duration-300 text-left hover:bg-black transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <Sparkles className="w-4 h-4 text-green-400 flex-shrink-0" />
+            <div>
+              <p className="text-xs font-mono">Render ready</p>
+              <p className="text-[10px] text-white/70 font-mono">Click to open in studio</p>
+            </div>
+          </div>
+        </button>
       )}
     </div>
   );

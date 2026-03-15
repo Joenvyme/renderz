@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   X,
   Download,
@@ -17,6 +17,7 @@ import {
   Check,
   Ratio,
   ChevronDown,
+  ChevronUp,
   Info,
   Calendar,
   Tag,
@@ -62,6 +63,7 @@ interface RenderStudioProps {
   onRenderUpdate: (updated: Render) => void;
   onRenderDelete: (renderId: string) => void;
   onNewRenderCreated: () => void;
+  onRenderQueued?: (renderId: string) => void;
 }
 
 export function RenderStudio({
@@ -71,6 +73,7 @@ export function RenderStudio({
   onRenderUpdate,
   onRenderDelete,
   onNewRenderCreated,
+  onRenderQueued,
 }: RenderStudioProps) {
   const [currentRender, setCurrentRender] = useState<Render>(render);
   const [modifyPrompt, setModifyPrompt] = useState("");
@@ -89,10 +92,68 @@ export function RenderStudio({
   const [showVideo, setShowVideo] = useState(false);
   const [showUpscaleToast, setShowUpscaleToast] = useState(false);
   const [viewingUpscaled, setViewingUpscaled] = useState(false);
+  const [mobilePanelCollapsed, setMobilePanelCollapsed] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const touchStartY = useRef(0);
+  const touchDeltaY = useRef(0);
+  const isDragging = useRef(false);
+
+  const handlePanelTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+    touchDeltaY.current = 0;
+    isDragging.current = false;
+  }, []);
+
+  const handlePanelTouchMove = useCallback((e: React.TouchEvent) => {
+    const delta = e.touches[0].clientY - touchStartY.current;
+    touchDeltaY.current = delta;
+    if (Math.abs(delta) > 10) isDragging.current = true;
+  }, []);
+
+  const handlePanelTouchEnd = useCallback(() => {
+    if (!isDragging.current) return;
+    const threshold = 60;
+    if (mobilePanelCollapsed) {
+      if (touchDeltaY.current < -threshold) setMobilePanelCollapsed(false);
+    } else {
+      if (touchDeltaY.current > threshold) setMobilePanelCollapsed(true);
+    }
+    isDragging.current = false;
+  }, [mobilePanelCollapsed]);
+
+  const isProcessing = currentRender.status === "processing" || currentRender.status === "pending";
 
   useEffect(() => {
     setCurrentRender(render);
   }, [render]);
+
+  // Poll for processing renders until they complete
+  useEffect(() => {
+    if (!isProcessing) return;
+    let cancelled = false;
+    const poll = async () => {
+      while (!cancelled) {
+        await new Promise((r) => setTimeout(r, 2000));
+        if (cancelled) return;
+        try {
+          const res = await fetch(`/api/render/${currentRender.id}`);
+          if (!res.ok) continue;
+          const data = await res.json();
+          const updated = data.render ?? data;
+          if (updated && updated.id) {
+            setCurrentRender(updated);
+            onRenderUpdate(updated);
+            if (updated.status === "completed" || updated.status === "failed") {
+              if (updated.status === "completed") onNewRenderCreated();
+              return;
+            }
+          }
+        } catch { /* continue polling */ }
+      }
+    };
+    poll();
+    return () => { cancelled = true; };
+  }, [currentRender.id, isProcessing]);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -125,7 +186,8 @@ export function RenderStudio({
   const canUpscale =
     currentRender.status === "completed" &&
     currentRender.generated_image_url &&
-    !isUpscaled;
+    !isUpscaled &&
+    !showVideo;
 
   const displayImageUrl = viewingUpscaled && isUpscaled
     ? currentRender.upscaled_image_url!
@@ -180,6 +242,7 @@ export function RenderStudio({
       }
 
       const { renderId } = await res.json();
+      onRenderQueued?.(renderId);
 
       let attempts = 0;
       const maxAttempts = 120;
@@ -325,19 +388,34 @@ export function RenderStudio({
     projects.find((p) => p.id === currentRender.project_id)?.name || null;
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col lg:flex-row">
-      {/* Top bar (mobile) / minimal bar (desktop) */}
-      <div className="flex items-center justify-between px-4 py-3 lg:hidden border-b border-white/10">
-        <span className="text-sm font-mono text-white/70 truncate max-w-[200px]">
-          {currentRender.prompt || "Render Studio"}
+    <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col lg:flex-row overflow-hidden">
+      {/* Top bar (mobile) */}
+      <div className="flex items-center justify-between px-3 py-2 lg:hidden border-b border-white/10 flex-shrink-0">
+        <span className="text-xs font-mono text-white/70 truncate max-w-[180px]">
+          Render Studio
         </span>
-        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded transition-colors">
-          <X className="w-5 h-5 text-white" />
-        </button>
+        <div className="flex items-center gap-1">
+          {!isProcessing && displayImageUrl && (
+            <button
+              onClick={() => {
+                const url = isUpscaled
+                  ? currentRender.upscaled_image_url!
+                  : currentRender.generated_image_url!;
+                if (url) downloadMedia(url, `renderz-${currentRender.id}.png`);
+              }}
+              className="p-1.5 hover:bg-white/10 rounded transition-colors"
+            >
+              <Download className="w-4 h-4 text-white/70" />
+            </button>
+          )}
+          <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded transition-colors">
+            <X className="w-4 h-4 text-white" />
+          </button>
+        </div>
       </div>
 
       {/* Left: Image viewer */}
-      <div className="flex-1 relative flex items-center justify-center p-4 lg:p-8 min-h-0">
+      <div className={`flex-1 relative flex items-center justify-center p-2 sm:p-4 lg:p-8 min-h-0 transition-all duration-300 ${mobilePanelCollapsed ? "max-h-none" : "max-h-[45vh]"} lg:max-h-none`}>
         {/* Desktop close button */}
         <button
           onClick={onClose}
@@ -353,21 +431,31 @@ export function RenderStudio({
             autoPlay
             loop
             className="max-w-full max-h-full object-contain rounded"
-            style={{ maxHeight: "calc(100vh - 120px)" }}
           />
         ) : displayImageUrl ? (
           <img
             src={displayImageUrl}
             alt="Render"
             className="max-w-full max-h-full object-contain"
-            style={{ maxHeight: "calc(100vh - 120px)" }}
           />
+        ) : isProcessing ? (
+          <div className="flex flex-col items-center gap-5">
+            <div className="relative">
+              <div className="w-20 h-20 border-4 border-white/10 rounded-full" />
+              <div className="absolute inset-0 w-20 h-20 border-4 border-t-white border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" />
+              <Sparkles className="absolute inset-0 m-auto w-6 h-6 text-white animate-pulse" />
+            </div>
+            <div className="text-center">
+              <p className="text-white/70 font-mono text-sm">Generating render...</p>
+              <p className="text-white/30 font-mono text-[10px] mt-1">This may take a few minutes</p>
+            </div>
+          </div>
         ) : (
           <div className="text-white/40 font-mono text-sm">No image available</div>
         )}
 
         {/* Image/Video toggle & quality badge */}
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2">
+        <div className="absolute bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 sm:gap-2">
           {isUpscaled && (
             <button
               onClick={() => setViewingUpscaled(!viewingUpscaled)}
@@ -409,8 +497,31 @@ export function RenderStudio({
       </div>
 
       {/* Right: Studio panel */}
-      <div className="w-full lg:w-[380px] xl:w-[420px] border-t lg:border-t-0 lg:border-l border-white/10 bg-black/40 backdrop-blur-sm overflow-y-auto">
-        <div className="p-5 space-y-6">
+      <div
+        ref={panelRef}
+        className={`w-full lg:w-[380px] xl:w-[420px] border-t lg:border-t-0 lg:border-l border-white/10 bg-black/80 lg:bg-black/40 backdrop-blur-sm flex-shrink-0 transition-all duration-300 ease-out ${
+          mobilePanelCollapsed
+            ? "max-h-[48px] overflow-hidden"
+            : "overflow-y-auto"
+        } lg:max-h-none lg:overflow-y-auto`}
+      >
+        {/* Mobile drag handle */}
+        <div
+          className="lg:hidden flex flex-col items-center pt-2 pb-1 cursor-grab active:cursor-grabbing touch-none"
+          onTouchStart={handlePanelTouchStart}
+          onTouchMove={handlePanelTouchMove}
+          onTouchEnd={handlePanelTouchEnd}
+          onClick={() => setMobilePanelCollapsed(!mobilePanelCollapsed)}
+        >
+          <div className="w-10 h-1 rounded-full bg-white/30 mb-1" />
+          <div className="flex items-center gap-1.5">
+            <ChevronUp className={`w-3 h-3 text-white/40 transition-transform duration-300 ${mobilePanelCollapsed ? "rotate-180" : ""}`} />
+            <span className="text-[10px] font-mono text-white/40">
+              {mobilePanelCollapsed ? "Show tools" : "Hide tools"}
+            </span>
+          </div>
+        </div>
+        <div className="p-3 sm:p-4 lg:p-5 pb-8 lg:pb-5 space-y-4 lg:space-y-6 pt-0 lg:pt-5">
           {/* Header with close (desktop) */}
           <div className="hidden lg:flex items-center justify-between">
             <h2 className="text-sm font-mono text-white/90 uppercase tracking-wider">
@@ -426,14 +537,38 @@ export function RenderStudio({
                 }}
                 className="p-2 hover:bg-white/10 rounded transition-colors"
                 title="Download"
+                disabled={isProcessing}
               >
                 <Download className="w-4 h-4 text-white/70" />
               </button>
             </div>
           </div>
 
-          {/* Original prompt */}
-          {currentRender.prompt && (
+          {/* Processing state message */}
+          {isProcessing && (
+            <div className="py-8 flex flex-col items-center gap-4 text-center">
+              <Loader2 className="w-6 h-6 text-white/40 animate-spin" />
+              <div>
+                <p className="text-xs font-mono text-white/50">Your render is being generated</p>
+                <p className="text-[10px] font-mono text-white/30 mt-1">Tools will be available once the render is ready</p>
+              </div>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={isDeleting}
+                className="mt-1 px-3 py-2 rounded font-mono text-[10px] bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500/25 transition-colors flex items-center gap-1.5"
+              >
+                {isDeleting ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3 h-3" />
+                )}
+                DELETE RENDER
+              </button>
+            </div>
+          )}
+
+          {/* All tools hidden during processing */}
+          {!isProcessing && currentRender.prompt && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
@@ -451,22 +586,24 @@ export function RenderStudio({
                   )}
                 </button>
               </div>
-              <p className="text-xs text-white/60 leading-relaxed font-mono bg-white/5 p-3 rounded border border-white/5">
+              <p className="text-[11px] sm:text-xs text-white/60 leading-relaxed font-mono bg-white/5 p-2 sm:p-3 rounded border border-white/5 line-clamp-3 lg:line-clamp-none">
                 {currentRender.prompt}
               </p>
             </div>
           )}
 
+          {/* All tool sections - disabled during processing */}
+          {!isProcessing && (<>
           {/* Modify section */}
-          <div className="space-y-3">
+          <div className="space-y-2 lg:space-y-3">
             <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
               Modify this render
             </span>
             <Textarea
               value={modifyPrompt}
               onChange={(e) => setModifyPrompt(e.target.value.slice(0, 500))}
-              placeholder="Describe what you want to change... e.g. warmer lighting, add plants, change wall color to beige"
-              className="min-h-[80px] resize-none rounded font-mono text-xs bg-white/5 border-white/10 text-white placeholder:text-white/25 focus:border-white/30"
+              placeholder="Describe what you want to change..."
+              className="min-h-[60px] lg:min-h-[80px] resize-none rounded font-mono text-xs bg-white/5 border-white/10 text-white placeholder:text-white/25 focus:border-white/30"
               disabled={isModifying}
             />
             <div className="flex items-center gap-2">
@@ -524,16 +661,16 @@ export function RenderStudio({
           <div className="border-t border-white/8" />
 
           {/* Enhance section */}
-          <div className="space-y-3">
+          <div className="space-y-2 lg:space-y-3">
             <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
               Enhance
             </span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
               {/* Upscale 4K */}
               <button
                 onClick={handleUpscale}
                 disabled={isUpscaling || !canUpscale}
-                className={`flex items-center gap-2 px-3 py-2.5 rounded font-mono text-xs transition-all ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2 sm:py-2.5 rounded font-mono text-[10px] sm:text-xs transition-all ${
                   isUpscaled
                     ? "bg-green-500/15 text-green-400 border border-green-500/20"
                     : canUpscale
@@ -553,7 +690,7 @@ export function RenderStudio({
               <button
                 onClick={handleGenerateVideo}
                 disabled={isGeneratingVideo || videoProcessing}
-                className={`flex items-center gap-2 px-3 py-2.5 rounded font-mono text-xs transition-all ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2 sm:py-2.5 rounded font-mono text-[10px] sm:text-xs transition-all ${
                   hasVideo
                     ? "bg-purple-500/15 text-purple-400 border border-purple-500/20"
                     : "bg-white/5 text-white/70 border border-white/10 hover:bg-white/10"
@@ -570,10 +707,10 @@ export function RenderStudio({
 
             {/* Video actions if video exists */}
             {hasVideo && (
-              <div className="flex gap-2">
+              <div className="flex gap-1.5 sm:gap-2">
                 <button
                   onClick={() => setShowVideo(true)}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded font-mono text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded font-mono text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors"
                 >
                   <Play className="w-3 h-3" />
                   PLAY VIDEO
@@ -585,7 +722,7 @@ export function RenderStudio({
                       `renderz-video-${currentRender.id}.mp4`
                     )
                   }
-                  className="flex items-center gap-1.5 px-3 py-2 rounded font-mono text-[10px] bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-colors"
+                  className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded font-mono text-[10px] bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-colors"
                 >
                   <Download className="w-3 h-3" />
                 </button>
@@ -597,16 +734,16 @@ export function RenderStudio({
           <div className="border-t border-white/8" />
 
           {/* Actions section */}
-          <div className="space-y-3">
+          <div className="space-y-2 lg:space-y-3">
             <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
               Actions
             </span>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
               {/* Favorite */}
               <button
                 onClick={handleToggleFavorite}
                 disabled={isFavoriting}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded font-mono text-[10px] transition-all ${
+                className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded font-mono text-[10px] transition-all ${
                   isFavorite
                     ? "bg-pink-500/15 text-pink-400 border border-pink-500/20"
                     : "bg-white/5 text-white/60 border border-white/10 hover:bg-white/10"
@@ -624,7 +761,7 @@ export function RenderStudio({
               <div className="relative">
                 <button
                   onClick={() => setShowMoveMenu(!showMoveMenu)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded font-mono text-[10px] bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-all"
+                  className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded font-mono text-[10px] bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-all"
                 >
                   <FolderInput className="w-3 h-3" />
                   MOVE
@@ -666,7 +803,7 @@ export function RenderStudio({
                   if (displayImageUrl)
                     downloadMedia(displayImageUrl, `renderz-${currentRender.id}.png`);
                 }}
-                className="flex items-center gap-1.5 px-3 py-2 rounded font-mono text-[10px] bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-all"
+                className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded font-mono text-[10px] bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-all"
               >
                 <Download className="w-3 h-3" />
                 DOWNLOAD
@@ -675,7 +812,7 @@ export function RenderStudio({
               {/* Delete */}
               <button
                 onClick={() => setShowDeleteConfirm(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded font-mono text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all"
+                className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded font-mono text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all"
               >
                 <Trash2 className="w-3 h-3" />
                 DELETE
@@ -687,7 +824,7 @@ export function RenderStudio({
           <div className="border-t border-white/8" />
 
           {/* Info section */}
-          <div className="space-y-3">
+          <div className="space-y-2 lg:space-y-3">
             <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
               Details
             </span>
@@ -736,6 +873,7 @@ export function RenderStudio({
               </div>
             </div>
           </div>
+          </>)}
         </div>
       </div>
 
@@ -754,11 +892,11 @@ export function RenderStudio({
 
       {/* Upscale toast */}
       {showUpscaleToast && (
-        <div className="fixed bottom-6 right-6 z-[100] animate-in slide-in-from-bottom-2 fade-in duration-300">
-          <div className="bg-white/10 backdrop-blur-sm border border-white/20 px-4 py-3 rounded shadow-lg">
-            <div className="flex items-center gap-3">
-              <Sparkles className="w-4 h-4 text-yellow-400 animate-pulse flex-shrink-0" />
-              <p className="text-xs font-mono text-white">Coming soon</p>
+        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[100] animate-in slide-in-from-bottom-2 fade-in duration-300">
+          <div className="bg-white/10 backdrop-blur-sm border border-white/20 px-3 py-2 sm:px-4 sm:py-3 rounded shadow-lg">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-yellow-400 animate-pulse flex-shrink-0" />
+              <p className="text-[11px] sm:text-xs font-mono text-white">Coming soon</p>
             </div>
           </div>
         </div>
