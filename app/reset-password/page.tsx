@@ -9,6 +9,7 @@ import { authClient } from "@/lib/auth-client";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
 import { Loader2, Lock, CheckCircle, XCircle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { BrandLogo } from "@/components/brand-logo";
 
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
@@ -79,14 +80,12 @@ function ResetPasswordForm() {
 
       <Card className="relative z-10 w-full max-w-md p-8 bg-card/80 backdrop-blur-sm border-border">
         {/* Logo */}
-        <Link href="/" className="block mb-8">
-          <h1
-            className="text-3xl font-bold tracking-tighter text-center"
-            style={{ fontFamily: "system-ui, -apple-system, sans-serif", letterSpacing: "-0.05em" }}
-          >
-            RENDERZ
-          </h1>
-        </Link>
+        <div className="mb-8 flex justify-center">
+          <BrandLogo
+            imgClassName="h-9 w-auto max-w-[200px] sm:h-10 sm:max-w-[220px]"
+            className="hover:opacity-90 transition-opacity"
+          />
+        </div>
 
         {status === "success" ? (
           <div className="text-center space-y-4">

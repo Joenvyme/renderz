@@ -22,6 +22,7 @@ import {
   Search,
 } from "lucide-react";
 import Link from "next/link";
+import { BrandLogo } from "@/components/brand-logo";
 
 // Admin emails autorisés
 const ADMIN_EMAILS = ["joey.montani@gmail.com"];
@@ -166,8 +167,9 @@ export default function AdminPage() {
                 BACK
               </Button>
             </Link>
+            <BrandLogo className="hover:opacity-90 transition-opacity" imgClassName="h-6 w-auto max-w-[120px] sm:h-7 sm:max-w-[140px]" />
             <span
-              className="text-2xl font-bold tracking-tighter"
+              className="text-xl font-bold tracking-tighter sm:text-2xl"
               style={{ fontFamily: "system-ui, -apple-system, sans-serif", letterSpacing: "-0.05em" }}
             >
               ADMIN

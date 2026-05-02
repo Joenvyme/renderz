@@ -225,6 +225,8 @@ Consultez [PROJECT_REFERENCE.md](./PROJECT_REFERENCE.md) pour :
 - Conventions de code
 - Métriques de succès
 
+**Abonnements et prix** (formules, crédits, IDs Stripe) : [SUBSCRIPTION_PRICING.md](./SUBSCRIPTION_PRICING.md).
+
 ## 🚀 Déploiement sur Vercel
 
 ```bash

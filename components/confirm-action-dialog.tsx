@@ -55,7 +55,7 @@ export function ConfirmActionDialog({
         className="absolute inset-0 bg-black/50"
         onClick={onCancel}
       />
-      <Card className="relative z-[81] w-full max-w-md p-5 sm:p-6 bg-white border border-border shadow-xl">
+      <Card className="relative z-[81] w-full max-w-md rounded-[6px] p-5 sm:p-6 bg-white border border-border shadow-xl">
         <h3 className="text-lg font-bold tracking-tight">{title}</h3>
         <p className="text-sm text-muted-foreground mt-2">{description}</p>
 

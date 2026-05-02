@@ -23,6 +23,13 @@ export async function DELETE() {
   try {
     await client.query("BEGIN");
 
+    await client.query(
+      `DELETE FROM billing_account WHERE type = 'personal' AND id IN (
+        SELECT billing_account_id FROM billing_account_member WHERE user_id = $1
+      )`,
+      [session.user.id]
+    );
+
     const userResult = await client.query(
       'SELECT email, image FROM "user" WHERE id = $1',
       [session.user.id]

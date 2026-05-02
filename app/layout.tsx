@@ -10,6 +10,10 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Renderz - AI Hyperrealistic Image Generation",
   description: "Transform your reference images into hyperrealistic renders with AI",
+  icons: {
+    icon: "/logo-renderz.svg",
+    apple: "/logo-renderz.svg",
+  },
 };
 
 export default function RootLayout({

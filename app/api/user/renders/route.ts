@@ -35,7 +35,8 @@ export async function GET(request: NextRequest) {
       .from("renders")
       .select("*")
       .eq("user_id", session.user.id)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
 
     if (projectId === "unassigned") {
       query = query.is("project_id", null);

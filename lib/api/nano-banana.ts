@@ -14,16 +14,58 @@
 
 import { MOCK_MODE, delay, MOCK_GENERATED_IMAGE } from './mock-mode';
 
-// Aspect ratios supportés par Gemini
-export type AspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16';
+/**
+ * Ratios supportés par gemini-3-pro-image-preview (tableau officiel 1K / doc image generation).
+ * @see https://ai.google.dev/gemini-api/docs/image-generation#aspect_ratios_and_image_size
+ */
+export type AspectRatio =
+  | '1:1'
+  | '2:3'
+  | '3:2'
+  | '3:4'
+  | '4:3'
+  | '4:5'
+  | '5:4'
+  | '9:16'
+  | '16:9'
+  | '21:9';
 
-export const ASPECT_RATIOS: { value: AspectRatio; label: string; resolution: string }[] = [
-  { value: '1:1', label: 'Square', resolution: '1024×1024' },
-  { value: '4:3', label: 'Landscape', resolution: '1344×1008' },
-  { value: '3:4', label: 'Portrait', resolution: '1008×1344' },
-  { value: '16:9', label: 'Widescreen', resolution: '1344×768' },
-  { value: '9:16', label: 'Vertical', resolution: '768×1344' },
+/** Résolutions de sortie API (`imageSize`) — majuscule K obligatoire côté Google. */
+export type ImageOutputSize = '1K' | '2K' | '4K';
+
+export const ASPECT_RATIOS: { value: AspectRatio; label: string; resolution1K: string }[] = [
+  { value: '1:1', label: 'Square', resolution1K: '1024×1024' },
+  { value: '16:9', label: 'Widescreen', resolution1K: '1376×768' },
+  { value: '9:16', label: 'Vertical', resolution1K: '768×1376' },
+  { value: '4:3', label: 'Landscape', resolution1K: '1200×896' },
+  { value: '3:4', label: 'Portrait', resolution1K: '896×1200' },
+  { value: '3:2', label: 'Photo L', resolution1K: '1264×848' },
+  { value: '2:3', label: 'Photo P', resolution1K: '848×1264' },
+  { value: '21:9', label: 'Ultrawide', resolution1K: '1584×672' },
+  { value: '4:5', label: '4:5', resolution1K: '928×1152' },
+  { value: '5:4', label: '5:4', resolution1K: '1152×928' },
 ];
+
+/** Libellés produit ↔ valeurs `imageSize` de l’API (HD ≈ 1K, Full HD ≈ 2K, 4K). */
+export const IMAGE_OUTPUT_SIZES: {
+  value: ImageOutputSize;
+  label: string;
+  hint: string;
+}[] = [
+  { value: '1K', label: 'HD', hint: '1K' },
+  { value: '2K', label: 'Full HD', hint: '2K' },
+  { value: '4K', label: '4K', hint: '4K' },
+];
+
+export const DEFAULT_IMAGE_OUTPUT_SIZE: ImageOutputSize = '1K';
+
+export function isValidAspectRatio(v: string): v is AspectRatio {
+  return ASPECT_RATIOS.some((r) => r.value === v);
+}
+
+export function isValidImageOutputSize(v: string): v is ImageOutputSize {
+  return IMAGE_OUTPUT_SIZES.some((s) => s.value === v);
+}
 
 // Types pour les images multiples
 export type ImageRole = 'main' | 'style' | 'reference';
@@ -33,10 +75,19 @@ export interface ImageInput {
   role: ImageRole;
 }
 
+/**
+ * Nombre maximal d’images d’entrée pour une requête `generateContent` (Gemini multimodal).
+ * Aligné sur les quotas usuels de l’API (~16 images par requête) ; à baisser si Google renvoie des erreurs de limite.
+ * @see https://ai.google.dev/gemini-api/docs/image-generation
+ */
+export const MAX_INPUT_IMAGES = 16;
+
 interface NanoBananaGenerateRequest {
   images: ImageInput[]; // Support pour plusieurs images
   prompt: string;
   aspectRatio?: AspectRatio;
+  /** Résolution de sortie Gemini 3 Pro Image (`imageConfig.imageSize`). Défaut : 1K. */
+  imageSize?: ImageOutputSize;
 }
 
 // Pour la compatibilité, on garde aussi l'ancien format
@@ -44,6 +95,7 @@ interface NanoBananaGenerateRequestLegacy {
   imageUrl: string;
   prompt: string;
   aspectRatio?: AspectRatio;
+  imageSize?: ImageOutputSize;
 }
 
 interface NanoBananaGenerateResponse {
@@ -102,23 +154,17 @@ export async function generateWithNanoBanana(
       // Prompt concis et direct pour Gemini 3
       enhancedPrompt = `${request.prompt}. Photorealistic, professional quality.`;
     } else {
-      // Pour plusieurs images, décrire brièvement les rôles
-      const roleMap: Record<ImageRole, string> = {
-        main: 'main subject',
-        style: 'style reference',
-        reference: 'reference'
-      };
-      
-      const roleList = images.map((img, i) => 
-        `Image ${i + 1}: ${roleMap[img.role]}`
-      ).join(', ');
+      // Plusieurs images : ordre des parts = ordre du tableau = numéros 1…N (référencables dans le prompt utilisateur).
+      const numbering = images.map((_, i) => `Image ${i + 1}`).join(', ');
 
-      // Instructions concises placées après la description des images
-      enhancedPrompt = `${roleList}. ${request.prompt}. Photorealistic, professional quality.`;
+      enhancedPrompt = `Input images in order: ${numbering}. They are numbered 1 through ${images.length} in the same order as the image inputs above; when the user refers to an image by number, apply that to the corresponding image. ${request.prompt}. Photorealistic, professional quality.`;
     }
 
+    const imageSize: ImageOutputSize = request.imageSize ?? DEFAULT_IMAGE_OUTPUT_SIZE;
+
     console.log(`🍌 Generating with Gemini 3 Pro Image (${images.length} image(s))...`);
-    console.log(`   Roles: ${images.map(i => i.role).join(', ')}`);
+    console.log(`   Order: ${images.map((_, i) => i + 1).join(', ')}`);
+    console.log(`   Output: ${request.aspectRatio || '1:1'} @ ${imageSize}`);
 
     // Construire les parts selon les bonnes pratiques Gemini 3 :
     // - Pour les données multimodales (images), placer les instructions APRÈS le contexte
@@ -144,9 +190,10 @@ export async function generateWithNanoBanana(
           generationConfig: {
             responseModalities: ['IMAGE'],
             imageConfig: {
-              aspectRatio: request.aspectRatio || '1:1'
-            }
-          }
+              aspectRatio: request.aspectRatio || '1:1',
+              imageSize,
+            },
+          },
         }),
       }
     );

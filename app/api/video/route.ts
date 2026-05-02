@@ -3,6 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { generateVideoWithGoogle } from "@/lib/api/google-video";
+import {
+  assertCanStartAnimation,
+  getMonthlyUsage,
+  getOrCreateBillingAccountForUser,
+  recordSuccessfulAnimation,
+  type BillingAccountRow,
+} from "@/lib/billing/service";
 
 interface RenderMetadata {
   [key: string]: unknown;
@@ -41,6 +48,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Render not found or access denied" }, { status: 404 });
     }
 
+    const billingAccount = await getOrCreateBillingAccountForUser(supabase, session.user.id);
+    const usage = await getMonthlyUsage(supabase, billingAccount.id);
+    const quota = assertCanStartAnimation(billingAccount, usage, session.user.email);
+    if (quota) {
+      return NextResponse.json({ error: quota.error, code: quota.code }, { status: quota.status });
+    }
+
     if (!render.generated_image_url) {
       return NextResponse.json({ error: "Render has no generated image to animate" }, { status: 400 });
     }
@@ -71,7 +85,10 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", renderId);
 
-    processVideoGeneration(renderId, render.generated_image_url, videoPrompt).catch((error) => {
+    processVideoGeneration(renderId, render.generated_image_url, videoPrompt, {
+      billingAccount,
+      userEmail: session.user.email || "",
+    }).catch((error) => {
       console.error("Background video generation error:", error);
     });
 
@@ -86,7 +103,12 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processVideoGeneration(renderId: string, imageUrl: string, prompt: string) {
+async function processVideoGeneration(
+  renderId: string,
+  imageUrl: string,
+  prompt: string,
+  billingCtx: { billingAccount: BillingAccountRow; userEmail: string }
+) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -167,6 +189,12 @@ async function processVideoGeneration(renderId: string, imageUrl: string, prompt
         },
       })
       .eq("id", renderId);
+
+    await recordSuccessfulAnimation(
+      supabase,
+      billingCtx.billingAccount,
+      billingCtx.userEmail
+    );
   } catch (error) {
     console.error("Video generation processing error:", error);
     const { data: current } = await supabase

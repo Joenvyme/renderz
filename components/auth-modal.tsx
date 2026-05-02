@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { X, Loader2 } from "lucide-react";
 import { signIn, signUp, authClient } from "@/lib/auth-client";
+import { BrandLogo } from "@/components/brand-logo";
 
 // Google Icon SVG
 const GoogleIcon = () => (
@@ -144,6 +145,10 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         >
           <X className="w-5 h-5" />
         </button>
+
+        <div className="mb-5 flex justify-center">
+          <BrandLogo asStatic imgClassName="h-8 w-auto max-w-[180px]" />
+        </div>
 
         {/* Header */}
         <div className="text-center mb-6">

@@ -1,40 +1,427 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Upload, Sparkles, ArrowRight, X, Plus, Image as ImageIcon, Palette, Layers, Sofa, FolderOpen, Ratio, Gem, ChevronDown } from "lucide-react";
+import {
+  Upload,
+  Sparkles,
+  ArrowRight,
+  X,
+  Plus,
+  Sofa,
+  FolderOpen,
+  ImagePlus,
+  SlidersHorizontal,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { FurnitureCatalog } from "@/components/furniture-catalog";
 import { useSession } from "@/lib/auth-client";
-import { ASPECT_RATIOS, AspectRatio, ImageRole } from "@/lib/api/nano-banana";
+import {
+  ASPECT_RATIOS,
+  AspectRatio,
+  DEFAULT_IMAGE_OUTPUT_SIZE,
+  IMAGE_OUTPUT_SIZES,
+  ImageOutputSize,
+  ImageRole,
+  MAX_INPUT_IMAGES,
+  isValidImageOutputSize,
+} from "@/lib/api/nano-banana";
+import { LANDING_RENDER_FORM_STORAGE_KEYS } from "@/lib/landing-render-form-storage";
+import {
+  type GenerationPipeline,
+  type MagnificScaleFactor,
+  MAGNIFIC_SCALE_FACTORS,
+  clampMagnificStyleValue,
+  parseGenerationPipeline,
+} from "@/lib/generation-pipeline";
+import { cn } from "@/lib/utils";
 
 interface UploadedImageItem {
   id: string;
   dataUrl: string;
-  role: ImageRole;
 }
 
-const ROLE_CONFIG: Record<ImageRole, { label: string; description: string; icon: typeof ImageIcon }> = {
-  main: { 
-    label: 'Main', 
-    description: 'Primary subject/content',
-    icon: ImageIcon
-  },
-  style: { 
-    label: 'Style', 
-    description: 'Visual style reference',
-    icon: Palette
-  },
-  reference: { 
-    label: 'Reference', 
-    description: 'Additional context',
-    icon: Layers
-  },
-};
+function normalizeStoredImages(raw: unknown): UploadedImageItem[] {
+  if (!Array.isArray(raw)) return [];
+  const out: UploadedImageItem[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const o = entry as { id?: string; dataUrl?: string; url?: string };
+    const dataUrl =
+      typeof o.dataUrl === "string"
+        ? o.dataUrl
+        : typeof o.url === "string"
+          ? o.url
+          : "";
+    if (!dataUrl) continue;
+    out.push({
+      id:
+        typeof o.id === "string" && o.id
+          ? o.id
+          : `img-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+      dataUrl,
+    });
+  }
+  return out;
+}
 
-const MAX_IMAGES = 3;
+/** Rôle API dérivé uniquement de la position (1 → main, 2 → style, 3+ → reference). */
+function apiRoleForImageIndex(index: number): ImageRole {
+  if (index === 0) return "main";
+  if (index === 1) return "style";
+  return "reference";
+}
+
+function Magnific3DControls({
+  magnificScale,
+  setMagnificScale,
+  magnificResemblanceValue,
+  setMagnificResemblanceValue,
+  magnificCreativityValue,
+  setMagnificCreativityValue,
+  compact,
+}: {
+  magnificScale: MagnificScaleFactor;
+  setMagnificScale: (v: MagnificScaleFactor) => void;
+  magnificResemblanceValue: number;
+  setMagnificResemblanceValue: (v: number) => void;
+  magnificCreativityValue: number;
+  setMagnificCreativityValue: (v: number) => void;
+  compact: boolean;
+}) {
+  const labelCls = compact
+    ? "mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+    : "mb-1 block text-xs font-mono uppercase tracking-wider text-muted-foreground";
+  const scaleBtn = (v: MagnificScaleFactor) =>
+    compact ? (
+      <button
+        key={v}
+        type="button"
+        onClick={() => setMagnificScale(v)}
+        className={cn(
+          "min-w-0 flex-1 rounded-[4px] border py-1 text-[10px] font-semibold tabular-nums transition-colors",
+          magnificScale === v
+            ? "border-foreground bg-foreground text-background"
+            : "border-border/70 bg-white/60 text-muted-foreground hover:text-foreground"
+        )}
+      >
+        {v}×
+      </button>
+    ) : (
+      <button
+        key={v}
+        type="button"
+        onClick={() => setMagnificScale(v)}
+        className={cn(
+          "border-2 p-2 text-center transition-all duration-200",
+          magnificScale === v
+            ? "border-primary bg-primary/10"
+            : "border-border hover:border-primary/50"
+        )}
+      >
+        <div className="text-[10px] font-mono font-bold sm:text-xs">{v}×</div>
+      </button>
+    );
+
+  return (
+    <div className={compact ? "mb-2.5 space-y-2.5" : "space-y-3 rounded border border-border/60 bg-muted/20 p-3"}>
+      <div>
+        <span className={labelCls}>Upscale</span>
+        <div className={compact ? "flex gap-1" : "grid grid-cols-4 gap-1.5 sm:gap-2"}>
+          {MAGNIFIC_SCALE_FACTORS.map(scaleBtn)}
+        </div>
+      </div>
+      <div>
+        <span className={labelCls}>Resemblance</span>
+        <p
+          className={
+            compact
+              ? "mb-1.5 text-[9px] leading-snug text-muted-foreground"
+              : "mb-2 text-[10px] leading-relaxed text-muted-foreground font-mono"
+          }
+        >
+          Stay closer to your original (Magnific Creative / Freepik: resemblance, −10…+10, default 0).
+        </p>
+        <div
+          className={
+            compact
+              ? "mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+              : "flex items-center justify-between text-xs font-mono uppercase tracking-wider"
+          }
+        >
+          <span>Value</span>
+          <span className="tabular-nums text-foreground">
+            {magnificResemblanceValue > 0 ? `+${magnificResemblanceValue}` : magnificResemblanceValue}
+          </span>
+        </div>
+        <input
+          type="range"
+          min={-10}
+          max={10}
+          step={1}
+          value={magnificResemblanceValue}
+          onChange={(e) => setMagnificResemblanceValue(Number(e.target.value))}
+          className="h-2 w-full cursor-pointer accent-black"
+        />
+        <div
+          className={
+            compact
+              ? "mt-0.5 flex justify-between text-[9px] text-muted-foreground"
+              : "mt-0.5 flex justify-between text-[10px] text-muted-foreground font-mono"
+          }
+        >
+          <span>−10</span>
+          <span>+10</span>
+        </div>
+      </div>
+      <div>
+        <span className={labelCls}>Creativity</span>
+        <p
+          className={
+            compact
+              ? "mb-1.5 text-[9px] leading-snug text-muted-foreground"
+              : "mb-2 text-[10px] leading-relaxed text-muted-foreground font-mono"
+          }
+        >
+          More AI invention and change (Magnific Creative / Freepik: creativity, −10…+10, default 0).
+        </p>
+        <div
+          className={
+            compact
+              ? "mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+              : "flex items-center justify-between text-xs font-mono uppercase tracking-wider"
+          }
+        >
+          <span>Value</span>
+          <span className="tabular-nums text-foreground">
+            {magnificCreativityValue > 0 ? `+${magnificCreativityValue}` : magnificCreativityValue}
+          </span>
+        </div>
+        <input
+          type="range"
+          min={-10}
+          max={10}
+          step={1}
+          value={magnificCreativityValue}
+          onChange={(e) => setMagnificCreativityValue(Number(e.target.value))}
+          className="h-2 w-full cursor-pointer accent-black"
+        />
+        <div
+          className={
+            compact
+              ? "mt-0.5 flex justify-between text-[9px] text-muted-foreground"
+              : "mt-0.5 flex justify-between text-[10px] text-muted-foreground font-mono"
+          }
+        >
+          <span>−10</span>
+          <span>+10</span>
+        </div>
+      </div>
+      <p
+        className={
+          compact
+            ? "text-[9px] leading-snug text-muted-foreground"
+            : "text-[10px] leading-relaxed text-muted-foreground font-mono"
+        }
+      >
+        Both sliders are sent together, as in the{" "}
+        <a
+          href="https://docs.freepik.com/api-reference/image-upscaler-creative/post-image-upscaler"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline underline-offset-2 hover:text-foreground"
+        >
+          Freepik Upscaler Creative
+        </a>{" "}
+        spec. Reusing the same prompt as for your image often improves results.
+      </p>
+    </div>
+  );
+}
+
+interface CompactOptionsScrollableInnerProps {
+  sourceKind: "plan_photo" | "render_3d";
+  setSourceKind: (v: "plan_photo" | "render_3d") => void;
+  magnificScale: MagnificScaleFactor;
+  setMagnificScale: (v: MagnificScaleFactor) => void;
+  magnificResemblanceValue: number;
+  setMagnificResemblanceValue: (v: number) => void;
+  magnificCreativityValue: number;
+  setMagnificCreativityValue: (v: number) => void;
+  projects?: ProjectOption[];
+  selectedProjectId: string | null | undefined;
+  onProjectChange?: (projectId: string | null) => void;
+  aspectRatio: AspectRatio;
+  setAspectRatio: (v: AspectRatio) => void;
+  imageSize: ImageOutputSize;
+  setImageSize: (v: ImageOutputSize) => void;
+  setShowCatalogToast: (v: boolean) => void;
+  setShowCompactOptions: Dispatch<SetStateAction<boolean>>;
+}
+
+function CompactOptionsScrollableInner({
+  sourceKind,
+  setSourceKind,
+  magnificScale,
+  setMagnificScale,
+  magnificResemblanceValue,
+  setMagnificResemblanceValue,
+  magnificCreativityValue,
+  setMagnificCreativityValue,
+  projects,
+  selectedProjectId,
+  onProjectChange,
+  aspectRatio,
+  setAspectRatio,
+  imageSize,
+  setImageSize,
+  setShowCatalogToast,
+  setShowCompactOptions,
+}: CompactOptionsScrollableInnerProps) {
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2.5">
+      <div className="mb-2.5">
+        <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          Source
+        </span>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => setSourceKind("plan_photo")}
+            className={cn(
+              "flex-1 rounded-[4px] border py-1.5 text-[11px] font-medium transition-colors",
+              sourceKind === "plan_photo"
+                ? "border-foreground bg-foreground text-background"
+                : "border-border/70 bg-white/60 text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Plan / photo
+          </button>
+          <button
+            type="button"
+            onClick={() => setSourceKind("render_3d")}
+            className={cn(
+              "flex-1 rounded-[4px] border py-1.5 text-[11px] font-medium transition-colors",
+              sourceKind === "render_3d"
+                ? "border-foreground bg-foreground text-background"
+                : "border-border/70 bg-white/60 text-muted-foreground hover:text-foreground"
+            )}
+          >
+            3D render
+          </button>
+        </div>
+      </div>
+
+      {sourceKind === "render_3d" && (
+        <Magnific3DControls
+          compact
+          magnificScale={magnificScale}
+          setMagnificScale={setMagnificScale}
+          magnificResemblanceValue={magnificResemblanceValue}
+          setMagnificResemblanceValue={setMagnificResemblanceValue}
+          magnificCreativityValue={magnificCreativityValue}
+          setMagnificCreativityValue={setMagnificCreativityValue}
+        />
+      )}
+
+      {projects && projects.length > 0 && (
+        <div className="mb-2.5">
+          <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Folder
+          </label>
+          <select
+            value={selectedProjectId || ""}
+            onChange={(e) => onProjectChange?.(e.target.value || null)}
+            className="h-9 w-full rounded-[4px] border border-border/80 bg-white/80 px-2 text-xs text-foreground"
+          >
+            <option value="">No folder</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div
+        className={cn(sourceKind === "render_3d" && "pointer-events-none opacity-[0.38]")}
+      >
+        <div className="mb-2.5">
+          <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Format
+          </span>
+          <div className="flex flex-wrap gap-1">
+            {ASPECT_RATIOS.map((ratio) => (
+              <button
+                key={ratio.value}
+                type="button"
+                onClick={() => setAspectRatio(ratio.value)}
+                className={cn(
+                  "rounded-[4px] border px-2 py-1 text-[11px] font-medium transition-colors",
+                  aspectRatio === ratio.value
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border/70 bg-white/60 text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                )}
+              >
+                {ratio.value}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-2.5">
+          <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Resolution
+          </span>
+          <div className="flex gap-1">
+            {IMAGE_OUTPUT_SIZES.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setImageSize(opt.value)}
+                className={cn(
+                  "flex-1 rounded-[4px] border py-1.5 text-[11px] font-medium transition-colors",
+                  imageSize === opt.value
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border/70 bg-white/60 text-muted-foreground hover:text-foreground"
+                )}
+                title={`${opt.label} (${opt.hint})`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        disabled={sourceKind === "render_3d"}
+        onClick={() => {
+          if (sourceKind === "render_3d") return;
+          setShowCatalogToast(true);
+          setShowCompactOptions(false);
+        }}
+        className="flex w-full items-center justify-center gap-2 rounded-[4px] border border-border/70 bg-white/60 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+      >
+        <Sofa className="h-4 w-4" strokeWidth={1.75} />
+        Catalog
+      </button>
+    </div>
+  );
+}
 
 interface ProjectOption {
   id: string;
@@ -42,11 +429,16 @@ interface ProjectOption {
 }
 
 interface RenderGeneratorProps {
-  onGenerateSuccess?: () => void;
+  onGenerateSuccess?: (payload?: { renderId?: string }) => void;
   projects?: ProjectOption[];
   selectedProjectId?: string | null;
   onProjectChange?: (projectId: string | null) => void;
   compact?: boolean;
+  /** Landing : localStorage pré-auth, reprise après connexion, `onUnauthenticated` au lieu de renvoyer à `/`. */
+  landingMode?: boolean;
+  onUnauthenticated?: () => void;
+  /** Classes sur la pilule compacte (ex. `max-w-xl w-full`) */
+  compactBarClassName?: string;
   externalReferenceImage?: {
     token: string;
     url: string;
@@ -59,6 +451,9 @@ export function RenderGenerator({
   selectedProjectId,
   onProjectChange,
   compact,
+  landingMode = false,
+  onUnauthenticated,
+  compactBarClassName,
   externalReferenceImage,
 }: RenderGeneratorProps) {
   const router = useRouter();
@@ -71,9 +466,21 @@ export function RenderGenerator({
   const [selectedFurniture, setSelectedFurniture] = useState<any[]>([]);
   const [showFurnitureCatalog, setShowFurnitureCatalog] = useState(false);
   const [showCatalogToast, setShowCatalogToast] = useState(false);
-  const [quality, setQuality] = useState<"standard" | "hd">("standard");
-  const [showCompactFormat, setShowCompactFormat] = useState(false);
-  const [showCompactQuality, setShowCompactQuality] = useState(false);
+  const [imageSize, setImageSize] = useState<ImageOutputSize>(DEFAULT_IMAGE_OUTPUT_SIZE);
+  /** Plan/sketch/photo vs 3D render — pilier du pipeline côté API. */
+  const [sourceKind, setSourceKind] = useState<"plan_photo" | "render_3d">("plan_photo");
+  const [magnificScale, setMagnificScale] = useState<MagnificScaleFactor>(4);
+  const [magnificResemblanceValue, setMagnificResemblanceValue] = useState(0);
+  const [magnificCreativityValue, setMagnificCreativityValue] = useState(0);
+  const [showCompactOptions, setShowCompactOptions] = useState(false);
+  /** Zone compacte (vignettes + pilule) — clic extérieur / DnD. */
+  const compactOuterRef = useRef<HTMLDivElement>(null);
+  /** Pilule seule — ancrage du panneau d’options (au-dessus, superposé aux vignettes). */
+  const compactOptionsRef = useRef<HTMLDivElement>(null);
+  /** Portail profil : position au-dessus de la barre (évite overflow / z-index de la page). */
+  const compactOptionsPortalRef = useRef<HTMLDivElement>(null);
+  const [compactOptionsAnchorRect, setCompactOptionsAnchorRect] = useState<DOMRect | null>(null);
+  const landingResumeLockRef = useRef(false);
 
   // Fermer automatiquement le toast après 4 secondes
   useEffect(() => {
@@ -85,12 +492,45 @@ export function RenderGenerator({
     }
   }, [showCatalogToast]);
 
+  useLayoutEffect(() => {
+    if (!compact || landingMode || !showCompactOptions) {
+      setCompactOptionsAnchorRect(null);
+      return;
+    }
+    const update = () => {
+      const el = compactOptionsRef.current;
+      if (el) setCompactOptionsAnchorRect(el.getBoundingClientRect());
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+      setCompactOptionsAnchorRect(null);
+    };
+  }, [compact, landingMode, showCompactOptions]);
+
+  useEffect(() => {
+    if (!showCompactOptions) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      const wrap = compactOuterRef.current;
+      const portal = compactOptionsPortalRef.current;
+      if (wrap && !wrap.contains(t) && (!portal || !portal.contains(t))) {
+        setShowCompactOptions(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [showCompactOptions]);
+
   // Injecter une image de référence depuis la grille (profile page)
   useEffect(() => {
     if (!externalReferenceImage?.url) return;
 
     setUploadedImages((prev) => {
-      if (prev.length >= MAX_IMAGES) return prev;
+      if (prev.length >= MAX_INPUT_IMAGES) return prev;
       if (prev.some((img) => img.dataUrl === externalReferenceImage.url)) return prev;
 
       return [
@@ -98,7 +538,6 @@ export function RenderGenerator({
         {
           id: `ext-${externalReferenceImage.token}`,
           dataUrl: externalReferenceImage.url,
-          role: "reference",
         },
       ];
     });
@@ -118,40 +557,16 @@ export function RenderGenerator({
     setUploadedImages(prev => prev.filter(img => img.id !== imageId));
   }, []);
 
-  const changeImageRole = useCallback((imageId: string, newRole: ImageRole) => {
-    setUploadedImages(prev => prev.map(img => 
-      img.id === imageId ? { ...img, role: newRole } : img
-    ));
-  }, []);
-
   const addMultipleImages = useCallback((dataUrls: string[]) => {
-    setUploadedImages(prev => {
-      const availableSlots = MAX_IMAGES - prev.length;
+    setUploadedImages((prev) => {
+      const availableSlots = MAX_INPUT_IMAGES - prev.length;
       const urlsToAdd = dataUrls.slice(0, availableSlots);
-      
-      const newImages: UploadedImageItem[] = urlsToAdd.map((dataUrl, index) => {
-        const allRoles = [
-          ...prev.map(img => img.role),
-          ...Array(index).fill(null).map((_, i) => {
-            const existingCount = prev.length + i;
-            if (existingCount === 0) return 'main';
-            if (existingCount === 1) return 'style';
-            return 'reference';
-          })
-        ];
-        
-        let role: ImageRole = 'main';
-        if (allRoles.includes('main')) {
-          role = allRoles.includes('style') ? 'reference' : 'style';
-        }
-        
-        return {
-          id: `img-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
-          dataUrl,
-          role,
-        };
-      });
-      
+
+      const newImages: UploadedImageItem[] = urlsToAdd.map((dataUrl, index) => ({
+        id: `img-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 11)}`,
+        dataUrl,
+      }));
+
       return [...prev, ...newImages];
     });
   }, []);
@@ -196,250 +611,543 @@ export function RenderGenerator({
     e.target.value = '';
   };
 
-  const handleGenerate = async () => {
-    if (uploadedImages.length === 0 || !prompt.trim()) return;
-    
-    if (!session) {
-      router.push("/");
-      return;
-    }
-    
-    setIsGenerating(true);
+  const runGenerateWithPayload = useCallback(
+    async (
+      imagesOverride: UploadedImageItem[],
+      promptText: string,
+      aspectOverride: AspectRatio,
+      imageSizeOverride?: ImageOutputSize,
+      opts?: {
+        pipeline?: GenerationPipeline;
+        magnificScale?: MagnificScaleFactor;
+        /** @deprecated brouillon / client ancien : une seule valeur + mode */
+        magnificAdjustMode?: "resemblance" | "creativity";
+        magnificResemblanceValue?: number;
+        magnificCreativityValue?: number;
+        /** @deprecated */
+        magnificStyleValue?: number;
+        /** @deprecated */
+        magnificCreativity?: number;
+      }
+    ) => {
+      const pipeline: GenerationPipeline =
+        opts?.pipeline ?? (sourceKind === "render_3d" ? "magnific" : "gemini");
+      const promptToUse = promptText.trim();
 
-    try {
-      // Upload images
-      const uploadedUrls: { url: string; role: ImageRole }[] = [];
-      
-      for (const img of uploadedImages) {
-        // If the image already is a public URL from an existing render, reuse it directly.
-        if (img.dataUrl.startsWith("http://") || img.dataUrl.startsWith("https://")) {
-          uploadedUrls.push({ url: img.dataUrl, role: img.role });
-          continue;
+      if (imagesOverride.length === 0) return;
+      if (pipeline !== "magnific" && !promptToUse) return;
+
+      let scaleToSend: MagnificScaleFactor = opts?.magnificScale ?? magnificScale;
+      let resToSend = clampMagnificStyleValue(opts?.magnificResemblanceValue ?? magnificResemblanceValue);
+      let creToSend = clampMagnificStyleValue(opts?.magnificCreativityValue ?? magnificCreativityValue);
+      if (
+        opts?.magnificCreativity !== undefined &&
+        opts?.magnificStyleValue === undefined &&
+        opts?.magnificResemblanceValue === undefined &&
+        opts?.magnificCreativityValue === undefined
+      ) {
+        creToSend = clampMagnificStyleValue(opts.magnificCreativity);
+        resToSend = 0;
+      } else if (
+        opts?.magnificStyleValue !== undefined &&
+        opts?.magnificResemblanceValue === undefined &&
+        opts?.magnificCreativityValue === undefined
+      ) {
+        const single = clampMagnificStyleValue(opts.magnificStyleValue);
+        const legacyMode = opts?.magnificAdjustMode ?? "resemblance";
+        if (legacyMode === "creativity") {
+          creToSend = single;
+          resToSend = 0;
+        } else {
+          resToSend = single;
+          creToSend = 0;
+        }
+      }
+
+      if (!session) {
+        if (landingMode) {
+          try {
+            const K = LANDING_RENDER_FORM_STORAGE_KEYS;
+            localStorage.setItem(K.IMAGES, JSON.stringify(imagesOverride));
+            localStorage.setItem(K.PROMPT, promptToUse);
+            localStorage.setItem(K.ASPECT_RATIO, aspectOverride);
+            localStorage.setItem(K.IMAGE_SIZE, imageSizeOverride ?? imageSize);
+            localStorage.setItem(K.PIPELINE, pipeline);
+            localStorage.setItem(K.MAGNIFIC_SCALE, String(scaleToSend));
+            localStorage.setItem(K.MAGNIFIC_RESEMBLANCE_VALUE, String(resToSend));
+            localStorage.setItem(K.MAGNIFIC_CREATIVITY_VALUE, String(creToSend));
+            localStorage.removeItem(K.MAGNIFIC_STYLE_VALUE);
+            localStorage.removeItem(K.MAGNIFIC_CREATIVITY);
+          } catch (e) {
+            console.error(e);
+          }
+          onUnauthenticated?.();
+          return;
+        }
+        router.push("/");
+        return;
+      }
+
+      if (landingMode) {
+        const K = LANDING_RENDER_FORM_STORAGE_KEYS;
+        localStorage.removeItem(K.IMAGES);
+        localStorage.removeItem(K.PROMPT);
+        localStorage.removeItem(K.ASPECT_RATIO);
+        localStorage.removeItem(K.IMAGE_SIZE);
+        localStorage.removeItem(K.PIPELINE);
+        localStorage.removeItem(K.MAGNIFIC_SCALE);
+        localStorage.removeItem(K.MAGNIFIC_ADJUST_MODE);
+        localStorage.removeItem(K.MAGNIFIC_STYLE_VALUE);
+        localStorage.removeItem(K.MAGNIFIC_RESEMBLANCE_VALUE);
+        localStorage.removeItem(K.MAGNIFIC_CREATIVITY_VALUE);
+        localStorage.removeItem(K.MAGNIFIC_CREATIVITY);
+      }
+
+      const imageSizeToUse = imageSizeOverride ?? imageSize;
+
+      setIsGenerating(true);
+
+      try {
+        const uploadedUrls: { url: string; role: ImageRole }[] = [];
+
+        for (let i = 0; i < imagesOverride.length; i++) {
+          const img = imagesOverride[i]!;
+          const role = apiRoleForImageIndex(i);
+          if (img.dataUrl.startsWith("http://") || img.dataUrl.startsWith("https://")) {
+            uploadedUrls.push({ url: img.dataUrl, role });
+            continue;
+          }
+
+          const blob = await fetch(img.dataUrl).then((r) => r.blob());
+          const formData = new FormData();
+          formData.append("file", blob, `image-${i + 1}.png`);
+
+          const uploadRes = await fetch("/api/upload", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!uploadRes.ok) {
+            throw new Error(`Échec du téléversement pour l’image ${i + 1}`);
+          }
+
+          const { url } = await uploadRes.json();
+          uploadedUrls.push({ url, role });
         }
 
-        const blob = await fetch(img.dataUrl).then(r => r.blob());
-        const formData = new FormData();
-        formData.append('file', blob, `image-${img.role}.png`);
+        let enhancedPrompt = promptToUse;
+        if (pipeline === "gemini" && selectedFurniture.length > 0) {
+          const furnitureDescriptions = selectedFurniture
+            .map((item: { promptEnhancement: string }) => item.promptEnhancement)
+            .join(", ");
+          enhancedPrompt = `${promptToUse}. Include these furniture items: ${furnitureDescriptions}`;
+        }
 
-        const uploadRes = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
+        const generateRes = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            images: uploadedUrls,
+            prompt: enhancedPrompt,
+            aspectRatio: aspectOverride,
+            imageSize: imageSizeToUse,
+            pipeline,
+            magnificScale: scaleToSend,
+            magnificResemblanceValue: resToSend,
+            magnificCreativityValue: creToSend,
+            projectId:
+              selectedProjectId && selectedProjectId !== "unassigned" ? selectedProjectId : undefined,
+          }),
         });
 
-        if (!uploadRes.ok) {
-          throw new Error(`Upload failed for ${img.role} image`);
+        const generateData = await generateRes.json().catch(() => ({}));
+
+        if (!generateRes.ok) {
+          throw new Error(
+            (generateData as { message?: string; error?: string }).message ||
+              (generateData as { error?: string }).error ||
+              "Generation failed"
+          );
         }
-        
-        const { url } = await uploadRes.json();
-        uploadedUrls.push({ url, role: img.role });
-      }
 
-      // Enrichir le prompt avec le catalogue de mobilier
-      let enhancedPrompt = prompt;
-      if (selectedFurniture.length > 0) {
-        const furnitureDescriptions = selectedFurniture
-          .map(item => item.promptEnhancement)
-          .join(", ");
-        enhancedPrompt = `${prompt}. Include these furniture items: ${furnitureDescriptions}`;
-      }
+        setUploadedImages([]);
+        setPrompt("");
+        setSelectedFurniture([]);
 
-      // Generate render
-      const generateRes = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          images: uploadedUrls, 
-          prompt: enhancedPrompt, 
-          aspectRatio,
-          projectId: selectedProjectId && selectedProjectId !== "unassigned" ? selectedProjectId : undefined,
-        }),
-      });
-
-      if (!generateRes.ok) {
-        const errorData = await generateRes.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Generation failed');
+        if (onGenerateSuccess) {
+          onGenerateSuccess(
+            generateData?.renderId ? { renderId: String(generateData.renderId) } : undefined
+          );
+        } else {
+          router.refresh();
+        }
+      } catch (error) {
+        console.error("Generation error:", error);
+        alert(error instanceof Error ? error.message : "Generation failed");
+      } finally {
+        setIsGenerating(false);
       }
+    },
+    [
+      session,
+      landingMode,
+      onUnauthenticated,
+      selectedFurniture,
+      selectedProjectId,
+      router,
+      onGenerateSuccess,
+      imageSize,
+      sourceKind,
+      magnificScale,
+      magnificResemblanceValue,
+      magnificCreativityValue,
+    ]
+  );
 
-      const generateData = await generateRes.json();
-      
-      // Reset form
-      setUploadedImages([]);
-      setPrompt("");
-      setSelectedFurniture([]);
-      
-      // Callback success
-      if (onGenerateSuccess) {
-        onGenerateSuccess();
-      } else {
-        // Refresh page to show new render
-        router.refresh();
+  const handleGenerate = () => {
+    void runGenerateWithPayload(uploadedImages, prompt, aspectRatio);
+  };
+
+  // Landing : brouillon hors session (localStorage)
+  useEffect(() => {
+    if (!landingMode) return;
+    const K = LANDING_RENDER_FORM_STORAGE_KEYS;
+    if (session) return;
+
+    const rawImg = localStorage.getItem(K.IMAGES);
+    const pr = localStorage.getItem(K.PROMPT);
+    const ar = localStorage.getItem(K.ASPECT_RATIO);
+    const sz = localStorage.getItem(K.IMAGE_SIZE);
+    const pl = localStorage.getItem(K.PIPELINE);
+    const ms = localStorage.getItem(K.MAGNIFIC_SCALE);
+    const mam = localStorage.getItem(K.MAGNIFIC_ADJUST_MODE);
+    const msv = localStorage.getItem(K.MAGNIFIC_STYLE_VALUE);
+    const mrs = localStorage.getItem(K.MAGNIFIC_RESEMBLANCE_VALUE);
+    const mcre = localStorage.getItem(K.MAGNIFIC_CREATIVITY_VALUE);
+    const mcr = localStorage.getItem(K.MAGNIFIC_CREATIVITY);
+    if (rawImg) {
+      try {
+        const parsed = normalizeStoredImages(JSON.parse(rawImg));
+        if (parsed.length > 0) setUploadedImages(parsed);
+      } catch {
+        /* ignore */
       }
-    } catch (error) {
-      console.error('Generation error:', error);
-      alert(error instanceof Error ? error.message : 'Generation failed');
-    } finally {
-      setIsGenerating(false);
     }
+    if (pr) setPrompt(pr);
+    if (ar && ASPECT_RATIOS.some((r) => r.value === ar)) setAspectRatio(ar as AspectRatio);
+    if (sz && isValidImageOutputSize(sz)) setImageSize(sz);
+    if (pl === "magnific") setSourceKind("render_3d");
+    else if (pl === "gemini") setSourceKind("plan_photo");
+    if (ms != null) {
+      const n = Number(ms);
+      if (n === 2 || n === 4 || n === 8 || n === 16) setMagnificScale(n);
+    }
+    const hasPair = mrs != null || mcre != null;
+    if (hasPair) {
+      if (mrs != null) setMagnificResemblanceValue(clampMagnificStyleValue(Number(mrs)));
+      if (mcre != null) setMagnificCreativityValue(clampMagnificStyleValue(Number(mcre)));
+    } else if (msv != null) {
+      const v = clampMagnificStyleValue(Number(msv));
+      if (mam === "creativity") setMagnificCreativityValue(v);
+      else setMagnificResemblanceValue(v);
+    } else if (mcr != null) {
+      setMagnificCreativityValue(clampMagnificStyleValue(Number(mcr)));
+    }
+  }, [landingMode, session]);
+
+  // Landing : reprise après connexion + redirect si renderId stocké
+  useEffect(() => {
+    if (!landingMode) return;
+    const K = LANDING_RENDER_FORM_STORAGE_KEYS;
+
+    if (!session) {
+      landingResumeLockRef.current = false;
+      return;
+    }
+
+    const rid = localStorage.getItem(K.RENDER_ID);
+    if (rid) {
+      router.push(`/profile?studio=${encodeURIComponent(rid)}`);
+      localStorage.removeItem(K.RENDER_ID);
+      return;
+    }
+
+    const rawImg = localStorage.getItem(K.IMAGES);
+    const pr = localStorage.getItem(K.PROMPT);
+    const ar = localStorage.getItem(K.ASPECT_RATIO);
+    const sz = localStorage.getItem(K.IMAGE_SIZE);
+    const pl = localStorage.getItem(K.PIPELINE);
+    const ms = localStorage.getItem(K.MAGNIFIC_SCALE);
+    const mam = localStorage.getItem(K.MAGNIFIC_ADJUST_MODE);
+    const msv = localStorage.getItem(K.MAGNIFIC_STYLE_VALUE);
+    const mrs = localStorage.getItem(K.MAGNIFIC_RESEMBLANCE_VALUE);
+    const mcre = localStorage.getItem(K.MAGNIFIC_CREATIVITY_VALUE);
+    const mcr = localStorage.getItem(K.MAGNIFIC_CREATIVITY);
+
+    if (!rawImg || !pr || landingResumeLockRef.current) return;
+
+    let parsed: UploadedImageItem[] = [];
+    try {
+      parsed = normalizeStoredImages(JSON.parse(rawImg));
+    } catch {
+      return;
+    }
+    if (parsed.length === 0) return;
+
+    landingResumeLockRef.current = true;
+    localStorage.removeItem(K.IMAGES);
+    localStorage.removeItem(K.PROMPT);
+    localStorage.removeItem(K.ASPECT_RATIO);
+    localStorage.removeItem(K.IMAGE_SIZE);
+    localStorage.removeItem(K.PIPELINE);
+    localStorage.removeItem(K.MAGNIFIC_SCALE);
+    localStorage.removeItem(K.MAGNIFIC_ADJUST_MODE);
+    localStorage.removeItem(K.MAGNIFIC_STYLE_VALUE);
+    localStorage.removeItem(K.MAGNIFIC_RESEMBLANCE_VALUE);
+    localStorage.removeItem(K.MAGNIFIC_CREATIVITY_VALUE);
+    localStorage.removeItem(K.MAGNIFIC_CREATIVITY);
+
+    const aspectUse =
+      ar && ASPECT_RATIOS.some((r) => r.value === ar) ? (ar as AspectRatio) : aspectRatio;
+    const sizeUse =
+      sz && isValidImageOutputSize(sz) ? sz : DEFAULT_IMAGE_OUTPUT_SIZE;
+    const pipelineResume = parseGenerationPipeline(pl);
+    let scaleResume: MagnificScaleFactor = 4;
+    if (ms != null) {
+      const n = Number(ms);
+      if (n === 2 || n === 4 || n === 8 || n === 16) scaleResume = n;
+    }
+    let legacyTab: "resemblance" | "creativity" = "resemblance";
+    if (mam === "creativity" || mam === "resemblance") legacyTab = mam;
+    let resResume = 0;
+    let creResume = 0;
+    const hasPairResume = mrs != null || mcre != null;
+    if (hasPairResume) {
+      if (mrs != null) resResume = clampMagnificStyleValue(Number(mrs));
+      if (mcre != null) creResume = clampMagnificStyleValue(Number(mcre));
+    } else if (msv != null) {
+      const v = clampMagnificStyleValue(Number(msv));
+      if (legacyTab === "creativity") creResume = v;
+      else resResume = v;
+    } else if (mcr != null) {
+      creResume = clampMagnificStyleValue(Number(mcr));
+    }
+
+    setUploadedImages(parsed);
+    setPrompt(pr);
+    setAspectRatio(aspectUse);
+    setImageSize(sizeUse);
+    setSourceKind(pipelineResume === "magnific" ? "render_3d" : "plan_photo");
+    setMagnificScale(scaleResume);
+    setMagnificResemblanceValue(resResume);
+    setMagnificCreativityValue(creResume);
+
+    const t = window.setTimeout(() => {
+      void runGenerateWithPayload(parsed, pr, aspectUse, sizeUse, {
+        pipeline: pipelineResume,
+        magnificScale: scaleResume,
+        magnificResemblanceValue: resResume,
+        magnificCreativityValue: creResume,
+      });
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [landingMode, session, router, runGenerateWithPayload]);
+
+  const compactOptionsScrollableProps: CompactOptionsScrollableInnerProps = {
+    sourceKind,
+    setSourceKind,
+    magnificScale,
+    setMagnificScale,
+    magnificResemblanceValue,
+    setMagnificResemblanceValue,
+    magnificCreativityValue,
+    setMagnificCreativityValue,
+    projects,
+    selectedProjectId,
+    onProjectChange,
+    aspectRatio,
+    setAspectRatio,
+    imageSize,
+    setImageSize,
+    setShowCatalogToast,
+    setShowCompactOptions,
   };
 
   return (
-    <Card className={compact ? "space-y-3 p-3 sm:p-4 bg-transparent backdrop-blur-none border-0 shadow-none" : "space-y-3 p-4 sm:p-6 space-y-4 bg-white/10 backdrop-blur-xl border-white/20 gradient-shadow"}>
-      {/* Compact layout: images above, prompt below */}
+    <Card
+      className={
+        compact
+          ? "border-0 bg-transparent p-0 shadow-none backdrop-blur-none"
+          : "space-y-4 border-white/20 bg-white/10 p-4 backdrop-blur-xl sm:p-6 gradient-shadow"
+      }
+    >
+      {/* Compact : une barre type « glass » (pilule), cohérente avec blur / radius de l’app */}
       {compact ? (
-        <div className="flex flex-col gap-2">
-          {/* Upload zone + images row */}
-          <div className="flex gap-2 items-center">
-            {uploadedImages.map((img) => (
-              <div key={img.id} className="relative group">
-                <div className="relative w-12 h-12 border border-border overflow-hidden bg-muted/30">
-                  <img src={img.dataUrl} alt={`${img.role}`} className="w-full h-full object-cover" />
-                  <button
-                    onClick={() => removeImage(img.id)}
-                    className="absolute top-0 right-0 w-4 h-4 bg-black/70 hover:bg-red-600 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100"
+        <div
+          ref={compactOuterRef}
+          className="relative w-full space-y-2"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <div className="relative z-0 flex min-h-20 flex-nowrap items-center gap-2.5 overflow-x-auto pb-0.5 pt-0.5 [scrollbar-width:thin] sm:min-h-[60px] sm:gap-2">
+            {uploadedImages.map((img, index) => {
+              const n = index + 1;
+              const compactThumbBadge =
+                "flex h-5 min-w-[1.1rem] items-center justify-center rounded-md px-0.5 shadow-sm";
+              return (
+                <div
+                  key={img.id}
+                  className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-white/90 shadow-sm transition-all hover:border-foreground/25 hover:shadow-md sm:h-[60px] sm:w-[60px]"
+                >
+                  <span
+                    className={cn(
+                      "absolute left-1 top-1 z-[1] bg-emerald-400 font-mono text-[9px] font-bold tabular-nums text-emerald-950 sm:text-[10px]",
+                      compactThumbBadge
+                    )}
                   >
-                    <X className="w-2.5 h-2.5 text-white" />
+                    {n}
+                  </span>
+                  <img
+                    src={img.dataUrl}
+                    alt={`Image ${n}`}
+                    className="h-full w-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(img.id)}
+                    className={cn(
+                      "absolute right-1 top-1 z-[2] bg-black/65 text-white opacity-0 ring-1 ring-white/20 transition-opacity hover:bg-red-600 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      compactThumbBadge
+                    )}
+                    aria-label={`Supprimer l’image ${n}`}
+                  >
+                    <X className="h-3 w-3" strokeWidth={2.5} />
                   </button>
-                  <div className="absolute bottom-0 inset-x-0 bg-black/70 px-0.5 py-px">
-                    <span className="text-[7px] font-mono text-white uppercase">{img.role}</span>
-                  </div>
                 </div>
-              </div>
-            ))}
-            {uploadedImages.length < MAX_IMAGES && (
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={`relative w-12 h-12 border-2 border-dashed flex items-center justify-center cursor-pointer transition-all ${isDragging ? "border-primary bg-primary/5" : "border-border/90 hover:border-primary/50 bg-muted/20"}`}
-              >
-                <input type="file" accept="image/*" multiple onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                {uploadedImages.length === 0 ? (
-                  <Upload className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <Plus className="w-3.5 h-3.5 text-muted-foreground" />
-                )}
-              </div>
-            )}
+              );
+            })}
           </div>
 
-          {/* Prompt + Generate */}
-          <div className="flex gap-2 items-end">
-            <Textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
-              placeholder="Describe the style, mood, and details you want..."
-              className="flex-1 min-h-[64px] max-h-[64px] resize-none rounded-none font-mono text-xs leading-relaxed"
-            />
+        <div
+          ref={compactOptionsRef}
+          className={cn("relative", showCompactOptions && "z-[140]")}
+        >
+        <div
+          className={cn(
+            "flex flex-nowrap items-center gap-2 rounded-[28px] border border-border/50 bg-white/50 px-2.5 py-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:gap-3 sm:px-3.5 sm:py-3",
+            isDragging && "border-primary/40 ring-2 ring-primary/20",
+            compactBarClassName
+          )}
+        >
+          {uploadedImages.length < MAX_INPUT_IMAGES && (
+            <label
+              className={cn(
+                "relative flex h-20 w-20 shrink-0 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border/65 bg-white/50 text-muted-foreground shadow-sm transition-all sm:h-[60px] sm:w-[60px]",
+                "hover:border-foreground/35 hover:bg-white/85 hover:text-foreground hover:shadow",
+                "active:scale-[0.98]",
+                "focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background"
+              )}
+              title="Ajouter des images"
+            >
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFileSelect}
+                className="absolute inset-0 cursor-pointer opacity-0"
+              />
+              <ImagePlus className="h-6 w-6" strokeWidth={2} aria-hidden />
+            </label>
+          )}
+          <Textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
+            placeholder={
+              sourceKind === "render_3d"
+                ? "Optional: lighting, materials, detail…"
+                : "What will you create?"
+            }
+            rows={1}
+            className="max-h-[140px] min-h-[52px] min-w-0 flex-1 resize-none rounded-none border-0 !border-transparent bg-transparent px-1 py-2.5 text-sm font-medium leading-snug text-foreground shadow-none outline-none ring-0 ring-offset-0 placeholder:text-muted-foreground/65 focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50 sm:min-h-[56px] sm:text-[15px]"
+          />
+
+          <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowCompactOptions((o) => !o)}
+              className={cn(
+                "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground",
+                showCompactOptions && "bg-black/5 text-foreground"
+              )}
+              title="Source, format, resolution, folder…"
+              aria-expanded={showCompactOptions}
+            >
+              <SlidersHorizontal className="h-[22px] w-[22px]" strokeWidth={1.75} />
+            </button>
+
             <Button
+              type="button"
               onClick={handleGenerate}
-              disabled={uploadedImages.length === 0 || !prompt.trim() || isGenerating}
-              className="h-[64px] px-4 sm:px-6 font-mono text-xs tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] !opacity-100 transition-all flex-shrink-0"
+              disabled={
+                uploadedImages.length === 0 ||
+                (sourceKind === "plan_photo" && !prompt.trim()) ||
+                isGenerating
+              }
+              className="relative z-[120] h-11 w-11 shrink-0 rounded-full !bg-black p-0 !opacity-100 transition-all hover:!bg-black/85 disabled:!opacity-40"
+              aria-label="Generate"
             >
               {isGenerating ? (
-                <Sparkles className="w-4 h-4 animate-spin" />
+                <Sparkles className="h-4 w-4 animate-spin text-white" strokeWidth={2} />
               ) : (
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight className="h-4 w-4 text-white" strokeWidth={2} />
               )}
             </Button>
           </div>
-            {/* Compact controls: icon buttons */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {/* Project selector */}
-              {projects && projects.length > 0 && (
-                <select
-                  value={selectedProjectId || ""}
-                  onChange={(e) => onProjectChange?.(e.target.value || null)}
-                  className="h-7 text-[10px] font-mono bg-muted/30 border border-border px-1.5 text-muted-foreground rounded-sm"
-                >
-                  <option value="">No project</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              )}
+        </div>
 
-              {/* Format (aspect ratio) button */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => { setShowCompactFormat(!showCompactFormat); setShowCompactQuality(false); }}
-                  className={`h-7 px-2 flex items-center gap-1.5 text-[10px] font-mono border rounded-sm transition-all ${
-                    showCompactFormat ? "bg-black text-white border-black" : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
-                  }`}
-                >
-                  <Ratio className="w-3 h-3" />
-                  <span>{aspectRatio}</span>
-                  <ChevronDown className="w-2.5 h-2.5" />
-                </button>
-                {showCompactFormat && (
-                  <div className="absolute bottom-full left-0 mb-1.5 bg-white border border-border shadow-lg p-1.5 z-50 min-w-[140px]">
-                    {ASPECT_RATIOS.map((ratio) => (
-                      <button
-                        key={ratio.value}
-                        type="button"
-                        onClick={() => { setAspectRatio(ratio.value); setShowCompactFormat(false); }}
-                        className={`w-full px-2 py-1.5 text-left text-[10px] font-mono flex items-center justify-between transition-all ${
-                          aspectRatio === ratio.value
-                            ? "bg-black text-white"
-                            : "text-foreground hover:bg-muted/60"
-                        }`}
-                      >
-                        <span>{ratio.label}</span>
-                        <span className="text-[9px] opacity-70">{ratio.value}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Quality button */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => { setShowCompactQuality(!showCompactQuality); setShowCompactFormat(false); }}
-                  className={`h-7 px-2 flex items-center gap-1.5 text-[10px] font-mono border rounded-sm transition-all ${
-                    showCompactQuality ? "bg-black text-white border-black" : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
-                  }`}
-                >
-                  <Gem className="w-3 h-3" />
-                  <span>{quality === "hd" ? "HD" : "STD"}</span>
-                  <ChevronDown className="w-2.5 h-2.5" />
-                </button>
-                {showCompactQuality && (
-                  <div className="absolute bottom-full left-0 mb-1.5 bg-white border border-border shadow-lg p-1.5 z-50 min-w-[120px]">
-                    <button
-                      type="button"
-                      onClick={() => { setQuality("standard"); setShowCompactQuality(false); }}
-                      className={`w-full px-2 py-1.5 text-left text-[10px] font-mono flex items-center gap-2 transition-all ${
-                        quality === "standard" ? "bg-black text-white" : "text-foreground hover:bg-muted/60"
-                      }`}
-                    >
-                      <span>Standard</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setQuality("hd"); setShowCompactQuality(false); }}
-                      className={`w-full px-2 py-1.5 text-left text-[10px] font-mono flex items-center gap-2 transition-all ${
-                        quality === "hd" ? "bg-black text-white" : "text-foreground hover:bg-muted/60"
-                      }`}
-                    >
-                      <span>HD</span>
-                      <span className="text-[8px] opacity-60">haute qualité</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Furniture Catalog button */}
-              <button
-                type="button"
-                onClick={() => setShowCatalogToast(true)}
-                className="h-7 px-2 flex items-center gap-1.5 text-[10px] font-mono border rounded-sm bg-muted/30 border-border text-muted-foreground hover:bg-muted/60 transition-all"
-              >
-                <Sofa className="w-3 h-3" />
-                <span className="hidden sm:inline">Catalog</span>
-              </button>
-            </div>
+        {showCompactOptions && landingMode && (
+          <div className="absolute inset-x-0 bottom-full z-[150] mb-2 flex max-h-[min(65vh,calc(100dvh-8rem))] flex-col overflow-hidden rounded-[6px] border border-border/70 bg-white/95 shadow-lg backdrop-blur-md sm:left-auto sm:right-0 sm:ml-auto sm:w-80 sm:max-w-[min(100vw-2rem,320px)]">
+            <CompactOptionsScrollableInner {...compactOptionsScrollableProps} />
+          </div>
+        )}
+        </div>
+        {showCompactOptions &&
+          !landingMode &&
+          typeof document !== "undefined" &&
+          compactOptionsAnchorRect &&
+          createPortal(
+            <div
+              ref={compactOptionsPortalRef}
+              role="dialog"
+              aria-label="Options de génération"
+              className="flex max-h-[min(65vh,calc(100dvh-8rem))] flex-col overflow-hidden rounded-[6px] border border-border/70 bg-white/95 shadow-lg backdrop-blur-md sm:max-w-[min(100vw-2rem,320px)]"
+              style={(() => {
+                const r = compactOptionsAnchorRect;
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+                const gap = 8;
+                /* Comme l’accueil (`sm:right-0` + w-80) : même largeur max, mais jamais plus large que la pilule ; bords droits alignés. */
+                const w = Math.min(320, r.width, vw - 16);
+                let left = r.right - w;
+                left = Math.min(Math.max(8, left), vw - w - 8);
+                /* Bas du panneau juste au-dessus du haut de la pilule (ne recouvre pas le prompt). */
+                const bottom = vh - r.top + gap;
+                const maxHeight = Math.max(160, Math.min(vh * 0.65, r.top - gap - 8));
+                return {
+                  position: "fixed" as const,
+                  zIndex: 200,
+                  left,
+                  width: w,
+                  bottom,
+                  maxHeight,
+                };
+              })()}
+            >
+              <CompactOptionsScrollableInner {...compactOptionsScrollableProps} />
+            </div>,
+            document.body
+          )}
         </div>
       ) : (
         /* Full layout (non-compact) */
@@ -448,64 +1156,43 @@ export function RenderGenerator({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <label className="text-sm font-mono uppercase tracking-wider">
-            Reference Images
+            Images
           </label>
           <span className="text-xs font-mono text-muted-foreground">
-            {uploadedImages.length} / {MAX_IMAGES}
+            {uploadedImages.length} / {MAX_INPUT_IMAGES}
           </span>
         </div>
 
         {/* Images uploadées */}
         {uploadedImages.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
-            {uploadedImages.map((img) => {
-              const RoleIcon = ROLE_CONFIG[img.role].icon;
+            {uploadedImages.map((img, index) => {
+              const n = index + 1;
               return (
                 <div key={img.id} className="relative group">
                   <div className="relative aspect-square border border-border overflow-hidden bg-muted/30">
+                    <span className="absolute left-1.5 top-1.5 z-[2] flex h-7 min-w-[1.75rem] items-center justify-center rounded-md bg-emerald-400 px-1 font-mono text-xs font-bold tabular-nums text-emerald-950 shadow-sm">
+                      {n}
+                    </span>
                     <img
                       src={img.dataUrl}
-                      alt={`${img.role} reference`}
+                      alt={`Image ${n}`}
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-                      <div className="flex items-center gap-1.5">
-                        <RoleIcon className="w-3 h-3 text-white" />
-                        <span className="text-xs font-mono text-white uppercase">
-                          {img.role}
-                        </span>
-                      </div>
-                    </div>
                     <button
+                      type="button"
                       onClick={() => removeImage(img.id)}
-                      className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-red-600 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100"
+                      className="absolute right-1 top-1 z-[3] flex h-6 w-6 items-center justify-center bg-black/70 opacity-0 transition-colors hover:bg-red-600 group-hover:opacity-100"
                     >
                       <X className="w-3 h-3 text-white" />
                     </button>
-                  </div>
-                  <div className="mt-1.5 sm:mt-2 flex gap-0.5 sm:gap-1">
-                    {(Object.keys(ROLE_CONFIG) as ImageRole[]).map((role) => (
-                      <button
-                        key={role}
-                        onClick={() => changeImageRole(img.id, role)}
-                        className={`
-                          flex-1 py-0.5 sm:py-1 text-[9px] sm:text-[10px] font-mono uppercase transition-all
-                          ${img.role === role 
-                            ? 'bg-primary text-primary-foreground' 
-                            : 'bg-muted hover:bg-muted/80 text-muted-foreground'
-                          }
-                        `}
-                      >
-                        {role}
-                      </button>
-                    ))}
                   </div>
                 </div>
               );
             })}
 
             {/* Zone d'ajout */}
-            {uploadedImages.length < MAX_IMAGES && (
+            {uploadedImages.length < MAX_INPUT_IMAGES && (
               <div
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
@@ -571,23 +1258,6 @@ export function RenderGenerator({
           </div>
         )}
 
-        {/* Légende des rôles */}
-        {uploadedImages.length > 0 && (
-          <div className="flex flex-wrap gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono text-muted-foreground pt-2">
-            <div className="flex items-center gap-1 sm:gap-1.5">
-              <ImageIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-              <span>MAIN: primary content</span>
-            </div>
-            <div className="flex items-center gap-1 sm:gap-1.5">
-              <Palette className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-              <span>STYLE: visual style</span>
-            </div>
-            <div className="flex items-center gap-1 sm:gap-1.5">
-              <Layers className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-              <span>REF: additional context</span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Reste du formulaire */}
@@ -634,6 +1304,49 @@ export function RenderGenerator({
             </div>
           )}
 
+          <div className="space-y-2 sm:space-y-3">
+            <label className="text-xs sm:text-sm font-mono uppercase tracking-wider">
+              Generation source
+            </label>
+            <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+              <button
+                type="button"
+                onClick={() => setSourceKind("plan_photo")}
+                className={cn(
+                  "p-2 sm:p-3 border-2 text-center transition-all duration-200",
+                  sourceKind === "plan_photo"
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:border-primary/50"
+                )}
+              >
+                <div className="text-[10px] sm:text-xs font-mono font-bold">Plan / sketch / photo</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourceKind("render_3d")}
+                className={cn(
+                  "p-2 sm:p-3 border-2 text-center transition-all duration-200",
+                  sourceKind === "render_3d"
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:border-primary/50"
+                )}
+              >
+                <div className="text-[10px] sm:text-xs font-mono font-bold">3D render</div>
+              </button>
+            </div>
+            {sourceKind === "render_3d" && (
+              <Magnific3DControls
+                compact={false}
+                magnificScale={magnificScale}
+                setMagnificScale={setMagnificScale}
+                magnificResemblanceValue={magnificResemblanceValue}
+                setMagnificResemblanceValue={setMagnificResemblanceValue}
+                magnificCreativityValue={magnificCreativityValue}
+                setMagnificCreativityValue={setMagnificCreativityValue}
+              />
+            )}
+          </div>
+
           {/* Prompt Input */}
           <div className="space-y-2 sm:space-y-3">
             <div className="flex items-center justify-between">
@@ -647,17 +1360,27 @@ export function RenderGenerator({
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
-              placeholder="Describe the style, mood, and details you want in your photorealistic render..."
+              placeholder={
+                sourceKind === "render_3d"
+                  ? "Describe lighting, materials, and detail you want to improve…"
+                  : "Describe the style, mood, and details you want in your photorealistic render..."
+              }
               className="min-h-[100px] sm:min-h-[120px] resize-none rounded-none font-mono text-xs sm:text-sm"
             />
           </div>
 
+          <div
+            className={cn(
+              "space-y-4 sm:space-y-6",
+              sourceKind === "render_3d" && "pointer-events-none opacity-40"
+            )}
+          >
           {/* Aspect Ratio Selector */}
           <div className="space-y-2 sm:space-y-3">
             <label className="text-xs sm:text-sm font-mono uppercase tracking-wider">
-              Aspect Ratio
+              Aspect ratio
             </label>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-2">
               {ASPECT_RATIOS.map((ratio) => (
                 <button
                   key={ratio.value}
@@ -674,6 +1397,36 @@ export function RenderGenerator({
                   <div className="text-[9px] sm:text-[10px] lg:text-xs font-mono font-bold">{ratio.label}</div>
                   <div className="text-[8px] sm:text-[9px] lg:text-[10px] text-muted-foreground font-mono mt-0.5 sm:mt-1">
                     {ratio.value}
+                  </div>
+                  <div className="text-[7px] sm:text-[8px] text-muted-foreground/80 font-mono mt-0.5">
+                    {ratio.resolution1K} @1K
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2 sm:space-y-3">
+            <label className="text-xs sm:text-sm font-mono uppercase tracking-wider">
+              Output resolution
+            </label>
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+              {IMAGE_OUTPUT_SIZES.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setImageSize(opt.value)}
+                  className={`
+                    p-2 sm:p-3 border-2 transition-all duration-200 text-center
+                    ${imageSize === opt.value
+                      ? "border-primary bg-primary/10"
+                      : "border-border hover:border-primary/50"
+                    }
+                  `}
+                >
+                  <div className="text-[10px] sm:text-xs font-mono font-bold">{opt.label}</div>
+                  <div className="text-[8px] sm:text-[9px] text-muted-foreground font-mono mt-0.5">
+                    {opt.hint}
                   </div>
                 </button>
               ))}
@@ -737,10 +1490,16 @@ export function RenderGenerator({
             )}
           </div>
 
+          </div>
+
           {/* Generate Button */}
           <Button
             onClick={handleGenerate}
-            disabled={uploadedImages.length === 0 || !prompt.trim() || isGenerating}
+            disabled={
+              uploadedImages.length === 0 ||
+              (sourceKind === "plan_photo" && !prompt.trim()) ||
+              isGenerating
+            }
             className="w-full h-12 sm:h-14 font-mono text-xs sm:text-sm tracking-wider !bg-[#000000] hover:!bg-[#1a1a1a] !opacity-100 transition-all"
           >
             {isGenerating ? (
@@ -768,7 +1527,7 @@ export function RenderGenerator({
             <div className="flex items-center gap-3">
               <Sparkles className="w-4 h-4 text-yellow-400 animate-pulse flex-shrink-0" />
               <p className="text-xs sm:text-sm font-mono text-white">
-                Bientôt disponible
+                Coming soon
               </p>
             </div>
           </div>

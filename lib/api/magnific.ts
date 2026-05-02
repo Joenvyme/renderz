@@ -5,9 +5,35 @@
 
 import { MOCK_MODE, delay, MOCK_UPSCALED_IMAGE } from './mock-mode';
 
-interface MagnificUpscaleRequest {
+/** Profils `optimized_for` (API Freepik Image Upscaler Creative). */
+export type MagnificOptimizedFor =
+  | 'standard'
+  | 'soft_portraits'
+  | 'hard_portraits'
+  | 'art_n_illustration'
+  | 'videogame_assets'
+  | 'nature_n_landscapes'
+  | 'films_n_photography'
+  | '3d_renders'
+  | 'science_fiction_n_horror';
+
+export interface MagnificUpscaleRequest {
   imageUrl: string;
-  scale?: number; // 2x, 4x, 8x, 16x
+  scale?: number; // 2, 4, 8, 16 → "2x"…
+  /**
+   * Freepik OpenAPI : « Increase or decrease AI's creativity ». [-10, 10], défaut 0.
+   * @see https://docs.freepik.com/api-reference/image-upscaler-creative/post-image-upscaler
+   */
+  creativity?: number;
+  /**
+   * Freepik OpenAPI : « Adjust the level of resemblance to the original image ». [-10, 10], défaut 0.
+   * Les deux axes sont indépendants ; le guide parle d’équilibrer fidélité vs créativité.
+   */
+  resemblance?: number;
+  /** Guide l’upscale (souvent le prompt utilisateur). */
+  prompt?: string;
+  /** Défaut produit : rendus 3D (`3d_renders`). */
+  optimizedFor?: MagnificOptimizedFor;
 }
 
 interface MagnificUpscaleResponse {
@@ -154,23 +180,40 @@ export async function upscaleWithMagnific(
     // API Magnific hébergée sur Freepik
     // Documentation: https://docs.freepik.com/api-reference/image-upscaler-creative/post-image-upscaler
     
-    const requestBody = {
-      image: imageBase64, // Base64 de l'image (pas d'URL)
-      scale_factor: `${request.scale || 4}x`, // Format: "2x", "4x", "8x", "16x"
-      optimized_for: 'standard', // Ou: soft_portraits, hard_portraits, art_n_illustration, etc.
-      // Options créatives (entiers entre -10 et 10)
-      creativity: 0, // -10 (fidèle) à 10 (très créatif), default 0
-      hdr: 0, // -10 à 10, définition et détails, default 0
-      resemblance: 0, // -10 à 10, ressemblance à l'original, default 0
-      fractality: 0, // -10 à 10, force du prompt et complexité, default 0
-      engine: 'automatic', // Ou: magnific_illusio, magnific_sharpy, magnific_sparkle
-      // Note: webhook_url optionnel pour les notifications asynchrones
+    const clampTen = (x: unknown) =>
+      Math.round(
+        Math.min(
+          10,
+          Math.max(-10, typeof x === 'number' && Number.isFinite(x) ? x : Number(x) || 0)
+        )
+      );
+
+    const creativity = clampTen(request.creativity ?? 0);
+    const resemblance = clampTen(request.resemblance ?? 0);
+
+    const requestBody: Record<string, unknown> = {
+      image: imageBase64,
+      scale_factor: `${request.scale || 4}x`,
+      optimized_for: request.optimizedFor ?? '3d_renders',
+      creativity,
+      hdr: 0,
+      resemblance,
+      fractality: 0,
+      engine: 'automatic',
     };
+
+    const p = request.prompt?.trim();
+    if (p) {
+      requestBody.prompt = p;
+    }
     
     console.log('🔍 Magnific: Calling Freepik API with params:', {
       scale_factor: requestBody.scale_factor,
       optimized_for: requestBody.optimized_for,
-      imageSize: Math.round(imageBase64.length / 1024) + 'KB'
+      creativity,
+      resemblance,
+      hasPrompt: Boolean(p),
+      imageSizeKB: Math.round(imageBase64.length / 1024),
     });
     
     const response = await fetch('https://api.freepik.com/v1/ai/image-upscaler', {

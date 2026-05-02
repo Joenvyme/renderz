@@ -8,14 +8,13 @@ import {
   FolderOpen,
   FolderPlus,
   Settings,
-  Image,
-  ChevronLeft,
   Loader2,
   X,
   Trash2,
   MoreHorizontal,
-  Inbox,
-  Heart,
+  Pencil,
+  Check,
+  LayoutGrid,
 } from "lucide-react";
 
 export interface Project {
@@ -28,33 +27,95 @@ export interface Project {
   render_count: number;
 }
 
+export const RENDER_DRAG_MIME = "application/x-renderz-render-id";
+
+/** Parse drag payload: JSON `{ ids: string[] }`, comma-separated, or single UUID */
+export function parseDragRenderIds(raw: string): string[] {
+  if (!raw || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as { ids?: string[] };
+    if (parsed?.ids && Array.isArray(parsed.ids)) {
+      return Array.from(
+        new Set(parsed.ids.filter((id): id is string => Boolean(id)))
+      );
+    }
+  } catch {
+    /* plain string */
+  }
+  if (raw.includes(",")) {
+    return Array.from(
+      new Set(raw.split(",").map((s) => s.trim()).filter(Boolean))
+    );
+  }
+  return [raw.trim()];
+}
+
 interface ProjectSidebarProps {
   projects: Project[];
   selectedProjectId: string | null; // null = "All", "unassigned"/"favorites" = special filters
+  /** Filtre favoris de la galerie : la ligne « All » n’est active que si false */
+  favoritesOnly: boolean;
   onSelectProject: (projectId: string | null) => void;
   onCreateProject: (name: string) => Promise<void>;
   onDeleteProject: (projectId: string) => Promise<void>;
+  onRenameProject: (projectId: string, name: string) => Promise<void>;
   isLoading: boolean;
-  sidebarOpen: boolean;
-  onToggleSidebar: () => void;
+  /** Drop one or more renders from the gallery onto Unassigned or a project folder */
+  onDropRender?: (renderIds: string[], projectId: string | null) => Promise<void>;
 }
 
 export function ProjectSidebar({
   projects,
   selectedProjectId,
+  favoritesOnly,
   onSelectProject,
   onCreateProject,
   onDeleteProject,
+  onRenameProject,
   isLoading,
-  sidebarOpen,
-  onToggleSidebar,
+  onDropRender,
 }: ProjectSidebarProps) {
+  const [dropHoverTarget, setDropHoverTarget] = useState<string | null>(null);
+
+  useEffect(() => {
+    const clearHover = () => setDropHoverTarget(null);
+    document.addEventListener("dragend", clearHover);
+    return () => document.removeEventListener("dragend", clearHover);
+  }, []);
+
+  const handleDragOver = (e: React.DragEvent, targetKey: string) => {
+    if (!onDropRender) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDropHoverTarget(targetKey);
+  };
+
+  const handleDrop = async (e: React.DragEvent, projectId: string | null) => {
+    if (!onDropRender) return;
+    e.preventDefault();
+    setDropHoverTarget(null);
+    const raw =
+      e.dataTransfer.getData(RENDER_DRAG_MIME) ||
+      e.dataTransfer.getData("text/plain");
+    const renderIds = parseDragRenderIds(raw);
+    if (renderIds.length === 0) return;
+    await onDropRender(renderIds, projectId);
+  };
+
+  const dropRing = (targetKey: string) =>
+    onDropRender && dropHoverTarget === targetKey
+      ? "ring-2 ring-black ring-offset-1 ring-offset-white bg-muted/30"
+      : "";
+
   const [isCreating, setIsCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [contextMenuId, setContextMenuId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pendingDeleteProjectId, setPendingDeleteProjectId] = useState<string | null>(null);
+  const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renamingSubmitting, setRenamingSubmitting] = useState(false);
 
   useEffect(() => {
     if (!contextMenuId) return;
@@ -105,141 +166,198 @@ export function ProjectSidebar({
     }
   };
 
+  const allViewActive =
+    selectedProjectId === null && !favoritesOnly;
+
+  const cancelRename = () => {
+    setRenamingProjectId(null);
+    setRenameDraft("");
+  };
+
+  const commitRename = async (projectId: string) => {
+    const trimmed = renameDraft.trim();
+    if (!trimmed || renamingSubmitting) return;
+    setRenamingSubmitting(true);
+    try {
+      await onRenameProject(projectId, trimmed);
+      cancelRename();
+    } catch (error) {
+      console.error("Rename error:", error);
+      alert(error instanceof Error ? error.message : "Échec du renommage");
+    } finally {
+      setRenamingSubmitting(false);
+    }
+  };
+
   return (
-    <aside className="w-full h-full flex flex-col bg-white/5 backdrop-blur-[2px] border-r border-border">
-      {/* Desktop collapse button */}
-      <div className="hidden lg:flex justify-end p-2">
-        <button
-          onClick={onToggleSidebar}
-          className="p-1.5 hover:bg-muted rounded transition-colors"
-          title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-        >
-          <ChevronLeft className={`w-4 h-4 transition-transform ${!sidebarOpen ? "rotate-180" : ""}`} />
-        </button>
-      </div>
-
-      {/* Top navigation items */}
-      <nav className="p-2 space-y-0.5">
-        {/* All renders */}
-        <button
-          onClick={() => onSelectProject(null)}
-          className={`
-            w-full flex items-center gap-3 px-3 py-2.5 text-left transition-all text-sm font-mono rounded-sm
-            ${selectedProjectId === null
-              ? "bg-black text-white"
-              : "hover:bg-muted/50 text-foreground"
-            }
-          `}
-        >
-          <Image className="w-4 h-4 flex-shrink-0" />
-          <span className="flex-1 truncate">All Renders</span>
-        </button>
-
-        {/* Unassigned renders */}
-        <button
-          onClick={() => onSelectProject("unassigned")}
-          className={`
-            w-full flex items-center gap-3 px-3 py-2.5 text-left transition-all text-sm font-mono rounded-sm
-            ${selectedProjectId === "unassigned"
-              ? "bg-black text-white"
-              : "hover:bg-muted/50 text-foreground"
-            }
-          `}
-        >
-          <Inbox className="w-4 h-4 flex-shrink-0" />
-          <span className="flex-1 truncate">Unassigned</span>
-        </button>
-
-        {/* Favorite renders */}
-        <button
-          onClick={() => onSelectProject("favorites")}
-          className={`
-            w-full flex items-center gap-3 px-3 py-2.5 text-left transition-all text-sm font-mono rounded-sm
-            ${selectedProjectId === "favorites"
-              ? "bg-black text-white"
-              : "hover:bg-muted/50 text-foreground"
-            }
-          `}
-        >
-          <Heart className="w-4 h-4 flex-shrink-0" />
-          <span className="flex-1 truncate">Favorites</span>
-        </button>
-      </nav>
-
-      {/* Separator */}
-      <div className="px-4">
-        <div className="border-t border-border" />
-      </div>
-
+    <aside className="flex h-full w-full flex-col border-r border-border/80 bg-white">
       {/* Scrollable Project List */}
-      <nav className="flex-1 overflow-y-auto p-2 space-y-0.5 min-h-0">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-2 pt-4 sm:pt-5">
+        <div className="relative rounded-[4px]">
+          <button
+            type="button"
+            onClick={() => onSelectProject(null)}
+            className={`
+              flex w-full items-center gap-2.5 rounded-[4px] px-2.5 py-2 text-left text-sm font-medium tracking-tight transition-colors
+              ${allViewActive
+                ? "bg-black text-white"
+                : "text-foreground hover:bg-muted/45"
+              }
+            `}
+          >
+            <LayoutGrid
+              className="h-[15px] w-[15px] shrink-0 opacity-90"
+              strokeWidth={2}
+            />
+            <span className="min-w-0 flex-1 truncate">All</span>
+          </button>
+        </div>
+
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            <Loader2
+              className="h-5 w-5 animate-spin text-muted-foreground"
+              strokeWidth={2}
+            />
           </div>
         ) : projects.length === 0 ? (
-          <div className="px-3 py-6 text-center">
-            <FolderOpen className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
-            <p className="text-xs text-muted-foreground font-mono">
-              No projects yet
+          <div className="rounded-[4px] px-3 py-8 text-center">
+            <FolderOpen
+              className="mx-auto mb-2 h-8 w-8 text-muted-foreground/35"
+              strokeWidth={2}
+            />
+            <p className="text-xs text-muted-foreground">
+              Aucun dossier pour l’instant
             </p>
           </div>
         ) : (
           projects.map((project) => (
-            <div key={project.id} className="relative group">
-              <button
-                onClick={() => onSelectProject(project.id)}
-                className={`
-                  w-full flex items-center gap-3 px-3 py-2.5 text-left transition-all text-sm font-mono rounded-sm
-                  ${selectedProjectId === project.id
-                    ? "bg-black text-white"
-                    : "hover:bg-muted/50 text-foreground"
-                  }
-                `}
-              >
-                <FolderOpen className="w-4 h-4 flex-shrink-0" />
-                <span className="flex-1 truncate">{project.name}</span>
-              </button>
-
-              {/* Context menu button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setContextMenuId(contextMenuId === project.id ? null : project.id);
-                }}
-                data-project-menu-trigger
-                className={`
-                  absolute right-2 top-1/2 -translate-y-1/2 p-1 transition-opacity
-                  ${selectedProjectId === project.id
-                    ? "text-white opacity-100"
-                    : "text-foreground/70 opacity-0 group-hover:opacity-100"}
-                `}
-              >
-                <MoreHorizontal className="w-3.5 h-3.5" />
-              </button>
-
-              {/* Context menu */}
-              {contextMenuId === project.id && (
+            <div
+              key={project.id}
+              className={`group relative rounded-[4px] transition-colors ${dropRing(`project:${project.id}`)}`}
+              onDragOver={(e) => handleDragOver(e, `project:${project.id}`)}
+              onDrop={(e) => handleDrop(e, project.id)}
+            >
+              {renamingProjectId === project.id ? (
                 <div
-                  data-project-menu
-                  className="absolute right-2 top-full z-20 bg-white border border-border shadow-lg py-1 min-w-[140px]"
+                  data-project-rename
+                  className="flex items-center gap-1.5 rounded-[4px] border border-border/80 bg-muted/15 px-2 py-1.5"
                 >
-                  <button
-                    onClick={() => {
-                      setPendingDeleteProjectId(project.id);
-                      setContextMenuId(null);
+                  <Input
+                    value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    className="h-8 flex-1 rounded-[4px] border-border/80 text-sm font-medium"
+                    autoFocus
+                    disabled={renamingSubmitting}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void commitRename(project.id);
+                      if (e.key === "Escape") cancelRename();
                     }}
-                    disabled={deletingId === project.id}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-mono text-red-600 hover:bg-red-50 transition-colors"
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    className="h-8 w-8 shrink-0 rounded-[4px] border-border/80"
+                    disabled={renamingSubmitting || !renameDraft.trim()}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void commitRename(project.id)}
                   >
-                    {deletingId === project.id ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
+                    {renamingSubmitting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
                     ) : (
-                      <Trash2 className="w-3 h-3" />
+                      <Check className="h-3.5 w-3.5" strokeWidth={2} />
                     )}
-                    Delete
-                  </button>
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 shrink-0 rounded-[4px]"
+                    disabled={renamingSubmitting}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={cancelRename}
+                  >
+                    <X className="h-3.5 w-3.5" strokeWidth={2} />
+                  </Button>
                 </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onSelectProject(project.id)}
+                    className={`
+                      flex w-full items-center gap-2.5 rounded-[4px] px-2.5 py-2 text-left text-sm font-medium tracking-tight transition-colors
+                      ${selectedProjectId === project.id
+                        ? "bg-black text-white"
+                        : "text-foreground hover:bg-muted/45"
+                      }
+                    `}
+                  >
+                    <FolderOpen
+                      className="h-[15px] w-[15px] shrink-0 opacity-90"
+                      strokeWidth={2}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setContextMenuId(
+                        contextMenuId === project.id ? null : project.id
+                      );
+                    }}
+                    data-project-menu-trigger
+                    className={`
+                      absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[4px] transition-opacity
+                      ${selectedProjectId === project.id
+                        ? "text-white/90 opacity-100 hover:bg-white/10"
+                        : "text-muted-foreground opacity-0 hover:bg-muted/60 group-hover:opacity-100"
+                      }
+                    `}
+                    aria-label="Actions du dossier"
+                  >
+                    <MoreHorizontal className="h-4 w-4" strokeWidth={2} />
+                  </button>
+
+                  {contextMenuId === project.id && (
+                    <div
+                      data-project-menu
+                      className="absolute right-1.5 top-[calc(100%-2px)] z-20 min-w-[158px] overflow-hidden rounded-[6px] border border-border/80 bg-white py-1 shadow-md"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRenamingProjectId(project.id);
+                          setRenameDraft(project.name);
+                          setContextMenuId(null);
+                        }}
+                        className="mx-1 flex w-[calc(100%-8px)] items-center gap-2 rounded-[4px] px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
+                      >
+                        <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+                        Renommer
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPendingDeleteProjectId(project.id);
+                          setContextMenuId(null);
+                        }}
+                        disabled={deletingId === project.id}
+                        className="mx-1 flex w-[calc(100%-8px)] items-center gap-2 rounded-[4px] px-2.5 py-1.5 text-left text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {deletingId === project.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+                        )}
+                        Supprimer
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           ))
@@ -248,10 +366,10 @@ export function ProjectSidebar({
 
       <ConfirmActionDialog
         open={pendingDeleteProjectId !== null}
-        title="Delete project?"
-        description="Renders in this project will be kept but moved to unassigned."
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
+        title="Supprimer ce dossier ?"
+        description="Les rendus restent dans votre compte et repassent en non assignés."
+        confirmLabel="Supprimer"
+        cancelLabel="Annuler"
         danger
         isLoading={deletingId === pendingDeleteProjectId}
         onCancel={() => setPendingDeleteProjectId(null)}
@@ -264,7 +382,7 @@ export function ProjectSidebar({
       />
 
       {/* Bottom pinned section - always visible */}
-      <div className="shrink-0 border-t border-border">
+      <div className="shrink-0 border-t border-border/80">
         {/* Create Project */}
         <div className="p-3">
           {isCreating ? (
@@ -272,8 +390,8 @@ export function ProjectSidebar({
               <Input
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
-                placeholder="Project name..."
-                className="h-8 font-mono text-xs"
+                placeholder="Nom du dossier…"
+                className="h-9 rounded-[4px] border-border/80 text-sm font-medium"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleCreate();
@@ -288,9 +406,13 @@ export function ProjectSidebar({
                   size="sm"
                   onClick={handleCreate}
                   disabled={!newProjectName.trim() || isSubmitting}
-                  className="flex-1 h-7 font-mono text-[10px] !bg-black hover:!bg-black/80"
+                  className="h-8 flex-1 rounded-[4px] text-xs font-medium !bg-black hover:!bg-black/85"
                 >
-                  {isSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : "CREATE"}
+                  {isSubmitting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
+                  ) : (
+                    "Créer"
+                  )}
                 </Button>
                 <Button
                   size="sm"
@@ -299,9 +421,9 @@ export function ProjectSidebar({
                     setIsCreating(false);
                     setNewProjectName("");
                   }}
-                  className="h-7 px-2"
+                  className="h-8 rounded-[4px] px-2.5"
                 >
-                  <X className="w-3 h-3" />
+                  <X className="h-3.5 w-3.5" strokeWidth={2} />
                 </Button>
               </div>
             </div>
@@ -309,10 +431,10 @@ export function ProjectSidebar({
             <Button
               size="sm"
               onClick={() => setIsCreating(true)}
-              className="w-full font-mono text-[10px] h-9 gap-1.5 !bg-black !text-white hover:!bg-black/80 border-0 shadow-sm"
+              className="h-9 w-full gap-2 rounded-[4px] border-0 text-xs font-medium shadow-sm !bg-black !text-white hover:!bg-black/85"
             >
-              <FolderPlus className="w-3.5 h-3.5" />
-              NEW PROJECT
+              <FolderPlus className="h-3.5 w-3.5" strokeWidth={2} />
+              Nouveau dossier
             </Button>
           )}
         </div>
@@ -321,10 +443,10 @@ export function ProjectSidebar({
         <div className="px-3 pb-3">
           <a
             href="/settings"
-            className="flex items-center gap-2 px-3 py-2 text-sm font-mono text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-sm transition-all"
+            className="flex items-center gap-2.5 rounded-[4px] px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground"
           >
-            <Settings className="w-4 h-4" />
-            Settings
+            <Settings className="h-[15px] w-[15px]" strokeWidth={2} />
+            Paramètres
           </a>
         </div>
       </div>

@@ -43,7 +43,7 @@ export function BeforeAfterSlider({
     <div className={`relative w-full ${className}`}>
       {/* Container pour les deux images */}
       <div 
-        className="relative w-full aspect-[16/9] overflow-hidden border border-border bg-muted/30"
+        className="relative aspect-[16/9] w-full overflow-hidden rounded-[4px] border border-border/50 bg-muted/30 shadow-[0_8px_32px_rgba(0,0,0,0.06)]"
         onMouseMove={handleMouseMove}
       >
         {/* Image "After" (en arrière-plan, visible à droite) */}
@@ -97,12 +97,12 @@ export function BeforeAfterSlider({
         {/* Labels */}
         {!hideLabels && (
           <>
-            <div className="absolute top-3 sm:top-4 left-3 sm:left-4 bg-black/70 backdrop-blur-sm px-2 sm:px-3 py-1 sm:py-1.5 rounded-none border border-white/20">
+            <div className="absolute left-3 top-3 rounded-[2px] border border-white/20 bg-black/70 px-2 py-1 backdrop-blur-sm sm:left-4 sm:top-4 sm:px-3 sm:py-1.5">
               <span className="text-[10px] sm:text-xs font-mono text-white uppercase tracking-wider">
                 {beforeLabel}
               </span>
             </div>
-            <div className="absolute top-3 sm:top-4 right-3 sm:right-4 bg-black/70 backdrop-blur-sm px-2 sm:px-3 py-1 sm:py-1.5 rounded-none border border-white/20">
+            <div className="absolute right-3 top-3 rounded-[2px] border border-white/20 bg-black/70 px-2 py-1 backdrop-blur-sm sm:right-4 sm:top-4 sm:px-3 sm:py-1.5">
               <span className="text-[10px] sm:text-xs font-mono text-white uppercase tracking-wider">
                 {afterLabel}
               </span>

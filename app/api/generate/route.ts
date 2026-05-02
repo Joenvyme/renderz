@@ -1,17 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { generateWithNanoBanana, AspectRatio, ImageInput, ImageRole } from '@/lib/api/nano-banana';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  generateWithNanoBanana,
+  AspectRatio,
+  ImageInput,
+  ImageRole,
+  ImageOutputSize,
+  DEFAULT_IMAGE_OUTPUT_SIZE,
+  MAX_INPUT_IMAGES,
+  isValidAspectRatio,
+  isValidImageOutputSize,
+} from '@/lib/api/nano-banana';
+import { upscaleWithMagnific } from '@/lib/api/magnific';
+import {
+  type GenerationPipeline,
+  type MagnificAdjustMode,
+  type MagnificScaleFactor,
+  clampMagnificStyleValue,
+  parseGenerationPipeline,
+  parseMagnificAdjustMode,
+  parseMagnificScale,
+} from '@/lib/generation-pipeline';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { notifyRenderCompleted } from '@/lib/api/notifications';
-
-// Limite de rendus par mois pour tous les utilisateurs
-const MONTHLY_RENDERS_LIMIT = 200;
-
-// Utilisateurs sans limite de rendus
-const UNLIMITED_USERS = [
-  'joey.montani@gmail.com',
-];
+import {
+  assertCanStartImageRender,
+  getMonthlyUsage,
+  getOrCreateBillingAccountForUser,
+  recordSuccessfulImageRender,
+  type BillingAccountRow,
+} from '@/lib/billing/service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,13 +50,70 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     
     // Support pour l'ancien format (imageUrl) et le nouveau (images[])
-    const { imageUrl, images, prompt, aspectRatio, projectId } = body as {
+    const {
+      imageUrl,
+      images,
+      prompt,
+      aspectRatio,
+      imageSize,
+      projectId,
+      pipeline,
+      /** @deprecated — préférer magnificResemblanceValue + magnificCreativityValue */
+      magnificCreativity,
+      magnificScale,
+      magnificAdjustMode,
+      magnificStyleValue,
+      magnificResemblanceValue,
+      magnificCreativityValue,
+    } = body as {
       imageUrl?: string;
       images?: ImageInput[];
       prompt: string;
       aspectRatio?: AspectRatio;
+      imageSize?: ImageOutputSize;
       projectId?: string;
+      pipeline?: GenerationPipeline;
+      magnificCreativity?: number;
+      magnificScale?: number;
+      magnificAdjustMode?: MagnificAdjustMode;
+      magnificStyleValue?: number;
+      magnificResemblanceValue?: number;
+      magnificCreativityValue?: number;
     };
+
+    const resolvedAspect: AspectRatio =
+      aspectRatio && isValidAspectRatio(aspectRatio) ? aspectRatio : '1:1';
+    const resolvedImageSize: ImageOutputSize =
+      imageSize && isValidImageOutputSize(imageSize) ? imageSize : DEFAULT_IMAGE_OUTPUT_SIZE;
+    const resolvedPipeline = parseGenerationPipeline(pipeline);
+
+    let resolvedMagnificAdjustMode: MagnificAdjustMode = parseMagnificAdjustMode(magnificAdjustMode);
+    let resolvedMagnificResemblance = clampMagnificStyleValue(magnificResemblanceValue ?? 0);
+    let resolvedMagnificCreativity = clampMagnificStyleValue(magnificCreativityValue ?? 0);
+
+    const hasDualAxes =
+      magnificResemblanceValue !== undefined || magnificCreativityValue !== undefined;
+    if (!hasDualAxes) {
+      if (
+        magnificStyleValue === undefined &&
+        magnificAdjustMode === undefined &&
+        magnificCreativity !== undefined
+      ) {
+        resolvedMagnificAdjustMode = 'creativity';
+        resolvedMagnificCreativity = clampMagnificStyleValue(magnificCreativity);
+        resolvedMagnificResemblance = 0;
+      } else if (magnificStyleValue !== undefined || magnificCreativity !== undefined) {
+        const single = clampMagnificStyleValue(magnificStyleValue ?? magnificCreativity ?? 0);
+        if (resolvedMagnificAdjustMode === 'creativity') {
+          resolvedMagnificCreativity = single;
+          resolvedMagnificResemblance = 0;
+        } else {
+          resolvedMagnificResemblance = single;
+          resolvedMagnificCreativity = 0;
+        }
+      }
+    }
+    const resolvedMagnificScale: MagnificScaleFactor = parseMagnificScale(magnificScale);
 
     // Normaliser: si imageUrl est fourni, le convertir en tableau images
     let normalizedImages: ImageInput[];
@@ -51,17 +128,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!prompt) {
+    /** Rôles uniquement par position (1 → main, 2 → style, 3 → reference) — l’UI ne les expose plus. */
+    const ORDERED_ROLES: ImageRole[] = ['main', 'style', 'reference'];
+    normalizedImages = normalizedImages.map((img, i) => ({
+      url: img.url,
+      role: ORDERED_ROLES[i] ?? 'reference',
+    }));
+
+    const promptTrimmed = typeof prompt === 'string' ? prompt.trim() : '';
+    if (resolvedPipeline !== 'magnific' && !promptTrimmed) {
       return NextResponse.json(
         { error: 'Missing prompt' },
         { status: 400 }
       );
     }
+    const promptForDb =
+      promptTrimmed ||
+      (resolvedPipeline === 'magnific' ? '3D render enhancement' : '');
 
-    // Limiter à 3 images max
-    if (normalizedImages.length > 3) {
+    if (normalizedImages.length > MAX_INPUT_IMAGES) {
       return NextResponse.json(
-        { error: 'Maximum 3 images allowed' },
+        { error: `Maximum ${MAX_INPUT_IMAGES} images autorisées` },
         { status: 400 }
       );
     }
@@ -71,38 +158,25 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // Vérifier si l'utilisateur a des rendus illimités
-    const hasUnlimitedRenders = UNLIMITED_USERS.includes(session.user.email || '');
+    const billingAccount = await getOrCreateBillingAccountForUser(supabase, session.user.id);
+    const usage = await getMonthlyUsage(supabase, billingAccount.id);
+    const quota = assertCanStartImageRender(billingAccount, usage, session.user.email);
+    if (quota) {
+      return NextResponse.json(
+        { error: quota.error, code: quota.code },
+        { status: quota.status }
+      );
+    }
 
-    // Vérifier la limite mensuelle pour tous les utilisateurs (sauf ceux avec rendus illimités)
-    if (!hasUnlimitedRenders) {
-      // Calculer le début du mois en cours
-      const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      
-      const { count, error: countError } = await supabase
-        .from('renders')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', session.user.id)
-        .gte('created_at', startOfMonth.toISOString());
-
-      if (countError) {
-        console.error('Error counting renders:', countError);
+    if (resolvedPipeline === 'magnific') {
+      const k = process.env.MAGNIFIC_API_KEY;
+      if (!k || k === 'votre_cle_ici') {
         return NextResponse.json(
-          { error: 'Erreur lors de la vérification des limites' },
-          { status: 500 }
-        );
-      }
-
-      if (count !== null && count >= MONTHLY_RENDERS_LIMIT) {
-        return NextResponse.json(
-          { 
-            error: 'Limite mensuelle atteinte',
-            message: `Vous avez atteint la limite de ${MONTHLY_RENDERS_LIMIT} rendus ce mois. Réessayez le mois prochain.`,
-            currentCount: count,
-            maxAllowed: MONTHLY_RENDERS_LIMIT
+          {
+            error:
+              '3D render enhancement is not available. The administrator must configure the enhancement service.',
           },
-          { status: 403 }
+          { status: 503 }
         );
       }
     }
@@ -114,13 +188,23 @@ export async function POST(request: NextRequest) {
       .insert({
         user_id: session.user.id,
         original_image_url: normalizedImages[0].url,
-        prompt,
+        prompt: promptForDb,
         status: 'processing',
         project_id: projectId || null,
-        metadata: { 
-          aspectRatio: aspectRatio || '1:1',
-          images: normalizedImages, // Stocker toutes les images dans metadata
-          imageCount: normalizedImages.length
+        metadata: {
+          pipeline: resolvedPipeline,
+          aspectRatio: resolvedAspect,
+          imageSize: resolvedImageSize,
+          ...(resolvedPipeline === 'magnific'
+            ? {
+                magnificScale: resolvedMagnificScale,
+                magnificResemblanceValue: resolvedMagnificResemblance,
+                magnificCreativityValue: resolvedMagnificCreativity,
+                optimizedFor: '3d_renders',
+              }
+            : {}),
+          images: normalizedImages,
+          imageCount: normalizedImages.length,
         },
       })
       .select()
@@ -135,9 +219,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Lancer la génération en arrière-plan (SANS upscaling automatique)
-    processRender(render.id, normalizedImages, prompt, aspectRatio, {
+    processRender(render.id, normalizedImages, promptTrimmed, resolvedAspect, resolvedImageSize, {
+      pipeline: resolvedPipeline,
+      magnificScale: resolvedMagnificScale,
+      magnificResemblanceValue: resolvedMagnificResemblance,
+      magnificCreativityValue: resolvedMagnificCreativity,
       userName: session.user.name || '',
       userEmail: session.user.email || '',
+      billingAccount,
     }).catch(console.error);
 
     return NextResponse.json({
@@ -155,41 +244,110 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processRender(renderId: string, images: ImageInput[], prompt: string, aspectRatio?: AspectRatio, userInfo?: { userName: string; userEmail: string }) {
+async function uploadRemoteUrlToGeneratedRendersBucket(
+  supabase: SupabaseClient,
+  sourceUrl: string
+): Promise<string> {
+  const res = await fetch(sourceUrl);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch result image: ${res.statusText}`);
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  const fileName = `generated-${Date.now()}-${Math.random().toString(36).substring(7)}.png`;
+  const filePath = `renders/${fileName}`;
+  const { error } = await supabase.storage.from('generated-renders').upload(filePath, buf, {
+    contentType: 'image/png',
+    cacheControl: '3600',
+  });
+  if (error) {
+    throw new Error(`Failed to upload generated image: ${error.message}`);
+  }
+  const { data: pub } = supabase.storage.from('generated-renders').getPublicUrl(filePath);
+  return pub.publicUrl;
+}
+
+async function processRender(
+  renderId: string,
+  images: ImageInput[],
+  prompt: string,
+  aspectRatio: AspectRatio,
+  imageSize: ImageOutputSize,
+  userInfo: {
+    pipeline: GenerationPipeline;
+    magnificScale: MagnificScaleFactor;
+    magnificResemblanceValue: number;
+    magnificCreativityValue: number;
+    userName: string;
+    userEmail: string;
+    billingAccount: BillingAccountRow;
+  }
+) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
   try {
-    // Génération avec Nano Banana (Google Gemini) - SANS upscaling automatique
-    console.log(`[${renderId}] Starting Nano Banana generation...`);
-    console.log(`[${renderId}] Images: ${images.length} image(s)`);
-    images.forEach((img, i) => console.log(`[${renderId}]   ${i + 1}. ${img.role}: ${img.url.substring(0, 50)}...`));
-    console.log(`[${renderId}] Prompt: ${prompt.substring(0, 50)}...`);
-    console.log(`[${renderId}] Aspect Ratio: ${aspectRatio || '1:1'}`);
-    
-    const nanoBananaResult = await generateWithNanoBanana({ 
-      images, 
-      prompt,
-      aspectRatio: aspectRatio || '1:1'
-    });
+    let generatedUrl: string;
 
-    if (!nanoBananaResult.success || !nanoBananaResult.generatedImageUrl) {
-      throw new Error(nanoBananaResult.error || 'Nano Banana generation failed');
+    if (userInfo.pipeline === 'magnific') {
+      const creativity = userInfo.magnificCreativityValue;
+      const resemblance = userInfo.magnificResemblanceValue;
+      console.log(
+        `[${renderId}] Magnific 3D — scale ${userInfo.magnificScale}x, resemblance ${resemblance}, creativity ${creativity} (Freepik: both params sent)`
+      );
+      const firstImage = images[0];
+      console.log(`[${renderId}] Using image 1/primary: ${firstImage.url.substring(0, 60)}...`);
+
+      const magnificResult = await upscaleWithMagnific({
+        imageUrl: firstImage.url,
+        scale: userInfo.magnificScale,
+        creativity,
+        resemblance,
+        prompt,
+        optimizedFor: '3d_renders',
+      });
+
+      if (!magnificResult.success || !magnificResult.upscaledImageUrl) {
+        throw new Error(magnificResult.error || 'Magnific enhancement failed');
+      }
+
+      generatedUrl = await uploadRemoteUrlToGeneratedRendersBucket(
+        supabase,
+        magnificResult.upscaledImageUrl
+      );
+      console.log(`[${renderId}] ✓ Magnific result stored: ${generatedUrl.substring(0, 80)}...`);
+    } else {
+      console.log(`[${renderId}] Gemini (plan/sketch/photo) generation...`);
+      console.log(`[${renderId}] Images: ${images.length} image(s)`);
+      images.forEach((img, i) =>
+        console.log(`[${renderId}]   ${i + 1}. ${img.url.substring(0, 50)}...`)
+      );
+      console.log(`[${renderId}] Prompt: ${prompt.substring(0, 50)}...`);
+      console.log(`[${renderId}] Aspect Ratio: ${aspectRatio}`);
+      console.log(`[${renderId}] Image size: ${imageSize}`);
+
+      const nanoBananaResult = await generateWithNanoBanana({
+        images,
+        prompt,
+        aspectRatio,
+        imageSize,
+      });
+
+      if (!nanoBananaResult.success || !nanoBananaResult.generatedImageUrl) {
+        throw new Error(nanoBananaResult.error || 'Nano Banana generation failed');
+      }
+
+      generatedUrl = nanoBananaResult.generatedImageUrl;
+      console.log(`[${renderId}] ✓ Gemini generation complete!`);
     }
 
-    console.log(`[${renderId}] ✓ Nano Banana generation complete!`);
-    console.log(`[${renderId}] Generated image URL: ${nanoBananaResult.generatedImageUrl.substring(0, 80)}...`);
-
-    // Mettre à jour avec l'image générée et marquer comme complété
-    // L'utilisateur pourra choisir d'upscaler plus tard
     console.log(`[${renderId}] Updating database...`);
-    
+
     const { data: updateData, error: updateError } = await supabase
       .from('renders')
       .update({
-        generated_image_url: nanoBananaResult.generatedImageUrl,
+        generated_image_url: generatedUrl,
         status: 'completed',
       })
       .eq('id', renderId)
@@ -203,16 +361,21 @@ async function processRender(renderId: string, images: ImageInput[], prompt: str
       console.log(`[${renderId}] Updated data:`, {
         id: updateData?.id,
         status: updateData?.status,
-        has_generated_url: !!updateData?.generated_image_url
+        has_generated_url: !!updateData?.generated_image_url,
       });
 
-      // Send push notification
       notifyRenderCompleted({
-        userName: userInfo?.userName || '',
-        userEmail: userInfo?.userEmail || '',
+        userName: userInfo.userName,
+        userEmail: userInfo.userEmail,
         renderId,
-        imageUrl: nanoBananaResult.generatedImageUrl,
+        imageUrl: generatedUrl,
       }).catch(() => {});
+
+      await recordSuccessfulImageRender(
+        supabase,
+        userInfo.billingAccount,
+        userInfo.userEmail
+      );
     }
     
     // Vérifier immédiatement que la mise à jour a fonctionné
