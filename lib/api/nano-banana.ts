@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * Google Nano Banana API Client
  * Documentation: 
@@ -12,75 +14,14 @@
  * - Évite les techniques verbeuses d'ingénierie de prompts
  */
 
+import sharp from 'sharp';
+import type { AspectRatio, ImageInput, ImageOutputSize, ImageRole } from './gemini-image-config';
+import { DEFAULT_IMAGE_OUTPUT_SIZE } from './gemini-image-config';
 import { MOCK_MODE, delay, MOCK_GENERATED_IMAGE } from './mock-mode';
 
-/**
- * Ratios supportés par gemini-3-pro-image-preview (tableau officiel 1K / doc image generation).
- * @see https://ai.google.dev/gemini-api/docs/image-generation#aspect_ratios_and_image_size
- */
-export type AspectRatio =
-  | '1:1'
-  | '2:3'
-  | '3:2'
-  | '3:4'
-  | '4:3'
-  | '4:5'
-  | '5:4'
-  | '9:16'
-  | '16:9'
-  | '21:9';
-
-/** Résolutions de sortie API (`imageSize`) — majuscule K obligatoire côté Google. */
-export type ImageOutputSize = '1K' | '2K' | '4K';
-
-export const ASPECT_RATIOS: { value: AspectRatio; label: string; resolution1K: string }[] = [
-  { value: '1:1', label: 'Square', resolution1K: '1024×1024' },
-  { value: '16:9', label: 'Widescreen', resolution1K: '1376×768' },
-  { value: '9:16', label: 'Vertical', resolution1K: '768×1376' },
-  { value: '4:3', label: 'Landscape', resolution1K: '1200×896' },
-  { value: '3:4', label: 'Portrait', resolution1K: '896×1200' },
-  { value: '3:2', label: 'Photo L', resolution1K: '1264×848' },
-  { value: '2:3', label: 'Photo P', resolution1K: '848×1264' },
-  { value: '21:9', label: 'Ultrawide', resolution1K: '1584×672' },
-  { value: '4:5', label: '4:5', resolution1K: '928×1152' },
-  { value: '5:4', label: '5:4', resolution1K: '1152×928' },
-];
-
-/** Libellés produit ↔ valeurs `imageSize` de l’API (HD ≈ 1K, Full HD ≈ 2K, 4K). */
-export const IMAGE_OUTPUT_SIZES: {
-  value: ImageOutputSize;
-  label: string;
-  hint: string;
-}[] = [
-  { value: '1K', label: 'HD', hint: '1K' },
-  { value: '2K', label: 'Full HD', hint: '2K' },
-  { value: '4K', label: '4K', hint: '4K' },
-];
-
-export const DEFAULT_IMAGE_OUTPUT_SIZE: ImageOutputSize = '1K';
-
-export function isValidAspectRatio(v: string): v is AspectRatio {
-  return ASPECT_RATIOS.some((r) => r.value === v);
-}
-
-export function isValidImageOutputSize(v: string): v is ImageOutputSize {
-  return IMAGE_OUTPUT_SIZES.some((s) => s.value === v);
-}
-
-// Types pour les images multiples
-export type ImageRole = 'main' | 'style' | 'reference';
-
-export interface ImageInput {
-  url: string;
-  role: ImageRole;
-}
-
-/**
- * Nombre maximal d’images d’entrée pour une requête `generateContent` (Gemini multimodal).
- * Aligné sur les quotas usuels de l’API (~16 images par requête) ; à baisser si Google renvoie des erreurs de limite.
- * @see https://ai.google.dev/gemini-api/docs/image-generation
- */
-export const MAX_INPUT_IMAGES = 16;
+/** Côté le plus long plafonné — photos galerie 12Mpx gonflaient la requête et provoquaient des 503 / deadline. */
+const PREVIEW_MAX_EDGE_PX = 2048;
+const PREVIEW_JPEG_QUALITY = 85;
 
 interface NanoBananaGenerateRequest {
   images: ImageInput[]; // Support pour plusieurs images
@@ -132,16 +73,9 @@ export async function generateWithNanoBanana(
       ? request.images 
       : [{ url: request.imageUrl, role: 'main' as ImageRole }];
 
-    // Convertir toutes les images en base64
-    const imagePartsPromises = images.map(async (img) => {
-      const base64 = await fetchImageAsBase64(img.url);
-      return {
-        inline_data: {
-          mime_type: 'image/png',
-          data: base64
-        }
-      };
-    });
+    const imagePartsPromises = images.map(async (img) =>
+      buildGeminiInlineImagePart(img.url)
+    );
     const imageParts = await Promise.all(imagePartsPromises);
 
     // Construire le prompt selon les bonnes pratiques Gemini 3 :
@@ -266,13 +200,82 @@ export async function generateWithNanoBanana(
 }
 
 /**
- * Convertir une URL d'image en base64
+ * Prépare une part image pour Gemini : compression + bon MIME (les uploads galerie sont souvent d’énormes JPEG/HEIC ;
+ * on envoyait tout en `image/png`, ce qui est incorrect ; la taille faisait aussi expirer la deadline côté Google).
  */
-async function fetchImageAsBase64(url: string): Promise<string> {
+async function buildGeminiInlineImagePart(
+  url: string
+): Promise<{ inline_data: { mime_type: string; data: string } }> {
   const response = await fetch(url);
-  const arrayBuffer = await response.arrayBuffer();
-  const base64 = Buffer.from(arrayBuffer).toString('base64');
-  return base64;
+  if (!response.ok) {
+    throw new Error(`Impossible de télécharger l’image (${response.status}): ${url.substring(0, 80)}…`);
+  }
+  const buf = Buffer.from(await response.arrayBuffer());
+  const headerMime = normalizeContentTypeMime(response.headers.get('content-type'));
+
+  try {
+    const out = await sharp(buf)
+      .rotate()
+      .resize(PREVIEW_MAX_EDGE_PX, PREVIEW_MAX_EDGE_PX, {
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: PREVIEW_JPEG_QUALITY, mozjpeg: true })
+      .toBuffer();
+
+    return {
+      inline_data: {
+        mime_type: 'image/jpeg',
+        data: out.toString('base64'),
+      },
+    };
+  } catch (err) {
+    console.warn(
+      '🍌 sharp indisponible ou format non supporté, envoi brut avec MIME détecté:',
+      err instanceof Error ? err.message : err
+    );
+    const mime = headerMime ?? sniffImageMimeFromBuffer(buf);
+    return {
+      inline_data: {
+        mime_type: mime,
+        data: buf.toString('base64'),
+      },
+    };
+  }
+}
+
+function normalizeContentTypeMime(ct: string | null): string | null {
+  if (!ct) return null;
+  const base = ct.split(';')[0]?.trim().toLowerCase();
+  if (!base || base === 'application/octet-stream') return null;
+  if (base.startsWith('image/')) return base;
+  return null;
+}
+
+/** Détection légère si Supabase/payload ne renvoient pas un Content-Type fiable. */
+function sniffImageMimeFromBuffer(buf: Buffer): string {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47
+  ) {
+    return 'image/png';
+  }
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
+    return 'image/webp';
+  }
+  if (buf.length >= 16 && buf.slice(8, 12).toString('ascii') === 'ftyp') {
+    const brand = buf.slice(12, 16).toString('ascii');
+    if (/heic|heix|mif1|msf1/i.test(brand)) {
+      return 'image/heic';
+    }
+  }
+  return 'image/jpeg';
 }
 
 /**

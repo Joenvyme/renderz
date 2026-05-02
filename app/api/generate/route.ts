@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { generateWithNanoBanana } from '@/lib/api/nano-banana';
 import {
-  generateWithNanoBanana,
   AspectRatio,
   ImageInput,
   ImageRole,
@@ -11,7 +11,7 @@ import {
   MAX_INPUT_IMAGES,
   isValidAspectRatio,
   isValidImageOutputSize,
-} from '@/lib/api/nano-banana';
+} from '@/lib/api/gemini-image-config';
 import { upscaleWithMagnific } from '@/lib/api/magnific';
 import {
   type GenerationPipeline,

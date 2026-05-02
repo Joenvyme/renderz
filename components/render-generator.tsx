@@ -36,7 +36,7 @@ import {
   ImageRole,
   MAX_INPUT_IMAGES,
   isValidImageOutputSize,
-} from "@/lib/api/nano-banana";
+} from "@/lib/api/gemini-image-config";
 import { LANDING_RENDER_FORM_STORAGE_KEYS } from "@/lib/landing-render-form-storage";
 import {
   type GenerationPipeline,

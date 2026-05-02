@@ -33,7 +33,7 @@ import {
   IMAGE_OUTPUT_SIZES,
   ImageOutputSize,
   isValidImageOutputSize,
-} from "@/lib/api/nano-banana";
+} from "@/lib/api/gemini-image-config";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { Render4KBadge, renderShows4KBadge } from "@/components/render-4k-badge";
 
