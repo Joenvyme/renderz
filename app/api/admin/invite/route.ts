@@ -6,6 +6,8 @@ import { sendEmail, getInvitationEmailHtml } from '@/lib/email';
 // Admin emails autorisés
 const ADMIN_EMAILS = ['joey.montani@gmail.com'];
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // Vérifier l'authentification

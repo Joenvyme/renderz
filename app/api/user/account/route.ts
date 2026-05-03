@@ -4,6 +4,8 @@ import { headers } from "next/headers";
 import { Pool } from "pg";
 import { del } from "@vercel/blob";
 
+export const dynamic = "force-dynamic";
+
 export async function DELETE() {
   const session = await auth.api.getSession({
     headers: await headers(),

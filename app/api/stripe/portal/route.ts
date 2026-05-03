@@ -8,6 +8,8 @@ import { jsonFromStripeCaughtError } from "@/lib/stripe/http-errors";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL || "http://localhost:3000";
 
+export const dynamic = "force-dynamic";
+
 export async function POST() {
   try {
     if (!isStripeConfigured()) {

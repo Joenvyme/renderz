@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 
+export const dynamic = "force-dynamic";
+
 // GET - Get a single project with its renders
 export async function GET(
   request: NextRequest,

@@ -6,6 +6,8 @@ import { headers } from 'next/headers';
 // Admin emails autorisés
 const ADMIN_EMAILS = ['joey.montani@gmail.com'];
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     // Vérifier l'authentification

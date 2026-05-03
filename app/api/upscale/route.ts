@@ -59,6 +59,8 @@ function resolveUpscaleResemblanceCreativity(body: {
   return { res: style, cre: 0 };
 }
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // Vérifier l'authentification

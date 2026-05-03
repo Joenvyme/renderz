@@ -9,6 +9,8 @@ import { jsonFromStripeCaughtError } from "@/lib/stripe/http-errors";
 /**
  * Désactive le renouvellement automatique : l’abonnement reste actif jusqu’à current_period_end (Stripe).
  */
+export const dynamic = "force-dynamic";
+
 export async function POST() {
   try {
     if (!isStripeConfigured()) {

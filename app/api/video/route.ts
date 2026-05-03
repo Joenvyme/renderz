@@ -15,6 +15,8 @@ interface RenderMetadata {
   [key: string]: unknown;
 }
 
+export const dynamic = "force-dynamic";
+
 export async function POST(request: NextRequest) {
   try {
     const session = await auth.api.getSession({

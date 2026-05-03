@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 
+export const dynamic = 'force-dynamic';
+
 export async function PATCH(request: NextRequest) {
   try {
     // Vérifier l'authentification
