@@ -258,18 +258,6 @@ function SettingsContent() {
             </Link>
             <BrandLogo className="hover:opacity-90 transition-opacity" />
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="font-mono text-[10px] sm:text-xs px-2 sm:px-3"
-            onClick={async () => {
-              await signOut();
-              window.location.href = "/";
-            }}
-          >
-            <LogOut className="w-3 h-3 sm:mr-1" />
-            <span className="hidden sm:inline">SIGN OUT</span>
-          </Button>
         </div>
       </header>
 

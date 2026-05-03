@@ -29,11 +29,24 @@ export function BeforeAfterSlider({
     setSliderPosition(parseInt(e.target.value, 10));
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+  const updateFromClientX = (clientX: number, rect: DOMRect) => {
+    const x = clientX - rect.left;
     const percentage = (x / rect.width) * 100;
     setSliderPosition(Math.max(0, Math.min(100, percentage)));
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    updateFromClientX(e.clientX, e.currentTarget.getBoundingClientRect());
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 0) return;
+    updateFromClientX(e.touches[0].clientX, e.currentTarget.getBoundingClientRect());
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 0) return;
+    updateFromClientX(e.touches[0].clientX, e.currentTarget.getBoundingClientRect());
   };
 
   // Utilise le même objectFit pour les deux images si l'un est "contain"
@@ -43,8 +56,10 @@ export function BeforeAfterSlider({
     <div className={`relative w-full ${className}`}>
       {/* Container pour les deux images */}
       <div 
-        className="relative aspect-[16/9] w-full overflow-hidden rounded-[4px] border border-border/50 bg-muted/30 shadow-[0_8px_32px_rgba(0,0,0,0.06)]"
+        className="relative aspect-[16/9] w-full touch-pan-x overflow-hidden rounded-[4px] border border-border/50 bg-muted/30 shadow-[0_8px_32px_rgba(0,0,0,0.06)]"
         onMouseMove={handleMouseMove}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
       >
         {/* Image "After" (en arrière-plan, visible à droite) */}
         <div
@@ -90,7 +105,7 @@ export function BeforeAfterSlider({
           max="100"
           value={sliderPosition}
           onChange={handleSliderChange}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-20"
+          className="absolute inset-0 z-20 h-full w-full cursor-ew-resize opacity-0 touch-manipulation"
           aria-label="Before/After slider"
         />
 

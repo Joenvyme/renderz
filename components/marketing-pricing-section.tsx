@@ -29,7 +29,7 @@ export function MarketingPricingSection({ onGetStarted, onContact, className }: 
           type="button"
           variant="outline"
           onClick={onGetStarted}
-          className="w-full rounded-[2px] border-2 border-black font-mono text-xs tracking-wider hover:bg-black hover:text-white"
+          className="min-h-11 w-full touch-manipulation rounded-[2px] border-2 border-black font-mono text-xs tracking-wider hover:bg-black hover:text-white"
         >
           COMMENCER
         </Button>
@@ -38,7 +38,7 @@ export function MarketingPricingSection({ onGetStarted, onContact, className }: 
         <Button
           type="button"
           onClick={onGetStarted}
-          className="w-full rounded-[4px] bg-black font-mono text-xs tracking-wider text-white hover:bg-black/85"
+          className="min-h-11 w-full touch-manipulation rounded-[4px] bg-black font-mono text-xs tracking-wider text-white hover:bg-black/85"
         >
           CHOISIR PRO
         </Button>
@@ -48,7 +48,7 @@ export function MarketingPricingSection({ onGetStarted, onContact, className }: 
           type="button"
           variant="outline"
           onClick={onContact}
-          className="w-full rounded-[2px] border-2 border-black font-mono text-xs tracking-wider hover:bg-black hover:text-white"
+          className="min-h-11 w-full touch-manipulation rounded-[2px] border-2 border-black font-mono text-xs tracking-wider hover:bg-black hover:text-white"
         >
           NOUS CONTACTER
         </Button>

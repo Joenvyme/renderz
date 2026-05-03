@@ -9,17 +9,17 @@ import {
   useRef,
   useState,
 } from "react";
+import { cn } from "@/lib/utils";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useSession, signOut } from "@/lib/auth-client";
+import { useSession } from "@/lib/auth-client";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
 import {
   User,
   Image,
   Download,
   Loader2,
-  LogOut,
   Trash2,
   Eye,
   X,
@@ -28,6 +28,7 @@ import {
   Heart,
   Inbox,
   Clapperboard,
+  Play,
   Check,
   PanelLeft,
   PanelLeftClose,
@@ -39,7 +40,7 @@ import { RenderGenerator } from "@/components/render-generator";
 import { ProjectSidebar, Project, RENDER_DRAG_MIME } from "@/components/project-sidebar";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { Render4KBadge, galleryItemShows4KBadge } from "@/components/render-4k-badge";
-import { RenderStudio } from "@/components/render-studio";
+import { RenderStudio, type StudioPreviewVariant } from "@/components/render-studio";
 import type { BillingPayload } from "@/lib/billing/billing-types";
 
 interface RenderMetadata {
@@ -113,6 +114,204 @@ function sortRendersNewestFirst(list: Render[]): Render[] {
   });
 }
 
+type MobileQuickPreviewTile = {
+  key: string;
+  render: Render;
+  variant: StudioPreviewVariant;
+  imageUrl: string;
+};
+
+/** Aperçu mobile : swipe horizontal + bandeau de vignettes (même ordre que la grille filtrée). */
+function MobileGalleryQuickPreview({
+  items,
+  current,
+  onClose,
+  onNavigate,
+  onOpenStudio,
+}: {
+  items: MobileQuickPreviewTile[];
+  current: { render: Render; variant: StudioPreviewVariant };
+  onClose: () => void;
+  onNavigate: (next: { render: Render; variant: StudioPreviewVariant }) => void;
+  onOpenStudio: (render: Render, variant: StudioPreviewVariant) => void;
+}) {
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const activeThumbRef = useRef<HTMLButtonElement | null>(null);
+
+  const idx = useMemo(() => {
+    const i = items.findIndex(
+      (it) =>
+        it.render.id === current.render.id && it.variant === current.variant
+    );
+    return i >= 0 ? i : 0;
+  }, [items, current.render.id, current.variant]);
+
+  useEffect(() => {
+    activeThumbRef.current?.scrollIntoView({
+      behavior: "smooth",
+      inline: "center",
+      block: "nearest",
+    });
+  }, [idx]);
+
+  const r = current.render;
+  const v = current.variant;
+  const videoUrl = r.metadata?.video_url;
+  const poster = r.upscaled_image_url || r.generated_image_url || undefined;
+  const showVideo =
+    v === "video" && typeof videoUrl === "string" && videoUrl.length > 0;
+  const imgSrc =
+    v === "4k"
+      ? r.upscaled_image_url
+      : v === "standard"
+        ? r.generated_image_url
+        : poster || null;
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStart.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStart.current || items.length < 2) {
+      touchStart.current = null;
+      return;
+    }
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStart.current.x;
+    const dy = t.clientY - touchStart.current.y;
+    touchStart.current = null;
+    const minSwipe = 48;
+    if (Math.abs(dx) < minSwipe || Math.abs(dx) < Math.abs(dy)) return;
+    if (dx < 0 && idx < items.length - 1) {
+      const next = items[idx + 1];
+      onNavigate({ render: next.render, variant: next.variant });
+    } else if (dx > 0 && idx > 0) {
+      const prev = items[idx - 1];
+      onNavigate({ render: prev.render, variant: prev.variant });
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal
+      aria-label="Aperçu du rendu"
+      className="fixed inset-0 z-[200] flex flex-col bg-black/90 backdrop-blur-md"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-10 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20"
+        aria-label="Fermer l’aperçu"
+      >
+        <X className="h-5 w-5" />
+      </button>
+      <div
+        className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 pt-14 pb-2"
+        onClick={onClose}
+      >
+        <div
+          className="flex max-h-[min(72dvh,78svh)] max-w-full flex-col items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          {showVideo ? (
+            <video
+              src={videoUrl}
+              poster={poster}
+              controls
+              playsInline
+              className="max-h-[min(72dvh,78svh)] w-auto max-w-full rounded-md object-contain shadow-2xl ring-1 ring-white/15"
+            />
+          ) : imgSrc ? (
+            <img
+              src={imgSrc}
+              alt="Aperçu du rendu"
+              className="max-h-[min(72dvh,78svh)] w-auto max-w-full rounded-md object-contain shadow-2xl ring-1 ring-white/15"
+            />
+          ) : null}
+        </div>
+      </div>
+      <div
+        className="shrink-0 border-t border-white/10 bg-black/50 px-2 pt-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex max-w-full gap-1.5 overflow-x-auto overflow-y-hidden pb-2 [scrollbar-width:thin]">
+          {items.map((it, i) => (
+            <button
+              key={it.key}
+              type="button"
+              ref={i === idx ? activeThumbRef : undefined}
+              onClick={() =>
+                onNavigate({ render: it.render, variant: it.variant })
+              }
+              className={cn(
+                "relative h-12 w-12 shrink-0 overflow-hidden rounded border-2 transition-colors",
+                i === idx
+                  ? "border-white opacity-100 ring-1 ring-white/50"
+                  : "border-white/25 opacity-75 hover:border-white/45 hover:opacity-100"
+              )}
+            >
+              {it.imageUrl ? (
+                <img
+                  src={it.imageUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  draggable={false}
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center bg-white/10">
+                  <Loader2 className="h-4 w-4 animate-spin text-white/50" />
+                </div>
+              )}
+              {it.variant === "video" && (
+                <span className="absolute bottom-0.5 right-0.5 rounded bg-black/70 p-0.5">
+                  <Play className="h-2 w-2 text-white" />
+                </span>
+              )}
+              {galleryItemShows4KBadge(it.variant, it.render.metadata) && (
+                <Render4KBadge compact className="absolute left-0.5 top-0.5 z-[1] scale-75 origin-top-left" />
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="px-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <Button
+            type="button"
+            className="w-full font-mono text-xs tracking-wide"
+            onClick={() => onOpenStudio(r, v)}
+          >
+            Ouvrir le studio
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function previewVariantAfterStudioClose(
+  r: Render,
+  explicit?: StudioPreviewVariant
+): StudioPreviewVariant {
+  if (explicit) return explicit;
+  if (r.metadata?.video_url) return "video";
+  if (
+    r.upscaled_image_url &&
+    r.generated_image_url &&
+    r.upscaled_image_url !== r.generated_image_url
+  )
+    return "4k";
+  return "standard";
+}
+
 export default function ProfilePageWrapper() {
   return (
     <Suspense>
@@ -137,8 +336,15 @@ function ProfilePage() {
   const [studioRender, setStudioRender] = useState<Render | null>(null);
   /** Which gallery tile opened the studio (standard / 4k / video) — drives initial preview mode */
   const [studioPreviewVariant, setStudioPreviewVariant] = useState<
-    "standard" | "4k" | "video" | undefined
+    StudioPreviewVariant | undefined
   >(undefined);
+  const [galleryQuickPreview, setGalleryQuickPreview] = useState<{
+    render: Render;
+    variant: StudioPreviewVariant;
+  } | null>(null);
+  const [studioMobileToolsFullscreen, setStudioMobileToolsFullscreen] =
+    useState(false);
+  const studioOpenedFromQuickPreviewRef = useRef(false);
   const [showUpscaleToast, setShowUpscaleToast] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -195,7 +401,7 @@ function ProfilePage() {
   }, [session, fetchBilling]);
 
   useEffect(() => {
-    if (studioRender) {
+    if (studioRender || galleryQuickPreview) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -203,7 +409,17 @@ function ProfilePage() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [studioRender]);
+  }, [studioRender, galleryQuickPreview]);
+
+  /** Desktop (lg+) : barre de prompt en haut. Mobile : barre fixée en bas. */
+  const [matchesLg, setMatchesLg] = useState(false);
+  useLayoutEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const apply = () => setMatchesLg(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   useEffect(() => {
     if (showUpscaleToast) {
@@ -231,6 +447,7 @@ function ProfilePage() {
           const data = await res.json();
           const render = data.render ?? data;
           if (render && render.id) {
+            studioOpenedFromQuickPreviewRef.current = false;
             setStudioRender(render);
             if (render.status === "completed" || render.status === "failed") return;
             if (render.status === "completed") {
@@ -244,6 +461,7 @@ function ProfilePage() {
     };
 
     // Set a placeholder render immediately so the studio opens in loading mode
+    studioOpenedFromQuickPreviewRef.current = false;
     setStudioRender({
       id: studioRenderId,
       original_image_url: null,
@@ -483,14 +701,64 @@ function ProfilePage() {
   }, []);
 
   useEffect(() => {
+    if (matchesLg) {
+      setGalleryQuickPreview(null);
+      studioOpenedFromQuickPreviewRef.current = false;
+    }
+  }, [matchesLg]);
+
+  useEffect(() => {
+    if (!matchesLg && selectionMode) exitSelectionMode();
+  }, [matchesLg, selectionMode, exitSelectionMode]);
+
+  const handleCloseStudio = useCallback(() => {
+    const r = studioRender;
+    if (!r) return;
+    if (
+      r.status === "processing" ||
+      r.status === "pending" ||
+      r.status === "upscaling"
+    ) {
+      setPendingStudioRenderIds((prev) => new Set(prev).add(r.id));
+    }
+    const reopenQuick = studioOpenedFromQuickPreviewRef.current;
+    setStudioRender(null);
+    setStudioPreviewVariant(undefined);
+    setStudioMobileToolsFullscreen(false);
+    if (reopenQuick && !matchesLg) {
+      studioOpenedFromQuickPreviewRef.current = false;
+      setGalleryQuickPreview({
+        render: r,
+        variant: previewVariantAfterStudioClose(r, studioPreviewVariant),
+      });
+    } else {
+      studioOpenedFromQuickPreviewRef.current = false;
+    }
+  }, [studioRender, studioPreviewVariant, matchesLg]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (studioRender) return;
+      if (studioRender) {
+        handleCloseStudio();
+        return;
+      }
+      if (galleryQuickPreview) {
+        studioOpenedFromQuickPreviewRef.current = false;
+        setGalleryQuickPreview(null);
+        return;
+      }
       if (selectionMode) exitSelectionMode();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [exitSelectionMode, selectionMode, studioRender]);
+  }, [
+    exitSelectionMode,
+    selectionMode,
+    studioRender,
+    galleryQuickPreview,
+    handleCloseStudio,
+  ]);
 
   useEffect(() => {
     setSelectedRenderIds(new Set());
@@ -698,6 +966,139 @@ function ProfilePage() {
   const galleryUnassignedActive =
     !isFavoritesView && selectedProjectId === "unassigned";
 
+  const galleryToolbar = (
+    <div className="flex w-full flex-row items-center justify-between gap-2 sm:gap-4">
+      <div className="min-w-0 flex-1">
+        <div
+          className="flex max-lg:snap-x max-lg:snap-mandatory max-lg:flex-nowrap max-lg:gap-2 max-lg:overflow-x-auto max-lg:pb-0.5 max-lg:pl-3 max-lg:[-webkit-overflow-scrolling:touch] max-lg:[scrollbar-width:none] max-lg:[&::-webkit-scrollbar]:hidden sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1.5 sm:overflow-visible sm:pb-0 sm:[scrollbar-width:thin] sm:[&::-webkit-scrollbar]:h-1.5 items-center text-[13px] sm:text-sm"
+          role="toolbar"
+          aria-label="Filtres de la galerie"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setFavoritesOnly(false);
+              setSelectedProjectId(null);
+            }}
+            className={`max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 border-b-2 border-transparent py-2.5 sm:py-0.5 transition-colors ${
+              galleryAllActive
+                ? "font-semibold text-foreground border-foreground"
+                : "font-normal text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFavoritesOnly(false);
+              setSelectedProjectId("unassigned");
+            }}
+            className={`max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 inline-flex items-center gap-1.5 border-b-2 border-transparent py-2.5 sm:py-0.5 transition-colors ${
+              galleryUnassignedActive
+                ? "font-semibold text-foreground border-foreground"
+                : "font-normal text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Inbox className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            Unassigned
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFavoritesOnly(true);
+              setSelectedProjectId(null);
+            }}
+            className={`max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 inline-flex items-center gap-1.5 border-b-2 border-transparent py-2.5 sm:py-0.5 transition-colors ${
+              isFavoritesView
+                ? "font-semibold text-foreground border-foreground"
+                : "font-normal text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Heart className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${isFavoritesView ? "fill-current" : ""}`} />
+            Favorites
+          </button>
+          {renders.length > 0 && !isLoading && (
+            <div className="hidden lg:contents">
+              <span className="hidden h-4 w-px shrink-0 bg-border sm:inline" aria-hidden />
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectionMode) exitSelectionMode();
+                  else setSelectionMode(true);
+                }}
+                className={`max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 border-b-2 border-transparent py-2.5 sm:py-0.5 transition-colors ${
+                  selectionMode
+                    ? "font-semibold text-foreground border-foreground"
+                    : "font-normal text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {selectionMode ? "Done" : "Multi-select"}
+              </button>
+              {selectionMode && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedRenderIds(
+                        new Set(filteredGalleryItems.map((item) => item.render.id))
+                      )
+                    }
+                    className="max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 rounded-full border border-border/70 bg-white px-3 py-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/40 sm:px-2.5 sm:py-1 sm:text-xs"
+                  >
+                    Select all
+                  </button>
+                  {selectedRenderIds.size > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={clearRenderSelection}
+                        className="max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 rounded-full border border-border/70 bg-white px-3 py-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/40 sm:px-2.5 sm:py-1 sm:text-xs"
+                      >
+                        Clear ({selectedRenderIds.size})
+                      </button>
+                      <span className="max-lg:max-w-[min(100%,12rem)] max-lg:shrink-0 max-lg:truncate max-lg:text-[11px] sm:max-w-none sm:text-xs text-muted-foreground">
+                        {selectedRenderIds.size} selected — drag to a folder
+                      </span>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center max-lg:pl-1">
+        <div className="inline-flex shrink-0 rounded-full bg-muted/25 p-0.5 touch-manipulation">
+          <button
+            type="button"
+            onClick={() => setGalleryMediaMode("images")}
+            className={`inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-all sm:min-h-0 sm:px-3.5 sm:py-1.5 sm:text-xs ${
+              galleryMediaMode === "images"
+                ? "bg-[#ffe8e0] text-[#7c2d12] shadow-sm ring-1 ring-[#f5cbb8]/80"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Image className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            Images
+          </button>
+          <button
+            type="button"
+            onClick={() => setGalleryMediaMode("videos")}
+            className={`inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-all sm:min-h-0 sm:px-3.5 sm:py-1.5 sm:text-xs ${
+              galleryMediaMode === "videos"
+                ? "bg-[#ffe8e0] text-[#7c2d12] shadow-sm ring-1 ring-[#f5cbb8]/80"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Clapperboard className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            Videos
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (isPending) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -777,18 +1178,6 @@ function ProfilePage() {
                 )}
               </div>
             </Link>
-            <Button
-              variant="outline"
-              size="sm"
-              className="font-mono text-[10px] sm:text-xs px-2 sm:px-3"
-              onClick={async () => {
-                await signOut();
-                window.location.href = "/";
-              }}
-            >
-              <LogOut className="w-3 h-3 sm:mr-1" />
-              <span className="hidden sm:inline">SIGN OUT</span>
-            </Button>
           </div>
         </div>
       </header>
@@ -797,17 +1186,21 @@ function ProfilePage() {
       <div className="relative z-10 pt-14 sm:pt-16" style={{ minHeight: "100vh" }}>
         {/* Mobile sidebar overlay */}
         {mobileSidebarOpen && (
-          <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setMobileSidebarOpen(false)}>
+          <div
+            className="fixed inset-0 z-[130] lg:hidden"
+            onClick={() => setMobileSidebarOpen(false)}
+            aria-hidden
+          >
             <div className="absolute inset-0 bg-black/30" />
           </div>
         )}
 
-        {/* Sidebar - always fixed */}
+        {/* Sidebar - always fixed (mobile : au-dessus du prompt, filtres, galerie ; desktop : z bas) */}
         <div
           id="profile-project-sidebar"
           className={`
-            fixed top-14 sm:top-16 bottom-0 z-40 transition-all duration-300
-            w-[260px] bg-white
+            fixed top-14 sm:top-16 bottom-0 z-[140] transition-all duration-300
+            w-[260px] bg-white lg:z-40
             ${mobileSidebarOpen ? "left-0" : "-left-[280px]"}
             ${sidebarOpen ? "lg:left-0" : "lg:-left-[280px]"}
           `}
@@ -836,156 +1229,90 @@ function ProfilePage() {
           }`}
         >
           {/* Content area */}
-          <div className="pb-[140px] sm:pb-[200px] lg:pb-[240px]">
-            {/* Renders Grid */}
-            <div className="p-2 sm:p-4 lg:px-8 lg:pb-8 lg:pt-3">
-              {/* Barre outils : trigger sidebar (lg) au-dessus ; filtres + Images/Videos — sticky, sans bordure bas */}
-              <div className="mb-2 max-lg:sticky max-lg:top-14 max-lg:z-[85] max-lg:bg-white/95 max-lg:py-2 max-lg:shadow-sm max-lg:backdrop-blur-md supports-[backdrop-filter]:max-lg:bg-white/88 lg:sticky lg:top-14 lg:z-[90] lg:-mx-8 lg:mb-2 lg:rounded-none lg:border-0 lg:bg-white/95 lg:px-8 lg:py-1 lg:shadow-none lg:backdrop-blur-sm supports-[backdrop-filter]:lg:bg-white/90 sm:top-16">
-                <div className="hidden lg:block lg:pb-0">
-                  <button
-                    type="button"
-                    onClick={() => setSidebarOpen((o) => !o)}
-                    className="inline-flex h-8 shrink-0 items-center justify-start rounded-md p-0 text-foreground transition-opacity hover:opacity-70 [&_svg]:!size-[18px]"
-                    title={sidebarOpen ? "Replier la barre latérale" : "Afficher la barre latérale"}
-                    aria-expanded={sidebarOpen}
-                    aria-controls="profile-project-sidebar"
-                  >
-                    {sidebarOpen ? (
-                      <PanelLeftClose strokeWidth={1.5} />
-                    ) : (
-                      <PanelLeft strokeWidth={1.5} />
-                    )}
-                  </button>
-                </div>
-                <div className="flex w-full flex-col gap-2.5 sm:gap-3 lg:gap-4">
-                  <div className="grid w-full shrink-0 grid-cols-2 gap-1.5 self-start rounded-full border border-border/60 bg-muted/25 p-0.5 shadow-sm max-lg:touch-manipulation sm:inline-flex sm:w-auto sm:grid-cols-none sm:gap-0">
-                  <button
-                    type="button"
-                    onClick={() => setGalleryMediaMode("images")}
-                    className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[11px] font-medium transition-all sm:min-h-0 sm:px-3.5 sm:py-1.5 sm:text-xs ${
-                      galleryMediaMode === "images"
-                        ? "bg-[#ffe8e0] text-[#7c2d12] shadow-sm ring-1 ring-[#f5cbb8]/80"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Image className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
-                    Images
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGalleryMediaMode("videos")}
-                    className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[11px] font-medium transition-all sm:min-h-0 sm:px-3.5 sm:py-1.5 sm:text-xs ${
-                      galleryMediaMode === "videos"
-                        ? "bg-[#ffe8e0] text-[#7c2d12] shadow-sm ring-1 ring-[#f5cbb8]/80"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Clapperboard className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
-                    Videos
-                  </button>
-                  </div>
-                  <div className="min-w-0 w-full">
-                    <div
-                      className="flex max-lg:snap-x max-lg:snap-mandatory max-lg:flex-nowrap max-lg:gap-2 max-lg:overflow-x-auto max-lg:pb-1 max-lg:[-webkit-overflow-scrolling:touch] max-lg:[scrollbar-width:none] max-lg:[&::-webkit-scrollbar]:hidden sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1.5 sm:overflow-visible sm:pb-0 sm:[scrollbar-width:thin] sm:[&::-webkit-scrollbar]:h-1.5 items-center text-[13px] sm:text-sm"
-                      role="toolbar"
-                      aria-label="Filtres de la galerie"
+          <div className="pb-8 sm:pb-12 lg:pb-16">
+            {/* Grille + barre de prompt au-dessus (type Midjourney) */}
+            <div
+              className={cn(
+                "p-2 sm:p-4 lg:px-8 lg:pb-8 lg:pt-1",
+                !matchesLg && "max-lg:pb-28"
+              )}
+            >
+              {/* Desktop : barre de prompt + filtres sticky. Mobile : filtres seuls en haut ; prompt fixe en bas + dégradé. */}
+              {matchesLg ? (
+                <div className="relative mb-2 hidden lg:sticky lg:top-14 lg:z-[90] lg:-mx-8 lg:mb-2 lg:block lg:space-y-2 lg:border-0 lg:px-8 lg:pb-10 lg:pt-2 lg:shadow-none sm:top-16">
+                  <div
+                    className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-white from-0% via-white/95 via-[38%] to-transparent to-100% backdrop-blur-[2px] supports-[backdrop-filter]:from-white/[0.97] supports-[backdrop-filter]:via-white/90"
+                    aria-hidden
+                  />
+                  <div className="hidden lg:block">
+                    <button
+                      type="button"
+                      onClick={() => setSidebarOpen((o) => !o)}
+                      className="inline-flex h-8 shrink-0 items-center justify-start rounded-md p-0 text-foreground transition-opacity hover:opacity-70 [&_svg]:!size-[18px]"
+                      title={sidebarOpen ? "Replier la barre latérale" : "Afficher la barre latérale"}
+                      aria-expanded={sidebarOpen}
+                      aria-controls="profile-project-sidebar"
                     >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFavoritesOnly(false);
-                      setSelectedProjectId(null);
-                    }}
-                    className={`max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 border-b-2 border-transparent py-2.5 sm:py-0.5 transition-colors ${
-                      galleryAllActive
-                        ? "font-semibold text-foreground border-foreground"
-                        : "font-normal text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFavoritesOnly(false);
-                      setSelectedProjectId("unassigned");
-                    }}
-                    className={`max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 inline-flex items-center gap-1.5 border-b-2 border-transparent py-2.5 sm:py-0.5 transition-colors ${
-                      galleryUnassignedActive
-                        ? "font-semibold text-foreground border-foreground"
-                        : "font-normal text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Inbox className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                    Unassigned
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFavoritesOnly(true);
-                      setSelectedProjectId(null);
-                    }}
-                    className={`max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 inline-flex items-center gap-1.5 border-b-2 border-transparent py-2.5 sm:py-0.5 transition-colors ${
-                      isFavoritesView
-                        ? "font-semibold text-foreground border-foreground"
-                        : "font-normal text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Heart className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${isFavoritesView ? "fill-current" : ""}`} />
-                    Favorites
-                  </button>
-                  {renders.length > 0 && !isLoading && (
-                    <>
-                      <span className="hidden h-4 w-px shrink-0 bg-border sm:inline" aria-hidden />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (selectionMode) exitSelectionMode();
-                          else setSelectionMode(true);
-                        }}
-                        className={`max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 border-b-2 border-transparent py-2.5 sm:py-0.5 transition-colors ${
-                          selectionMode
-                            ? "font-semibold text-foreground border-foreground"
-                            : "font-normal text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        {selectionMode ? "Done" : "Multi-select"}
-                      </button>
-                      {selectionMode && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSelectedRenderIds(
-                                new Set(filteredGalleryItems.map((item) => item.render.id))
-                              )
-                            }
-                            className="max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 rounded-full border border-border/70 bg-white px-3 py-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/40 sm:px-2.5 sm:py-1 sm:text-xs"
-                          >
-                            Select all
-                          </button>
-                          {selectedRenderIds.size > 0 && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={clearRenderSelection}
-                                className="max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 rounded-full border border-border/70 bg-white px-3 py-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/40 sm:px-2.5 sm:py-1 sm:text-xs"
-                              >
-                                Clear ({selectedRenderIds.size})
-                              </button>
-                              <span className="max-lg:max-w-[min(100%,12rem)] max-lg:shrink-0 max-lg:truncate max-lg:text-[11px] sm:max-w-none sm:text-xs text-muted-foreground">
-                                {selectedRenderIds.size} selected — drag to a folder
-                              </span>
-                            </>
-                          )}
-                        </>
+                      {sidebarOpen ? (
+                        <PanelLeftClose strokeWidth={1.5} />
+                      ) : (
+                        <PanelLeft strokeWidth={1.5} />
                       )}
-                    </>
-                  )}
-                    </div>
+                    </button>
+                  </div>
+
+                  <RenderGenerator
+                    onGenerateSuccess={() => {
+                      fetchRenders();
+                      fetchProjects();
+                    }}
+                    projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+                    selectedProjectId={
+                      generatorProjectId ||
+                      (selectedProjectId && !["unassigned", "favorites"].includes(selectedProjectId)
+                        ? selectedProjectId
+                        : null)
+                    }
+                    onProjectChange={setGeneratorProjectId}
+                    compact
+                    compactOuterClassName="w-full max-w-[1200px] lg:max-w-none"
+                  />
+                  {galleryToolbar}
+                </div>
+              ) : (
+                <div className="mb-2 sticky top-14 z-[85] -mx-2 bg-white/95 px-2 py-1.5 backdrop-blur-md supports-[backdrop-filter]:bg-white/88 sm:top-16 lg:hidden">
+                  {galleryToolbar}
+                </div>
+              )}
+
+              {!matchesLg && (
+                <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[95] lg:hidden">
+                  <div
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-[9rem] bg-gradient-to-t from-white from-0% via-white/95 via-35% to-transparent to-100%"
+                    aria-hidden
+                  />
+                  <div className="pointer-events-auto relative mb-4 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1">
+                    <RenderGenerator
+                      onGenerateSuccess={() => {
+                        fetchRenders();
+                        fetchProjects();
+                      }}
+                      projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+                      selectedProjectId={
+                        generatorProjectId ||
+                        (selectedProjectId && !["unassigned", "favorites"].includes(selectedProjectId)
+                          ? selectedProjectId
+                          : null)
+                      }
+                      onProjectChange={setGeneratorProjectId}
+                      compact
+                      compactBarClassName="!bg-white"
+                      compactOptionsPanelBelowBar={false}
+                      compactOuterClassName="w-full max-lg:!mb-0 lg:max-w-[1200px] lg:max-w-none"
+                    />
                   </div>
                 </div>
-              </div>
+              )}
 
               {isLoading ? (
                 <div className="flex items-center justify-center py-12">
@@ -996,7 +1323,9 @@ function ProfilePage() {
                   <Image className="w-12 h-12 mb-4 text-muted-foreground/30" />
                   <p className="text-sm text-muted-foreground font-mono">No renders in this view</p>
                   <p className="text-xs text-muted-foreground/60 font-mono mt-1">
-                    Use the generator below to create your first render
+                    {matchesLg
+                      ? "Use the prompt bar above to create your first render"
+                      : "Use the prompt bar at the bottom to create your first render"}
                   </p>
                 </div>
               ) : filteredGalleryItems.length === 0 ? (
@@ -1042,13 +1371,15 @@ function ProfilePage() {
                       <div
                         key={item.key}
                         data-item-key={item.key}
-                        draggable
+                        draggable={matchesLg}
                         title={
-                          selectionMode &&
-                          selectedRenderIds.size > 1 &&
-                          selectedRenderIds.has(item.render.id)
-                            ? `Drag ${selectedRenderIds.size} renders to a folder`
-                            : "Drag into a folder in the sidebar"
+                          matchesLg
+                            ? selectionMode &&
+                              selectedRenderIds.size > 1 &&
+                              selectedRenderIds.has(item.render.id)
+                              ? `Drag ${selectedRenderIds.size} renders to a folder`
+                              : "Drag into a folder in the sidebar"
+                            : undefined
                         }
                         onDragStart={(e) => {
                           const payload = JSON.stringify({ ids: idsToDrag });
@@ -1073,8 +1404,17 @@ function ProfilePage() {
                             return;
                           }
                           if (!item.imageUrl && item.variant !== "video") return;
-                          setStudioRender(item.render);
-                          setStudioPreviewVariant(item.variant);
+                          if (matchesLg) {
+                            studioOpenedFromQuickPreviewRef.current = false;
+                            setStudioRender(item.render);
+                            setStudioPreviewVariant(item.variant);
+                            setStudioMobileToolsFullscreen(false);
+                            return;
+                          }
+                          setGalleryQuickPreview({
+                            render: item.render,
+                            variant: item.variant,
+                          });
                         }}
                       >
                         <div
@@ -1102,12 +1442,12 @@ function ProfilePage() {
                                 }}
                               />
                               {item.variant === "video" && (
-                                <div className="absolute top-1 right-1 z-[7] sm:top-2 sm:right-2 rounded-[4px] border border-white/20 bg-black/70 p-0.5 text-white sm:p-1">
+                                <div className="absolute top-1 right-1 z-[7] max-lg:hidden sm:top-2 sm:right-2 rounded-[4px] border border-white/20 bg-black/70 p-0.5 text-white sm:p-1">
                                   <Clapperboard className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                                 </div>
                               )}
                               {galleryItemShows4KBadge(item.variant, item.render.metadata) && (
-                                <Render4KBadge className="absolute left-1 top-1 z-[7] sm:left-2 sm:top-2" />
+                                <Render4KBadge className="absolute left-1 top-1 z-[7] max-lg:hidden sm:left-2 sm:top-2" />
                               )}
                               {isSelected && (
                                 <>
@@ -1125,7 +1465,7 @@ function ProfilePage() {
                               )}
                               {/* Hover overlay — Midjourney-like: STUDIO centré, actions fines en bas à droite */}
                               <div
-                                className="pointer-events-none absolute inset-0 z-10 opacity-0 transition-opacity duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
+                                className="pointer-events-none absolute inset-0 z-10 max-lg:hidden opacity-0 transition-opacity duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
                                 draggable={false}
                                 onDragStart={(e) => e.preventDefault()}
                               >
@@ -1138,8 +1478,10 @@ function ProfilePage() {
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      studioOpenedFromQuickPreviewRef.current = false;
                                       setStudioRender(item.render);
                                       setStudioPreviewVariant(item.variant);
+                                      setStudioMobileToolsFullscreen(false);
                                     }}
                                     className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/35 px-3.5 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white shadow-[0_1px_12px_rgba(0,0,0,0.45)] backdrop-blur-[1px] transition-colors hover:border-white/55 hover:bg-white/10"
                                   >
@@ -1277,33 +1619,32 @@ function ProfilePage() {
             </div>
 
           </div>
-
-          {/* Fixed Render Generator at bottom */}
-          <div className={`fixed bottom-0 left-0 right-0 z-30 transition-all duration-300 ${
-            sidebarOpen ? "lg:left-[260px]" : "lg:left-[52px]"
-          }`}>
-            <div className="flex justify-center w-full">
-              <div className="m-2 w-full max-w-[1200px] p-2 sm:m-4 sm:p-4 lg:m-6 lg:p-5">
-              <RenderGenerator
-                onGenerateSuccess={() => {
-                  fetchRenders();
-                  fetchProjects();
-                }}
-                projects={projects.map((p) => ({ id: p.id, name: p.name }))}
-                selectedProjectId={
-                  generatorProjectId ||
-                  (selectedProjectId && !["unassigned", "favorites"].includes(selectedProjectId)
-                    ? selectedProjectId
-                    : null)
-                }
-                onProjectChange={setGeneratorProjectId}
-                compact
-              />
-              </div>
-            </div>
-          </div>
         </main>
       </div>
+
+      {/* Aperçu plein écran (mobile) — swipe + bandeau, clic hors média pour fermer */}
+      {galleryQuickPreview && !matchesLg && (
+        <MobileGalleryQuickPreview
+          items={filteredGalleryItems.map((it) => ({
+            key: it.key,
+            render: it.render,
+            variant: it.variant,
+            imageUrl: it.imageUrl,
+          }))}
+          current={galleryQuickPreview}
+          onClose={() => {
+            studioOpenedFromQuickPreviewRef.current = false;
+            setGalleryQuickPreview(null);
+          }}
+          onNavigate={(next) => setGalleryQuickPreview(next)}
+          onOpenStudio={(render, variant) => {
+            studioOpenedFromQuickPreviewRef.current = true;
+            setStudioRender(render);
+            setStudioPreviewVariant(variant);
+            setStudioMobileToolsFullscreen(true);
+          }}
+        />
+      )}
 
       {/* Render Studio */}
       {studioRender && (
@@ -1312,22 +1653,14 @@ function ProfilePage() {
           galleryRenders={rendersGalleryOrdered}
           projects={projects.map((p) => ({ id: p.id, name: p.name }))}
           previewVariant={studioPreviewVariant}
+          mobileLaunchToolsFullscreen={studioMobileToolsFullscreen}
+          mobileFloatingSheet={Boolean(galleryQuickPreview && !matchesLg)}
           billingUnlimited={Boolean(billing?.unlimited)}
           onNavigateToRender={(r) => {
             setStudioRender(r);
             setStudioPreviewVariant(undefined);
           }}
-          onClose={() => {
-            if (
-              studioRender.status === "processing" ||
-              studioRender.status === "pending" ||
-              studioRender.status === "upscaling"
-            ) {
-              setPendingStudioRenderIds((prev) => new Set(prev).add(studioRender.id));
-            }
-            setStudioRender(null);
-            setStudioPreviewVariant(undefined);
-          }}
+          onClose={handleCloseStudio}
           onRenderUpdate={(updated) => {
             setRenders((prev) =>
               prev.map((r) => (r.id === updated.id ? updated : r))
@@ -1379,6 +1712,7 @@ function ProfilePage() {
       {readyRenderToast && (
         <button
           onClick={() => {
+            studioOpenedFromQuickPreviewRef.current = false;
             setStudioRender(readyRenderToast);
             setStudioPreviewVariant(undefined);
             setReadyRenderToast(null);

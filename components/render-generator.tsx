@@ -83,6 +83,82 @@ function apiRoleForImageIndex(index: number): ImageRole {
   return "reference";
 }
 
+const UPLOAD_PREVIEW_MAX_EDGE = 2048;
+const UPLOAD_JPEG_QUALITY = 0.82;
+
+/** Réduit poids / côté max avant Supabase (photos galerie > 10 Mo en data URL). */
+async function tryCompressDataUrlToJpegBlob(
+  dataUrl: string,
+  maxEdge: number,
+  quality: number
+): Promise<Blob | null> {
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("decode"));
+      el.src = dataUrl;
+    });
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (!w || !h) return null;
+    const scale = Math.min(1, maxEdge / Math.max(w, h));
+    const tw = Math.max(1, Math.round(w * scale));
+    const th = Math.max(1, Math.round(h * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = tw;
+    canvas.height = th;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, tw, th);
+    return await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((b) => resolve(b), "image/jpeg", quality);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Blob typé + extension cohérente (Safari laisse souvent blob.type vide après fetch(data:…)). */
+async function blobFromDataUrlForUpload(
+  dataUrl: string,
+  index: number
+): Promise<{ blob: Blob; filename: string }> {
+  const header = /^data:([^;,]*)/i.exec(dataUrl);
+  let mime = (header?.[1] ?? "").trim().toLowerCase();
+  if (!mime || mime === "application/octet-stream" || !mime.startsWith("image/")) {
+    mime = "image/jpeg";
+  }
+  const ext = mime.includes("png")
+    ? "png"
+    : mime.includes("webp")
+      ? "webp"
+      : mime.includes("heic") || mime.includes("heif")
+        ? "heic"
+        : "jpg";
+
+  const res = await fetch(dataUrl);
+  const buf = await res.arrayBuffer();
+  const blob = new Blob([buf], { type: mime });
+  return { blob, filename: `image-${index + 1}.${ext}` };
+}
+
+/** Préfère JPEG redimensionné pour rester sous la limite d’upload ; repli sur le data URL brut. */
+async function blobForUploadFromDataUrl(
+  dataUrl: string,
+  index: number
+): Promise<{ blob: Blob; filename: string }> {
+  const compressed = await tryCompressDataUrlToJpegBlob(
+    dataUrl,
+    UPLOAD_PREVIEW_MAX_EDGE,
+    UPLOAD_JPEG_QUALITY
+  );
+  if (compressed && compressed.size > 0) {
+    return { blob: compressed, filename: `image-${index + 1}.jpg` };
+  }
+  return blobFromDataUrlForUpload(dataUrl, index);
+}
+
 function Magnific3DControls({
   magnificScale,
   setMagnificScale,
@@ -289,136 +365,144 @@ function CompactOptionsScrollableInner({
   setShowCatalogToast,
   setShowCompactOptions,
 }: CompactOptionsScrollableInnerProps) {
+  const planFieldsLocked = sourceKind === "render_3d";
+
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2.5">
-      <div className="mb-2.5">
-        <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Source
-        </span>
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => setSourceKind("plan_photo")}
-            className={cn(
-              "flex-1 rounded-[4px] border py-1.5 text-[11px] font-medium transition-colors",
-              sourceKind === "plan_photo"
-                ? "border-foreground bg-foreground text-background"
-                : "border-border/70 bg-white/60 text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Plan / photo
-          </button>
-          <button
-            type="button"
-            onClick={() => setSourceKind("render_3d")}
-            className={cn(
-              "flex-1 rounded-[4px] border py-1.5 text-[11px] font-medium transition-colors",
-              sourceKind === "render_3d"
-                ? "border-foreground bg-foreground text-background"
-                : "border-border/70 bg-white/60 text-muted-foreground hover:text-foreground"
-            )}
-          >
-            3D render
-          </button>
-        </div>
-      </div>
-
-      {sourceKind === "render_3d" && (
-        <Magnific3DControls
-          compact
-          magnificScale={magnificScale}
-          setMagnificScale={setMagnificScale}
-          magnificResemblanceValue={magnificResemblanceValue}
-          setMagnificResemblanceValue={setMagnificResemblanceValue}
-          magnificCreativityValue={magnificCreativityValue}
-          setMagnificCreativityValue={setMagnificCreativityValue}
-        />
-      )}
-
-      {projects && projects.length > 0 && (
-        <div className="mb-2.5">
-          <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Folder
-          </label>
-          <select
-            value={selectedProjectId || ""}
-            onChange={(e) => onProjectChange?.(e.target.value || null)}
-            className="h-9 w-full rounded-[4px] border border-border/80 bg-white/80 px-2 text-xs text-foreground"
-          >
-            <option value="">No folder</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <div
-        className={cn(sourceKind === "render_3d" && "pointer-events-none opacity-[0.38]")}
-      >
-        <div className="mb-2.5">
-          <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Format
-          </span>
-          <div className="flex flex-wrap gap-1">
-            {ASPECT_RATIOS.map((ratio) => (
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div className="grid grid-cols-1 gap-3 p-3 sm:gap-4 sm:p-4 md:grid-cols-2">
+        <section className="rounded-[4px] border border-border/80 bg-muted/10 p-3">
+          <div className="mb-4">
+            <span className="mb-2 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Source
+            </span>
+            <div className="flex gap-1">
               <button
-                key={ratio.value}
                 type="button"
-                onClick={() => setAspectRatio(ratio.value)}
-                className={cn(
-                  "rounded-[4px] border px-2 py-1 text-[11px] font-medium transition-colors",
-                  aspectRatio === ratio.value
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border/70 bg-white/60 text-muted-foreground hover:border-foreground/30 hover:text-foreground"
-                )}
-              >
-                {ratio.value}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mb-2.5">
-          <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Resolution
-          </span>
-          <div className="flex gap-1">
-            {IMAGE_OUTPUT_SIZES.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setImageSize(opt.value)}
+                onClick={() => setSourceKind("plan_photo")}
                 className={cn(
                   "flex-1 rounded-[4px] border py-1.5 text-[11px] font-medium transition-colors",
-                  imageSize === opt.value
+                  sourceKind === "plan_photo"
                     ? "border-foreground bg-foreground text-background"
                     : "border-border/70 bg-white/60 text-muted-foreground hover:text-foreground"
                 )}
-                title={`${opt.label} (${opt.hint})`}
               >
-                {opt.label}
+                Plan / photo
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={() => setSourceKind("render_3d")}
+                className={cn(
+                  "flex-1 rounded-[4px] border py-1.5 text-[11px] font-medium transition-colors",
+                  sourceKind === "render_3d"
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border/70 bg-white/60 text-muted-foreground hover:text-foreground"
+                )}
+              >
+                3D render
+              </button>
+            </div>
           </div>
-        </div>
-      </div>
+          <div className={cn(planFieldsLocked && "pointer-events-none opacity-[0.38]")}>
+            <span className="mb-2 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Format
+            </span>
+            <div className="flex flex-wrap gap-1">
+              {ASPECT_RATIOS.map((ratio) => (
+                <button
+                  key={ratio.value}
+                  type="button"
+                  onClick={() => setAspectRatio(ratio.value)}
+                  className={cn(
+                    "rounded-[4px] border px-2 py-1 text-[11px] font-medium transition-colors",
+                    aspectRatio === ratio.value
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border/70 bg-white/60 text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                  )}
+                >
+                  {ratio.value}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
 
-      <button
-        type="button"
-        disabled={sourceKind === "render_3d"}
-        onClick={() => {
-          if (sourceKind === "render_3d") return;
-          setShowCatalogToast(true);
-          setShowCompactOptions(false);
-        }}
-        className="flex w-full items-center justify-center gap-2 rounded-[4px] border border-border/70 bg-white/60 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-      >
-        <Sofa className="h-4 w-4" strokeWidth={1.75} />
-        Catalog
-      </button>
+        <section className="rounded-[4px] border border-border/80 bg-muted/10 p-3">
+          <div className={cn("space-y-4", planFieldsLocked && "pointer-events-none opacity-[0.38]")}>
+            <div>
+              <span className="mb-2 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Resolution
+              </span>
+              <div className="flex gap-1">
+                {IMAGE_OUTPUT_SIZES.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setImageSize(opt.value)}
+                    className={cn(
+                      "flex-1 rounded-[4px] border py-1.5 text-[11px] font-medium transition-colors",
+                      imageSize === opt.value
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border/70 bg-white/60 text-muted-foreground hover:text-foreground"
+                    )}
+                    title={`${opt.label} (${opt.hint})`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {projects && projects.length > 0 && (
+              <div>
+                <label className="mb-2 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Folder
+                </label>
+                <select
+                  value={selectedProjectId || ""}
+                  onChange={(e) => onProjectChange?.(e.target.value || null)}
+                  className="h-9 w-full rounded-[4px] border border-border/80 bg-white/80 px-2 text-xs text-foreground"
+                >
+                  <option value="">No folder</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {sourceKind === "render_3d" && (
+          <section className="rounded-[4px] border border-border/80 bg-muted/10 p-3 md:col-span-2">
+            <Magnific3DControls
+              compact
+              magnificScale={magnificScale}
+              setMagnificScale={setMagnificScale}
+              magnificResemblanceValue={magnificResemblanceValue}
+              setMagnificResemblanceValue={setMagnificResemblanceValue}
+              magnificCreativityValue={magnificCreativityValue}
+              setMagnificCreativityValue={setMagnificCreativityValue}
+            />
+          </section>
+        )}
+
+        <section className="md:col-span-2">
+          <button
+            type="button"
+            disabled={sourceKind === "render_3d"}
+            onClick={() => {
+              if (sourceKind === "render_3d") return;
+              setShowCatalogToast(true);
+              setShowCompactOptions(false);
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-[4px] border border-border/70 bg-white/60 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Sofa className="h-4 w-4" strokeWidth={1.75} />
+            Catalog
+          </button>
+        </section>
+      </div>
     </div>
   );
 }
@@ -439,6 +523,10 @@ interface RenderGeneratorProps {
   onUnauthenticated?: () => void;
   /** Classes sur la pilule compacte (ex. `max-w-xl w-full`) */
   compactBarClassName?: string;
+  /** Classes sur le conteneur compact (vignettes + barre), ex. `max-w-[1200px] lg:max-w-none` */
+  compactOuterClassName?: string;
+  /** Profil mobile : panneau d’options au-dessus de la barre (portail). Défaut : sous la barre. */
+  compactOptionsPanelBelowBar?: boolean;
   externalReferenceImage?: {
     token: string;
     url: string;
@@ -454,6 +542,8 @@ export function RenderGenerator({
   landingMode = false,
   onUnauthenticated,
   compactBarClassName,
+  compactOuterClassName,
+  compactOptionsPanelBelowBar = true,
   externalReferenceImage,
 }: RenderGeneratorProps) {
   const router = useRouter();
@@ -475,11 +565,21 @@ export function RenderGenerator({
   const [showCompactOptions, setShowCompactOptions] = useState(false);
   /** Zone compacte (vignettes + pilule) — clic extérieur / DnD. */
   const compactOuterRef = useRef<HTMLDivElement>(null);
-  /** Pilule seule — ancrage du panneau d’options (au-dessus, superposé aux vignettes). */
+  /** Conteneur relatif : barre + panneau (landing). */
   const compactOptionsRef = useRef<HTMLDivElement>(null);
-  /** Portail profil : position au-dessus de la barre (évite overflow / z-index de la page). */
+  /** Pilule prompt — bord bas = ouverture du panneau dessous. */
+  const compactPromptBarRef = useRef<HTMLDivElement>(null);
+  /** Portail profil : panneau d’options, largeur = zone compacte (au-dessus ou sous la barre selon prop). */
   const compactOptionsPortalRef = useRef<HTMLDivElement>(null);
-  const [compactOptionsAnchorRect, setCompactOptionsAnchorRect] = useState<DOMRect | null>(null);
+  /** Évite un double envoi si le bouton n’est plus `disabled` pendant `isGenerating`. */
+  const generateInFlightRef = useRef(false);
+  const [compactPanelRect, setCompactPanelRect] = useState<{
+    left: number;
+    width: number;
+    maxHeight: number;
+    top?: number;
+    bottom?: number;
+  } | null>(null);
   const landingResumeLockRef = useRef(false);
 
   // Fermer automatiquement le toast après 4 secondes
@@ -494,12 +594,34 @@ export function RenderGenerator({
 
   useLayoutEffect(() => {
     if (!compact || landingMode || !showCompactOptions) {
-      setCompactOptionsAnchorRect(null);
+      setCompactPanelRect(null);
       return;
     }
     const update = () => {
-      const el = compactOptionsRef.current;
-      if (el) setCompactOptionsAnchorRect(el.getBoundingClientRect());
+      const outerEl = compactOuterRef.current;
+      const barEl = compactPromptBarRef.current;
+      if (!outerEl || !barEl) {
+        setCompactPanelRect(null);
+        return;
+      }
+      const or = outerEl.getBoundingClientRect();
+      const br = barEl.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const gap = 8;
+      let left = or.left;
+      let width = or.width;
+      width = Math.min(width, vw - 16);
+      left = Math.max(8, Math.min(left, vw - width - 8));
+      if (compactOptionsPanelBelowBar) {
+        const top = br.bottom + gap;
+        const maxHeight = Math.max(160, Math.min(vh * 0.72, vh - top - 12));
+        setCompactPanelRect({ left, width, maxHeight, top });
+      } else {
+        const bottom = vh - br.top + gap;
+        const maxHeight = Math.max(160, Math.min(vh * 0.72, br.top - gap - 8));
+        setCompactPanelRect({ left, width, maxHeight, bottom });
+      }
     };
     update();
     window.addEventListener("resize", update);
@@ -507,9 +629,9 @@ export function RenderGenerator({
     return () => {
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
-      setCompactOptionsAnchorRect(null);
+      setCompactPanelRect(null);
     };
-  }, [compact, landingMode, showCompactOptions]);
+  }, [compact, landingMode, showCompactOptions, compactOptionsPanelBelowBar]);
 
   useEffect(() => {
     if (!showCompactOptions) return;
@@ -705,6 +827,8 @@ export function RenderGenerator({
 
       const imageSizeToUse = imageSizeOverride ?? imageSize;
 
+      if (generateInFlightRef.current) return;
+      generateInFlightRef.current = true;
       setIsGenerating(true);
 
       try {
@@ -718,9 +842,9 @@ export function RenderGenerator({
             continue;
           }
 
-          const blob = await fetch(img.dataUrl).then((r) => r.blob());
+          const { blob, filename } = await blobForUploadFromDataUrl(img.dataUrl, i);
           const formData = new FormData();
-          formData.append("file", blob, `image-${i + 1}.png`);
+          formData.append("file", blob, filename);
 
           const uploadRes = await fetch("/api/upload", {
             method: "POST",
@@ -728,7 +852,9 @@ export function RenderGenerator({
           });
 
           if (!uploadRes.ok) {
-            throw new Error(`Échec du téléversement pour l’image ${i + 1}`);
+            const errJson = (await uploadRes.json().catch(() => ({}))) as { error?: string };
+            const detail = errJson.error ?? uploadRes.statusText;
+            throw new Error(`Échec du téléversement pour l’image ${i + 1} (${detail})`);
           }
 
           const { url } = await uploadRes.json();
@@ -785,6 +911,7 @@ export function RenderGenerator({
         console.error("Generation error:", error);
         alert(error instanceof Error ? error.message : "Generation failed");
       } finally {
+        generateInFlightRef.current = false;
         setIsGenerating(false);
       }
     },
@@ -981,29 +1108,27 @@ export function RenderGenerator({
           : "space-y-4 border-white/20 bg-white/10 p-4 backdrop-blur-xl sm:p-6 gradient-shadow"
       }
     >
-      {/* Compact : une barre type « glass » (pilule), cohérente avec blur / radius de l’app */}
+      {/* Compact : barre alignée sur le thème (bordures sidebar, coins 4px) */}
       {compact ? (
         <div
           ref={compactOuterRef}
-          className="relative w-full space-y-2"
+          className={cn("relative mb-3 w-full sm:mb-4", compactOuterClassName)}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          <div className="relative z-0 flex min-h-20 flex-nowrap items-center gap-2.5 overflow-x-auto pb-0.5 pt-0.5 [scrollbar-width:thin] sm:min-h-[60px] sm:gap-2">
+          {uploadedImages.length > 0 && (
+            <div className="relative z-0 mb-1.5 flex min-h-0 flex-nowrap items-center gap-2.5 overflow-x-auto pb-0.5 pt-0.5 [scrollbar-width:thin] sm:gap-3">
             {uploadedImages.map((img, index) => {
               const n = index + 1;
-              const compactThumbBadge =
-                "flex h-5 min-w-[1.1rem] items-center justify-center rounded-md px-0.5 shadow-sm";
               return (
                 <div
                   key={img.id}
-                  className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-white/90 shadow-sm transition-all hover:border-foreground/25 hover:shadow-md sm:h-[60px] sm:w-[60px]"
+                  className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-border/80 bg-muted/15 transition-colors hover:border-foreground/30 sm:h-24 sm:w-24"
                 >
                   <span
                     className={cn(
-                      "absolute left-1 top-1 z-[1] bg-emerald-400 font-mono text-[9px] font-bold tabular-nums text-emerald-950 sm:text-[10px]",
-                      compactThumbBadge
+                      "absolute left-1.5 top-1.5 z-[1] flex h-6 min-w-6 items-center justify-center rounded-full bg-emerald-400 px-1.5 font-mono text-[10px] font-bold tabular-nums text-emerald-950 shadow-sm ring-1 ring-emerald-600/15 sm:left-2 sm:top-2 sm:h-7 sm:min-w-7 sm:text-[11px]"
                     )}
                   >
                     {n}
@@ -1017,25 +1142,26 @@ export function RenderGenerator({
                     type="button"
                     onClick={() => removeImage(img.id)}
                     className={cn(
-                      "absolute right-1 top-1 z-[2] bg-black/65 text-white opacity-0 ring-1 ring-white/20 transition-opacity hover:bg-red-600 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      compactThumbBadge
+                      "absolute right-1.5 top-1.5 z-[2] flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white opacity-0 shadow-sm ring-1 ring-white/25 transition-opacity hover:bg-red-600 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:right-2 sm:top-2"
                     )}
                     aria-label={`Supprimer l’image ${n}`}
                   >
-                    <X className="h-3 w-3" strokeWidth={2.5} />
+                    <X className="h-3.5 w-3.5" strokeWidth={2.5} />
                   </button>
                 </div>
               );
             })}
-          </div>
+            </div>
+          )}
 
         <div
           ref={compactOptionsRef}
-          className={cn("relative", showCompactOptions && "z-[140]")}
+          className={cn("relative w-full", showCompactOptions && "z-[140]")}
         >
         <div
+          ref={compactPromptBarRef}
           className={cn(
-            "flex flex-nowrap items-center gap-2 rounded-[28px] border border-border/50 bg-white/50 px-2.5 py-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:gap-3 sm:px-3.5 sm:py-3",
+            "flex flex-nowrap items-center gap-2 rounded-xl border border-border/80 bg-muted/15 px-3 py-2 shadow-[0_6px_28px_rgba(0,0,0,0.09)] touch-manipulation sm:gap-2.5 sm:px-3.5 sm:py-2",
             isDragging && "border-primary/40 ring-2 ring-primary/20",
             compactBarClassName
           )}
@@ -1043,10 +1169,10 @@ export function RenderGenerator({
           {uploadedImages.length < MAX_INPUT_IMAGES && (
             <label
               className={cn(
-                "relative flex h-20 w-20 shrink-0 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border/65 bg-white/50 text-muted-foreground shadow-sm transition-all sm:h-[60px] sm:w-[60px]",
-                "hover:border-foreground/35 hover:bg-white/85 hover:text-foreground hover:shadow",
-                "active:scale-[0.98]",
-                "focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background"
+                "relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center self-center overflow-hidden rounded-xl border-0 bg-transparent text-muted-foreground outline-none ring-0 transition-colors sm:h-9 sm:w-9",
+                "hover:bg-black/[0.07] hover:text-foreground",
+                "active:scale-[0.97]",
+                "focus-within:outline-none focus-within:ring-0"
               )}
               title="Ajouter des images"
             >
@@ -1055,59 +1181,65 @@ export function RenderGenerator({
                 accept="image/*"
                 multiple
                 onChange={handleFileSelect}
-                className="absolute inset-0 cursor-pointer opacity-0"
+                className="absolute inset-0 cursor-pointer opacity-0 outline-none ring-0 focus:outline-none focus:ring-0"
               />
-              <ImagePlus className="h-6 w-6" strokeWidth={2} aria-hidden />
+              <ImagePlus className="h-[18px] w-[18px] sm:h-5 sm:w-5" strokeWidth={2} aria-hidden />
             </label>
           )}
-          <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
-            placeholder={
-              sourceKind === "render_3d"
-                ? "Optional: lighting, materials, detail…"
-                : "What will you create?"
-            }
-            rows={1}
-            className="max-h-[140px] min-h-[52px] min-w-0 flex-1 resize-none rounded-none border-0 !border-transparent bg-transparent px-1 py-2.5 text-sm font-medium leading-snug text-foreground shadow-none outline-none ring-0 ring-offset-0 placeholder:text-muted-foreground/65 focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50 sm:min-h-[56px] sm:text-[15px]"
-          />
+          <div className="flex min-h-9 min-w-0 flex-1 flex-col justify-center sm:min-h-9">
+            <Textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
+              placeholder={
+                sourceKind === "render_3d"
+                  ? "Optional: lighting, materials, detail…"
+                  : "What will you create?"
+              }
+              rows={1}
+              className="max-h-[120px] min-h-0 w-full resize-none rounded-none border-0 !border-transparent bg-transparent px-1 py-0 text-base font-medium leading-[1.35rem] text-foreground shadow-none outline-none ring-0 ring-offset-0 placeholder:text-muted-foreground/65 focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50 sm:text-sm sm:leading-[1.4rem]"
+            />
+          </div>
 
-          <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
             <button
               type="button"
               onClick={() => setShowCompactOptions((o) => !o)}
               className={cn(
-                "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground",
-                showCompactOptions && "bg-black/5 text-foreground"
+                "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border-0 bg-transparent text-muted-foreground outline-none ring-0 transition-colors hover:bg-black/[0.07] hover:text-foreground focus-visible:outline-none focus-visible:ring-0 sm:h-9 sm:w-9",
+                showCompactOptions && "bg-black/[0.07] text-foreground"
               )}
               title="Source, format, resolution, folder…"
               aria-expanded={showCompactOptions}
             >
-              <SlidersHorizontal className="h-[22px] w-[22px]" strokeWidth={1.75} />
+              <SlidersHorizontal className="h-[18px] w-[18px] sm:h-[20px] sm:w-[20px]" strokeWidth={1.75} />
             </button>
 
-            <Button
+            <button
               type="button"
               onClick={handleGenerate}
               disabled={
                 uploadedImages.length === 0 ||
-                (sourceKind === "plan_photo" && !prompt.trim()) ||
-                isGenerating
+                (sourceKind === "plan_photo" && !prompt.trim())
               }
-              className="relative z-[120] h-11 w-11 shrink-0 rounded-full !bg-black p-0 !opacity-100 transition-all hover:!bg-black/85 disabled:!opacity-40"
+              aria-busy={isGenerating}
+              className={cn(
+                "relative z-[120] flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border-0 bg-transparent text-black outline-none ring-0 transition-colors hover:bg-black/[0.07] focus-visible:outline-none focus-visible:ring-0 sm:h-9 sm:w-9",
+                "disabled:pointer-events-none disabled:bg-transparent disabled:text-muted-foreground disabled:opacity-55",
+                isGenerating && "pointer-events-none cursor-wait opacity-90"
+              )}
               aria-label="Generate"
             >
               {isGenerating ? (
-                <Sparkles className="h-4 w-4 animate-spin text-white" strokeWidth={2} />
+                <Sparkles className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" strokeWidth={2} />
               ) : (
-                <ArrowRight className="h-4 w-4 text-white" strokeWidth={2} />
+                <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={2} />
               )}
-            </Button>
+            </button>
           </div>
         </div>
 
         {showCompactOptions && landingMode && (
-          <div className="absolute inset-x-0 bottom-full z-[150] mb-2 flex max-h-[min(65vh,calc(100dvh-8rem))] flex-col overflow-hidden rounded-[6px] border border-border/70 bg-white/95 shadow-lg backdrop-blur-md sm:left-auto sm:right-0 sm:ml-auto sm:w-80 sm:max-w-[min(100vw-2rem,320px)]">
+          <div className="absolute left-0 right-0 top-full z-[150] mt-2 flex max-h-[min(65vh,calc(100dvh-8rem))] flex-col overflow-hidden rounded-2xl border border-border/80 bg-white/95 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-md">
             <CompactOptionsScrollableInner {...compactOptionsScrollableProps} />
           </div>
         )}
@@ -1115,34 +1247,23 @@ export function RenderGenerator({
         {showCompactOptions &&
           !landingMode &&
           typeof document !== "undefined" &&
-          compactOptionsAnchorRect &&
+          compactPanelRect &&
           createPortal(
             <div
               ref={compactOptionsPortalRef}
               role="dialog"
               aria-label="Options de génération"
-              className="flex max-h-[min(65vh,calc(100dvh-8rem))] flex-col overflow-hidden rounded-[6px] border border-border/70 bg-white/95 shadow-lg backdrop-blur-md sm:max-w-[min(100vw-2rem,320px)]"
-              style={(() => {
-                const r = compactOptionsAnchorRect;
-                const vw = window.innerWidth;
-                const vh = window.innerHeight;
-                const gap = 8;
-                /* Comme l’accueil (`sm:right-0` + w-80) : même largeur max, mais jamais plus large que la pilule ; bords droits alignés. */
-                const w = Math.min(320, r.width, vw - 16);
-                let left = r.right - w;
-                left = Math.min(Math.max(8, left), vw - w - 8);
-                /* Bas du panneau juste au-dessus du haut de la pilule (ne recouvre pas le prompt). */
-                const bottom = vh - r.top + gap;
-                const maxHeight = Math.max(160, Math.min(vh * 0.65, r.top - gap - 8));
-                return {
-                  position: "fixed" as const,
-                  zIndex: 200,
-                  left,
-                  width: w,
-                  bottom,
-                  maxHeight,
-                };
-              })()}
+              className="flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-white/95 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-md"
+              style={{
+                position: "fixed",
+                zIndex: 210,
+                left: compactPanelRect.left,
+                width: compactPanelRect.width,
+                maxHeight: compactPanelRect.maxHeight,
+                ...(compactPanelRect.top !== undefined
+                  ? { top: compactPanelRect.top }
+                  : { bottom: compactPanelRect.bottom! }),
+              }}
             >
               <CompactOptionsScrollableInner {...compactOptionsScrollableProps} />
             </div>,

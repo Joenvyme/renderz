@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { useSession, signOut } from "@/lib/auth-client";
+import { useSession } from "@/lib/auth-client";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
 import {
   Users,
@@ -13,7 +13,6 @@ import {
   Wand2,
   Send,
   Loader2,
-  LogOut,
   ArrowLeft,
   Mail,
   Calendar,
@@ -175,18 +174,6 @@ export default function AdminPage() {
               ADMIN
             </span>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="font-mono text-xs"
-            onClick={async () => {
-              await signOut();
-              window.location.href = "/";
-            }}
-          >
-            <LogOut className="w-3 h-3 mr-1" />
-            SIGN OUT
-          </Button>
         </div>
       </header>
 

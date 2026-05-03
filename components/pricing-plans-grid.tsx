@@ -25,16 +25,16 @@ function ProPriceHead({ interval }: { interval: PricingInterval }) {
   if (interval === "monthly") {
     return (
       <div className="flex flex-wrap items-baseline gap-1">
-        <span className="font-mono text-4xl font-bold tabular-nums lg:text-5xl">{formatChf(PRO_MONTHLY)}</span>
-        <span className="text-lg font-medium text-muted-foreground">CHF / mois</span>
+        <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">{formatChf(PRO_MONTHLY)}</span>
+        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / mois</span>
       </div>
     );
   }
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-baseline gap-2">
-        <span className="font-mono text-4xl font-bold tabular-nums lg:text-5xl">{formatChf(PRO_YEARLY)}</span>
-        <span className="text-lg font-medium text-muted-foreground">CHF / an</span>
+        <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">{formatChf(PRO_YEARLY)}</span>
+        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / an</span>
         <span className="rounded-[2px] border border-emerald-200/80 bg-emerald-100 px-2 py-0.5 font-mono text-[10px] uppercase text-emerald-900">
           {ANNUAL_DISCOUNT_LABEL}
         </span>
@@ -50,16 +50,16 @@ function EntPriceHead({ interval }: { interval: PricingInterval }) {
   if (interval === "monthly") {
     return (
       <div className="flex flex-wrap items-baseline gap-1">
-        <span className="font-mono text-4xl font-bold tabular-nums lg:text-5xl">{formatChf(ENT_MONTHLY)}</span>
-        <span className="text-lg font-medium text-muted-foreground">CHF / mois</span>
+        <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">{formatChf(ENT_MONTHLY)}</span>
+        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / mois</span>
       </div>
     );
   }
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-baseline gap-2">
-        <span className="font-mono text-4xl font-bold tabular-nums lg:text-5xl">{formatChf(ENT_YEARLY)}</span>
-        <span className="text-lg font-medium text-muted-foreground">CHF / an</span>
+        <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">{formatChf(ENT_YEARLY)}</span>
+        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / an</span>
         <span className="rounded-[2px] border border-emerald-200/80 bg-emerald-100 px-2 py-0.5 font-mono text-[10px] uppercase text-emerald-900">
           {ANNUAL_DISCOUNT_LABEL}
         </span>
@@ -106,18 +106,18 @@ export function PricingPlansGrid({
 
   return (
     <div className={cn("w-full min-w-0", className)}>
-      <div className="mb-8 flex justify-center sm:mb-10">
+      <div className="mb-6 flex justify-center px-1 sm:mb-10">
         <Tabs
           value={interval}
           onValueChange={(v) => onIntervalChange(v as PricingInterval)}
-          className="w-fit"
+          className="w-full max-w-md sm:w-fit"
           aria-label="Période de facturation"
         >
-          <TabsList className="grid h-11 w-max grid-cols-2 gap-1 p-1">
-            <TabsTrigger value="monthly" className="h-full min-h-0 px-6 py-0">
+          <TabsList className="grid h-11 w-full grid-cols-2 gap-1 p-1 sm:w-max">
+            <TabsTrigger value="monthly" className="h-full min-h-0 touch-manipulation px-4 py-0 sm:px-6">
               Mensuel
             </TabsTrigger>
-            <TabsTrigger value="yearly" className="h-full min-h-0 gap-2 px-5 py-0 sm:px-6">
+            <TabsTrigger value="yearly" className="h-full min-h-0 touch-manipulation gap-1.5 px-3 py-0 sm:gap-2 sm:px-6">
               <span>Annuel</span>
               <span
                 className={cn(
@@ -140,7 +140,7 @@ export function PricingPlansGrid({
           className={cn(
             shellFreeEnt(
               emphasizeFree,
-              "flex w-full min-w-0 flex-1 flex-col rounded-[6px] bg-white/50 p-6 text-left shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:p-8"
+              "flex w-full min-w-0 flex-1 flex-col rounded-[6px] bg-white/50 p-5 text-left shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:p-6 md:p-8"
             )
           )}
         >
@@ -150,8 +150,8 @@ export function PricingPlansGrid({
           <p className="mb-6 text-sm text-muted-foreground">Pour essayer</p>
           <div className="min-h-[5.5rem]">
             <div className="flex flex-wrap items-baseline gap-1">
-              <span className="font-mono text-4xl font-bold tabular-nums lg:text-5xl">0</span>
-              <span className="text-lg font-medium text-muted-foreground">CHF</span>
+              <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">0</span>
+              <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF</span>
             </div>
           </div>
           <p className="pointer-events-none select-none text-sm text-transparent" aria-hidden>
@@ -186,7 +186,7 @@ export function PricingPlansGrid({
         {/* Pro */}
         <div
           className={cn(
-            "relative flex w-full min-w-0 flex-1 flex-col rounded-[6px] border-2 border-black bg-white/80 p-6 text-left shadow-[0_8px_32px_rgba(0,0,0,0.08)] backdrop-blur-xl ring-1 ring-black/10 sm:p-8",
+            "relative flex w-full min-w-0 flex-1 flex-col rounded-[6px] border-2 border-black bg-white/80 p-5 text-left shadow-[0_8px_32px_rgba(0,0,0,0.08)] backdrop-blur-xl ring-1 ring-black/10 sm:p-6 md:p-8",
             subscriberTier === "pro" && "ring-2 ring-black/15"
           )}
         >
@@ -234,7 +234,7 @@ export function PricingPlansGrid({
           className={cn(
             shellFreeEnt(
               emphasizeEnterprise,
-              "flex w-full min-w-0 flex-1 flex-col rounded-[6px] bg-white/50 p-6 text-left shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:p-8"
+              "flex w-full min-w-0 flex-1 flex-col rounded-[6px] bg-white/50 p-5 text-left shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:p-6 md:p-8"
             )
           )}
         >
