@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import sharp from 'sharp';
 
 function bytesToAscii(bytes: Uint8Array, start: number, len: number): string {
   let s = '';
@@ -48,9 +49,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    /** Limite relevée : le client compresse en général avant envoi ; repli gros fichiers rares. */
+    const maxBytes = 25 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      return NextResponse.json(
+        { error: `Fichier trop volumineux (max ${Math.round(maxBytes / (1024 * 1024))} Mo)` },
+        { status: 400 }
+      );
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buf = Buffer.from(arrayBuffer);
+    const head = new Uint8Array(buf.subarray(0, Math.min(32, buf.length)));
+
     let effectiveType = (file.type || '').trim().toLowerCase();
     if (!effectiveType.startsWith('image/')) {
-      const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
       const sniffed = sniffImageMimeFromHead(head);
       if (sniffed) {
         effectiveType = sniffed;
@@ -62,13 +75,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    /** Limite relevée : le client compresse en général avant envoi ; repli gros fichiers rares. */
-    const maxBytes = 25 * 1024 * 1024;
-    if (file.size > maxBytes) {
-      return NextResponse.json(
-        { error: `Fichier trop volumineux (max ${Math.round(maxBytes / (1024 * 1024))} Mo)` },
-        { status: 400 }
-      );
+    const sniffedMime = sniffImageMimeFromHead(head);
+    const isHeic =
+      effectiveType.includes('heic') ||
+      effectiveType.includes('heif') ||
+      sniffedMime === 'image/heic';
+
+    let uploadBody: Buffer = buf;
+    let contentType = effectiveType;
+    let convertedHeicToJpeg = false;
+
+    if (isHeic) {
+      try {
+        uploadBody = await sharp(buf)
+          .rotate()
+          .resize(4096, 4096, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85, mozjpeg: true })
+          .toBuffer();
+        contentType = 'image/jpeg';
+        convertedHeicToJpeg = true;
+      } catch (convErr) {
+        console.error('upload HEIC→JPEG:', convErr);
+      }
     }
 
     // Upload vers Supabase Storage
@@ -78,12 +106,15 @@ export async function POST(request: NextRequest) {
     );
 
     const safeName = file.name?.replace(/[^\w.\-()+]/g, '_') || 'image';
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${safeName}`;
+    const rand = Math.random().toString(36).slice(2, 10);
+    const fileName = convertedHeicToJpeg
+      ? `${Date.now()}-${rand}-${safeName.replace(/\.(heic|heif)$/i, '') || 'photo'}.jpg`
+      : `${Date.now()}-${rand}-${safeName}`;
 
-    const { error } = await supabase.storage.from('original-images').upload(fileName, file, {
+    const { error } = await supabase.storage.from('original-images').upload(fileName, uploadBody, {
       cacheControl: '3600',
       upsert: false,
-      contentType: effectiveType,
+      contentType,
     });
 
     if (error) {

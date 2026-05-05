@@ -86,6 +86,81 @@ function apiRoleForImageIndex(index: number): ImageRole {
 const UPLOAD_PREVIEW_MAX_EDGE = 2048;
 const UPLOAD_JPEG_QUALITY = 0.82;
 
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("Impossible de lire l’image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function readBlobAsDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("Impossible de lire l’aperçu."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Photos caméra (surtout HEIC iOS) : `new Image(dataUrl)` échoue souvent alors que
+ * `createImageBitmap(file)` décode correctement via le pipeline du navigateur.
+ */
+async function tryCompressFileToJpegBlob(
+  file: File,
+  maxEdge: number,
+  quality: number
+): Promise<Blob | null> {
+  try {
+    const bmp = await createImageBitmap(file);
+    const w = bmp.width;
+    const h = bmp.height;
+    if (!w || !h) {
+      bmp.close();
+      return null;
+    }
+    const scale = Math.min(1, maxEdge / Math.max(w, h));
+    const tw = Math.max(1, Math.round(w * scale));
+    const th = Math.max(1, Math.round(h * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = tw;
+    canvas.height = th;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bmp.close();
+      return null;
+    }
+    ctx.drawImage(bmp, 0, 0, tw, th);
+    bmp.close();
+    return await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((b) => resolve(b), "image/jpeg", quality);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function fileToPreviewDataUrl(file: File): Promise<string> {
+  const compressed = await tryCompressFileToJpegBlob(
+    file,
+    UPLOAD_PREVIEW_MAX_EDGE,
+    UPLOAD_JPEG_QUALITY
+  );
+  if (compressed && compressed.size > 0) {
+    return readBlobAsDataUrl(compressed);
+  }
+  return readFileAsDataUrl(file);
+}
+
+function isProbablyImageFile(f: File): boolean {
+  const t = (f.type || "").toLowerCase();
+  if (t.startsWith("image/")) return true;
+  if (!t && /\.(jpe?g|png|webp|heic|heif|gif|bmp|tif?f)$/i.test(f.name)) return true;
+  return false;
+}
+
 /** Réduit poids / côté max avant Supabase (photos galerie > 10 Mo en data URL). */
 async function tryCompressDataUrlToJpegBlob(
   dataUrl: string,
@@ -698,39 +773,36 @@ export function RenderGenerator({
     setIsDragging(false);
     
     const files = Array.from(e.dataTransfer.files);
-    const imageFiles = files.filter(f => f.type.startsWith("image/"));
+    const imageFiles = files.filter(isProbablyImageFile);
     
-    Promise.all(
-      imageFiles.map(file => new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.readAsDataURL(file);
-      }))
-    ).then(dataUrls => {
-      const validUrls = dataUrls.filter(Boolean);
-      if (validUrls.length > 0) {
-        addMultipleImages(validUrls);
-      }
-    });
+    void Promise.all(imageFiles.map((file) => fileToPreviewDataUrl(file)))
+      .then((dataUrls) => {
+        const validUrls = dataUrls.filter(Boolean);
+        if (validUrls.length > 0) {
+          addMultipleImages(validUrls);
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        alert(err instanceof Error ? err.message : "Impossible de charger l’image.");
+      });
   }, [addMultipleImages]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    
-    Promise.all(
-      files.map(file => new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (evt) => resolve(evt.target?.result as string);
-        reader.readAsDataURL(file);
-      }))
-    ).then(dataUrls => {
-      const validUrls = dataUrls.filter(Boolean);
-      if (validUrls.length > 0) {
-        addMultipleImages(validUrls);
-      }
-    });
-    
-    e.target.value = '';
+    e.target.value = "";
+
+    void Promise.all(files.map((file) => fileToPreviewDataUrl(file)))
+      .then((dataUrls) => {
+        const validUrls = dataUrls.filter(Boolean);
+        if (validUrls.length > 0) {
+          addMultipleImages(validUrls);
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        alert(err instanceof Error ? err.message : "Impossible de charger l’image.");
+      });
   };
 
   const runGenerateWithPayload = useCallback(
@@ -857,7 +929,13 @@ export function RenderGenerator({
             throw new Error(`Échec du téléversement pour l’image ${i + 1} (${detail})`);
           }
 
-          const { url } = await uploadRes.json();
+          const uploadJson = (await uploadRes.json()) as { url?: string };
+          const url = uploadJson.url;
+          if (!url || typeof url !== "string") {
+            throw new Error(
+              `Réponse de téléversement invalide pour l’image ${i + 1} (URL manquante).`
+            );
+          }
           uploadedUrls.push({ url, role });
         }
 
