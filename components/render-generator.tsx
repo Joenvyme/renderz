@@ -1262,7 +1262,7 @@ export function RenderGenerator({
 
   const compactPanelOpen = showCompactOptions || showImagePicker;
   useLayoutEffect(() => {
-    if (!compact || landingMode || !compactPanelOpen) {
+    if (!compact || !compactPanelOpen) {
       setCompactPanelRect(null);
       return;
     }
@@ -1307,7 +1307,6 @@ export function RenderGenerator({
     };
   }, [
     compact,
-    landingMode,
     compactPanelOpen,
     compactOptionsPanelBelowBar,
     uploadedImages.length,
@@ -2318,19 +2317,8 @@ export function RenderGenerator({
           </div>
         </div>
 
-        {showCompactOptions && landingMode && (
-          <div className="absolute left-0 right-0 top-full z-[150] mt-2 flex max-h-[min(65vh,calc(100dvh-8rem))] flex-col overflow-hidden rounded-2xl border border-border/80 bg-white/95 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-md">
-            <CompactOptionsScrollableInner {...compactOptionsScrollableProps} />
-          </div>
-        )}
         </div>
-        {showImagePicker && landingMode && (
-          <div className="relative z-[150] mt-2 flex h-[min(65vh,calc(100dvh-8rem))] max-h-[min(65vh,calc(100dvh-8rem))] min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-border/80 bg-white/95 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-md">
-            <CompactImagePickerPanel {...compactImagePickerProps} />
-          </div>
-        )}
         {showCompactOptions &&
-          !landingMode &&
           typeof document !== "undefined" &&
           compactPanelRect &&
           createPortal(
@@ -2355,7 +2343,6 @@ export function RenderGenerator({
             document.body
           )}
         {showImagePicker &&
-          !landingMode &&
           typeof document !== "undefined" &&
           compactPanelRect &&
           createPortal(

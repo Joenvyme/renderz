@@ -214,7 +214,7 @@ export default function LandingPage() {
               </GlowBorder>
             </div>
 
-            <TrustedByCarousel className="mx-auto mt-10 w-full max-w-3xl shrink-0 px-0 sm:mt-12 md:mt-14" />
+            <TrustedByCarousel className="relative z-0 mx-auto mt-10 w-full max-w-3xl shrink-0 px-0 sm:mt-12 md:mt-14" />
           </main>
         </section>
 
