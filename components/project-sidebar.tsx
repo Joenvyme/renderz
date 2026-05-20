@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
+import type { CatalogFolder } from "@/components/catalog-item-form";
+import {
+  buildCatalogTree,
+  CatalogSidebarTree,
+} from "@/components/catalog-sidebar-tree";
+import { cn } from "@/lib/utils";
 import {
   FolderOpen,
   FolderPlus,
@@ -15,6 +21,9 @@ import {
   Pencil,
   Check,
   LayoutGrid,
+  Library,
+  Images,
+  Inbox,
 } from "lucide-react";
 
 export interface Project {
@@ -62,6 +71,20 @@ interface ProjectSidebarProps {
   isLoading: boolean;
   /** Drop one or more renders from the gallery onto Unassigned or a project folder */
   onDropRender?: (renderIds: string[], projectId: string | null) => Promise<void>;
+  catalogActive?: boolean;
+  onOpenCatalog?: () => void;
+  rendersActive?: boolean;
+  onOpenRenders?: () => void;
+  catalogFolders?: CatalogFolder[];
+  selectedCatalogFolderId?: string | null;
+  onSelectCatalogFolder?: (folderId: string | null) => void;
+  onCreateCatalogFolder?: (
+    name: string,
+    parentId: string | null
+  ) => Promise<void>;
+  onRenameCatalogFolder?: (folderId: string, name: string) => Promise<void>;
+  onDeleteCatalogFolder?: (folderId: string) => Promise<void>;
+  catalogFoldersLoading?: boolean;
 }
 
 export function ProjectSidebar({
@@ -74,6 +97,17 @@ export function ProjectSidebar({
   onRenameProject,
   isLoading,
   onDropRender,
+  catalogActive = false,
+  onOpenCatalog,
+  rendersActive = false,
+  onOpenRenders,
+  catalogFolders = [],
+  selectedCatalogFolderId = null,
+  onSelectCatalogFolder,
+  onCreateCatalogFolder,
+  onRenameCatalogFolder,
+  onDeleteCatalogFolder,
+  catalogFoldersLoading = false,
 }: ProjectSidebarProps) {
   const [dropHoverTarget, setDropHoverTarget] = useState<string | null>(null);
 
@@ -83,15 +117,72 @@ export function ProjectSidebar({
     return () => document.removeEventListener("dragend", clearHover);
   }, []);
 
+  const [catalogMenuId, setCatalogMenuId] = useState<string | null>(null);
+  const [catalogRenamingId, setCatalogRenamingId] = useState<string | null>(null);
+  const [catalogRenameDraft, setCatalogRenameDraft] = useState("");
+  const [catalogRenamingSubmitting, setCatalogRenamingSubmitting] = useState(false);
+  const [pendingDeleteCatalogId, setPendingDeleteCatalogId] = useState<string | null>(null);
+  const [deletingCatalogId, setDeletingCatalogId] = useState<string | null>(null);
+  const [expandedCatalogIds, setExpandedCatalogIds] = useState<Set<string>>(new Set());
+
+  const catalogTree = useMemo(
+    () => buildCatalogTree(catalogFolders),
+    [catalogFolders]
+  );
+
+  useEffect(() => {
+    if (!catalogActive || !selectedCatalogFolderId || !catalogFolders.length) return;
+    const byId = new Map(catalogFolders.map((f) => [f.id, f]));
+    const pathIds: string[] = [];
+    let cursor: string | null = selectedCatalogFolderId;
+    let safety = 50;
+    while (cursor && safety-- > 0) {
+      pathIds.push(cursor);
+      const f = byId.get(cursor);
+      cursor = f?.parent_id ?? null;
+    }
+    if (pathIds.length === 0) return;
+    setExpandedCatalogIds((prev) => {
+      const next = new Set(prev);
+      for (const id of pathIds) next.add(id);
+      return next;
+    });
+  }, [catalogActive, selectedCatalogFolderId, catalogFolders]);
+
+  useEffect(() => {
+    if (!catalogMenuId) return;
+    const handleDocumentClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (
+        target.closest("[data-catalog-sidebar-menu]") ||
+        target.closest("[data-catalog-sidebar-menu-trigger]")
+      )
+        return;
+      setCatalogMenuId(null);
+    };
+    document.addEventListener("click", handleDocumentClick);
+    return () => document.removeEventListener("click", handleDocumentClick);
+  }, [catalogMenuId]);
+
+  const toggleCatalogExpanded = useCallback((folderId: string) => {
+    setExpandedCatalogIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
+  }, []);
+
   const handleDragOver = (e: React.DragEvent, targetKey: string) => {
-    if (!onDropRender) return;
+    if (!onDropRender || catalogActive) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setDropHoverTarget(targetKey);
   };
 
   const handleDrop = async (e: React.DragEvent, projectId: string | null) => {
-    if (!onDropRender) return;
+    if (!onDropRender || catalogActive) return;
     e.preventDefault();
     setDropHoverTarget(null);
     const raw =
@@ -103,7 +194,7 @@ export function ProjectSidebar({
   };
 
   const dropRing = (targetKey: string) =>
-    onDropRender && dropHoverTarget === targetKey
+    onDropRender && !catalogActive && dropHoverTarget === targetKey
       ? "ring-2 ring-black ring-offset-1 ring-offset-white bg-muted/30"
       : "";
 
@@ -141,13 +232,52 @@ export function ProjectSidebar({
     if (!newProjectName.trim() || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      await onCreateProject(newProjectName.trim());
+      if (catalogActive && onCreateCatalogFolder) {
+        await onCreateCatalogFolder(
+          newProjectName.trim(),
+          selectedCatalogFolderId ?? null
+        );
+      } else {
+        await onCreateProject(newProjectName.trim());
+      }
       setNewProjectName("");
       setIsCreating(false);
     } catch (error) {
-      console.error("Error creating project:", error);
+      console.error("Error creating folder:", error);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const commitRenameCatalog = async (folderId: string) => {
+    const trimmed = catalogRenameDraft.trim();
+    if (!trimmed || catalogRenamingSubmitting || !onRenameCatalogFolder) return;
+    setCatalogRenamingSubmitting(true);
+    try {
+      await onRenameCatalogFolder(folderId, trimmed);
+      setCatalogRenamingId(null);
+      setCatalogRenameDraft("");
+    } catch (error) {
+      console.error("Catalog rename error:", error);
+      alert(error instanceof Error ? error.message : "Rename failed");
+    } finally {
+      setCatalogRenamingSubmitting(false);
+    }
+  };
+
+  const handleDeleteCatalog = async (folderId: string) => {
+    if (!onDeleteCatalogFolder) return;
+    setDeletingCatalogId(folderId);
+    try {
+      await onDeleteCatalogFolder(folderId);
+      setCatalogMenuId(null);
+      if (selectedCatalogFolderId === folderId) {
+        onSelectCatalogFolder?.(null);
+      }
+    } catch (error) {
+      console.error("Error deleting catalog folder:", error);
+    } finally {
+      setDeletingCatalogId(null);
     }
   };
 
@@ -166,8 +296,15 @@ export function ProjectSidebar({
     }
   };
 
-  const allViewActive =
-    selectedProjectId === null && !favoritesOnly;
+  const allViewActive = catalogActive
+    ? selectedCatalogFolderId === null
+    : selectedProjectId === null && !favoritesOnly;
+
+  const createPlaceholder = catalogActive
+    ? selectedCatalogFolderId
+      ? "Subfolder name…"
+      : "Folder name…"
+    : "Folder name…";
 
   const cancelRename = () => {
     setRenamingProjectId(null);
@@ -183,7 +320,7 @@ export function ProjectSidebar({
       cancelRename();
     } catch (error) {
       console.error("Rename error:", error);
-      alert(error instanceof Error ? error.message : "Échec du renommage");
+      alert(error instanceof Error ? error.message : "Rename failed");
     } finally {
       setRenamingSubmitting(false);
     }
@@ -196,24 +333,93 @@ export function ProjectSidebar({
         <div className="relative rounded-[4px]">
           <button
             type="button"
-            onClick={() => onSelectProject(null)}
-            className={`
-              flex w-full items-center gap-2.5 rounded-[4px] px-2.5 py-2 text-left text-sm font-medium tracking-tight transition-colors
-              ${allViewActive
+            onClick={() => {
+              if (catalogActive) onSelectCatalogFolder?.(null);
+              else onSelectProject(null);
+            }}
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-[4px] px-2.5 py-2 text-left text-sm font-medium tracking-tight transition-colors",
+              allViewActive
                 ? "bg-black text-white"
                 : "text-foreground hover:bg-muted/45"
-              }
-            `}
+            )}
           >
-            <LayoutGrid
-              className="h-[15px] w-[15px] shrink-0 opacity-90"
-              strokeWidth={2}
-            />
+            {catalogActive ? (
+              <Library className="h-[15px] w-[15px] shrink-0 opacity-90" strokeWidth={2} />
+            ) : (
+              <LayoutGrid className="h-[15px] w-[15px] shrink-0 opacity-90" strokeWidth={2} />
+            )}
             <span className="min-w-0 flex-1 truncate">All</span>
           </button>
         </div>
 
-        {isLoading ? (
+        {!catalogActive && onDropRender && (
+          <div
+            className={cn(
+              "relative rounded-[4px] transition-colors",
+              dropRing("unfiled")
+            )}
+            onDragOver={(e) => handleDragOver(e, "unfiled")}
+            onDrop={(e) => handleDrop(e, null)}
+          >
+            <button
+              type="button"
+              onClick={() => onSelectProject("unassigned")}
+              className={cn(
+                "flex w-full items-center gap-2.5 rounded-[4px] px-2.5 py-2 text-left text-sm font-medium tracking-tight transition-colors",
+                selectedProjectId === "unassigned"
+                  ? "bg-black text-white"
+                  : "text-foreground hover:bg-muted/45"
+              )}
+            >
+              <Inbox className="h-[15px] w-[15px] shrink-0 opacity-90" strokeWidth={2} />
+              <span className="min-w-0 flex-1 truncate">Unfiled</span>
+            </button>
+          </div>
+        )}
+
+        {catalogActive ? (
+          catalogFoldersLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" strokeWidth={2} />
+            </div>
+          ) : catalogTree.length === 0 ? (
+            <div className="rounded-[4px] px-3 py-8 text-center">
+              <FolderOpen className="mx-auto mb-2 h-8 w-8 text-muted-foreground/35" strokeWidth={2} />
+              <p className="text-xs text-muted-foreground">No folders yet</p>
+            </div>
+          ) : (
+            <CatalogSidebarTree
+              nodes={catalogTree}
+              depth={0}
+              selectedId={selectedCatalogFolderId}
+              expandedIds={expandedCatalogIds}
+              onToggleExpand={toggleCatalogExpanded}
+              onSelect={(id) => onSelectCatalogFolder?.(id)}
+              menuId={catalogMenuId}
+              onMenuToggle={setCatalogMenuId}
+              renamingId={catalogRenamingId}
+              renameDraft={catalogRenameDraft}
+              onRenameDraftChange={setCatalogRenameDraft}
+              renamingSubmitting={catalogRenamingSubmitting}
+              onStartRename={(id, name) => {
+                setCatalogRenamingId(id);
+                setCatalogRenameDraft(name);
+                setCatalogMenuId(null);
+              }}
+              onCommitRename={(id) => void commitRenameCatalog(id)}
+              onCancelRename={() => {
+                setCatalogRenamingId(null);
+                setCatalogRenameDraft("");
+              }}
+              onRequestDelete={(id) => {
+                setPendingDeleteCatalogId(id);
+                setCatalogMenuId(null);
+              }}
+              deletingId={deletingCatalogId}
+            />
+          )
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2
               className="h-5 w-5 animate-spin text-muted-foreground"
@@ -226,9 +432,7 @@ export function ProjectSidebar({
               className="mx-auto mb-2 h-8 w-8 text-muted-foreground/35"
               strokeWidth={2}
             />
-            <p className="text-xs text-muted-foreground">
-              Aucun dossier pour l’instant
-            </p>
+            <p className="text-xs text-muted-foreground">No folders yet</p>
           </div>
         ) : (
           projects.map((project) => (
@@ -317,7 +521,7 @@ export function ProjectSidebar({
                         : "text-muted-foreground opacity-0 hover:bg-muted/60 group-hover:opacity-100"
                       }
                     `}
-                    aria-label="Actions du dossier"
+                    aria-label="Folder actions"
                   >
                     <MoreHorizontal className="h-4 w-4" strokeWidth={2} />
                   </button>
@@ -337,7 +541,7 @@ export function ProjectSidebar({
                         className="mx-1 flex w-[calc(100%-8px)] items-center gap-2 rounded-[4px] px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
                       >
                         <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
-                        Renommer
+                        Rename
                       </button>
                       <button
                         type="button"
@@ -353,7 +557,7 @@ export function ProjectSidebar({
                         ) : (
                           <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
                         )}
-                        Supprimer
+                        Delete
                       </button>
                     </div>
                   )}
@@ -366,10 +570,10 @@ export function ProjectSidebar({
 
       <ConfirmActionDialog
         open={pendingDeleteProjectId !== null}
-        title="Supprimer ce dossier ?"
-        description="Les rendus restent dans votre compte et repassent en non assignés."
-        confirmLabel="Supprimer"
-        cancelLabel="Annuler"
+        title="Delete this folder?"
+        description="Your renders stay in your account and move back to Unfiled."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
         danger
         isLoading={deletingId === pendingDeleteProjectId}
         onCancel={() => setPendingDeleteProjectId(null)}
@@ -378,6 +582,23 @@ export function ProjectSidebar({
           const projectId = pendingDeleteProjectId;
           await handleDelete(projectId);
           setPendingDeleteProjectId(null);
+        }}
+      />
+
+      <ConfirmActionDialog
+        open={pendingDeleteCatalogId !== null}
+        title="Delete this folder?"
+        description="Items inside will be moved to the catalog root or parent folder."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        danger
+        isLoading={deletingCatalogId === pendingDeleteCatalogId}
+        onCancel={() => setPendingDeleteCatalogId(null)}
+        onConfirm={async () => {
+          if (!pendingDeleteCatalogId) return;
+          const id = pendingDeleteCatalogId;
+          await handleDeleteCatalog(id);
+          setPendingDeleteCatalogId(null);
         }}
       />
 
@@ -390,7 +611,7 @@ export function ProjectSidebar({
               <Input
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
-                placeholder="Nom du dossier…"
+                placeholder={createPlaceholder}
                 className="h-9 rounded-[4px] border-border/80 text-sm font-medium"
                 autoFocus
                 onKeyDown={(e) => {
@@ -411,7 +632,7 @@ export function ProjectSidebar({
                   {isSubmitting ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
                   ) : (
-                    "Créer"
+                    "Create"
                   )}
                 </Button>
                 <Button
@@ -434,19 +655,53 @@ export function ProjectSidebar({
               className="h-9 w-full gap-2 rounded-[4px] border-0 text-xs font-medium shadow-sm !bg-black !text-white hover:!bg-black/85"
             >
               <FolderPlus className="h-3.5 w-3.5" strokeWidth={2} />
-              Nouveau dossier
+              New folder
             </Button>
           )}
         </div>
 
-        {/* Settings Link */}
+        {(onOpenRenders || onOpenCatalog) && (
+          <div className="space-y-1 px-3 pb-2 pt-2">
+            {onOpenRenders && (
+              <button
+                type="button"
+                onClick={onOpenRenders}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-[4px] px-2.5 py-2 text-left text-sm font-medium tracking-tight transition-colors",
+                  rendersActive ? "bg-black text-white" : "text-foreground hover:bg-muted/45"
+                )}
+                title="Back to renders"
+                aria-current={rendersActive ? "page" : undefined}
+              >
+                <Images className="h-[15px] w-[15px] shrink-0 opacity-90" strokeWidth={2} />
+                <span className="min-w-0 flex-1 truncate">Renders</span>
+              </button>
+            )}
+            {onOpenCatalog && (
+              <button
+                type="button"
+                onClick={onOpenCatalog}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-[4px] px-2.5 py-2 text-left text-sm font-medium tracking-tight transition-colors",
+                  catalogActive ? "bg-black text-white" : "text-foreground hover:bg-muted/45"
+                )}
+                title="Open catalog"
+                aria-current={catalogActive ? "page" : undefined}
+              >
+                <Library className="h-[15px] w-[15px] shrink-0 opacity-90" strokeWidth={2} />
+                <span className="min-w-0 flex-1 truncate">Catalog</span>
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="px-3 pb-3">
           <a
             href="/settings"
             className="flex items-center gap-2.5 rounded-[4px] px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground"
           >
             <Settings className="h-[15px] w-[15px]" strokeWidth={2} />
-            Paramètres
+            Settings
           </a>
         </div>
       </div>

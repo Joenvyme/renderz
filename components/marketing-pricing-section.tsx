@@ -31,7 +31,7 @@ export function MarketingPricingSection({ onGetStarted, onContact, className }: 
           onClick={onGetStarted}
           className="min-h-11 w-full touch-manipulation rounded-[2px] border-2 border-black font-mono text-xs tracking-wider hover:bg-black hover:text-white"
         >
-          COMMENCER
+          GET STARTED
         </Button>
       }
       proFooter={
@@ -40,7 +40,7 @@ export function MarketingPricingSection({ onGetStarted, onContact, className }: 
           onClick={onGetStarted}
           className="min-h-11 w-full touch-manipulation rounded-[4px] bg-black font-mono text-xs tracking-wider text-white hover:bg-black/85"
         >
-          CHOISIR PRO
+          CHOOSE PRO
         </Button>
       }
       enterpriseFooter={
@@ -50,7 +50,7 @@ export function MarketingPricingSection({ onGetStarted, onContact, className }: 
           onClick={onContact}
           className="min-h-11 w-full touch-manipulation rounded-[2px] border-2 border-black font-mono text-xs tracking-wider hover:bg-black hover:text-white"
         >
-          NOUS CONTACTER
+          CONTACT US
         </Button>
       }
     />

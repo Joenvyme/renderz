@@ -26,7 +26,7 @@ function ProPriceHead({ interval }: { interval: PricingInterval }) {
     return (
       <div className="flex flex-wrap items-baseline gap-1">
         <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">{formatChf(PRO_MONTHLY)}</span>
-        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / mois</span>
+        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / month</span>
       </div>
     );
   }
@@ -34,13 +34,13 @@ function ProPriceHead({ interval }: { interval: PricingInterval }) {
     <div className="space-y-1">
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">{formatChf(PRO_YEARLY)}</span>
-        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / an</span>
+        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / year</span>
         <span className="rounded-[2px] border border-emerald-200/80 bg-emerald-100 px-2 py-0.5 font-mono text-[10px] uppercase text-emerald-900">
           {ANNUAL_DISCOUNT_LABEL}
         </span>
       </div>
       <p className="font-mono text-xs text-muted-foreground">
-        Soit {formatChf(PRO_YEARLY / 12)} CHF / mois facturés une fois par an
+        That's {formatChf(PRO_YEARLY / 12)} CHF / month, billed once a year
       </p>
     </div>
   );
@@ -51,7 +51,7 @@ function EntPriceHead({ interval }: { interval: PricingInterval }) {
     return (
       <div className="flex flex-wrap items-baseline gap-1">
         <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">{formatChf(ENT_MONTHLY)}</span>
-        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / mois</span>
+        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / month</span>
       </div>
     );
   }
@@ -59,13 +59,13 @@ function EntPriceHead({ interval }: { interval: PricingInterval }) {
     <div className="space-y-1">
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">{formatChf(ENT_YEARLY)}</span>
-        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / an</span>
+        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / year</span>
         <span className="rounded-[2px] border border-emerald-200/80 bg-emerald-100 px-2 py-0.5 font-mono text-[10px] uppercase text-emerald-900">
           {ANNUAL_DISCOUNT_LABEL}
         </span>
       </div>
       <p className="font-mono text-xs text-muted-foreground">
-        Soit {formatChf(ENT_YEARLY / 12)} CHF / mois facturés une fois par an
+        That's {formatChf(ENT_YEARLY / 12)} CHF / month, billed once a year
       </p>
     </div>
   );
@@ -111,14 +111,14 @@ export function PricingPlansGrid({
           value={interval}
           onValueChange={(v) => onIntervalChange(v as PricingInterval)}
           className="w-full max-w-md sm:w-fit"
-          aria-label="Période de facturation"
+          aria-label="Billing period"
         >
           <TabsList className="grid h-11 w-full grid-cols-2 gap-1 p-1 sm:w-max">
             <TabsTrigger value="monthly" className="h-full min-h-0 touch-manipulation px-4 py-0 sm:px-6">
-              Mensuel
+              Monthly
             </TabsTrigger>
             <TabsTrigger value="yearly" className="h-full min-h-0 touch-manipulation gap-1.5 px-3 py-0 sm:gap-2 sm:px-6">
-              <span>Annuel</span>
+              <span>Yearly</span>
               <span
                 className={cn(
                   "rounded-[2px] border px-1.5 py-0.5 font-mono text-[10px] font-normal normal-case tracking-normal",
@@ -147,7 +147,7 @@ export function PricingPlansGrid({
           <Badge variant="outline" className="mb-3 w-fit font-mono text-[10px] uppercase tracking-widest">
             Free
           </Badge>
-          <p className="mb-6 text-sm text-muted-foreground">Pour essayer</p>
+          <p className="mb-6 text-sm text-muted-foreground">Try it out</p>
           <div className="min-h-[5.5rem]">
             <div className="flex flex-wrap items-baseline gap-1">
               <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">0</span>
@@ -163,20 +163,20 @@ export function PricingPlansGrid({
               <li className="flex items-start gap-2.5">
                 <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
                 <span className="text-foreground">
-                  5 créations par mois (1 image ou 1 animation = 1 création ; reset chaque mois civil UTC)
+                  5 creations per month (1 image or 1 animation = 1 creation; resets every calendar month UTC)
                 </span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">1 upscale 4K (Magnific) par mois (même période UTC)</span>
+                <span className="text-foreground">1 4K upscale (Magnific) per month (same UTC period)</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">1 dossier projet</span>
+                <span className="text-foreground">1 project folder</span>
               </li>
               <li className="flex items-start gap-2.5 text-muted-foreground">
                 <X className="mt-0.5 size-4 shrink-0" aria-hidden />
-                <span>Quotas Pro / équipe</span>
+                <span>Pro / team quotas</span>
               </li>
             </ul>
             <div className="mt-8">{freeFooter}</div>
@@ -192,37 +192,37 @@ export function PricingPlansGrid({
         >
           <div className="absolute -top-3 left-1/2 z-10 -translate-x-1/2">
             <span className="rounded-[4px] bg-black px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-white">
-              Populaire
+              Popular
             </span>
           </div>
           <Badge variant="outline" className="mb-3 mt-2 w-fit font-mono text-[10px] uppercase tracking-widest">
             Pro
           </Badge>
-          <p className="mb-6 text-sm text-muted-foreground">Créateurs & indépendants</p>
+          <p className="mb-6 text-sm text-muted-foreground">Creators & freelancers</p>
           <div className="min-h-[5.5rem]">
             <ProPriceHead interval={interval} />
           </div>
           <p className={cn("text-sm text-muted-foreground", interval === "yearly" ? "invisible" : "")}>
-            {interval === "monthly" ? "Facturation mensuelle" : "\u00a0"}
+            {interval === "monthly" ? "Billed monthly" : "\u00a0"}
           </p>
           <Separator className="my-6" />
           <div className="flex flex-1 flex-col">
             <ul className="space-y-4 text-sm leading-snug text-muted-foreground md:leading-snug">
               <li className="flex items-start gap-2.5">
                 <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">100 rendus / mois</span>
+                <span className="text-foreground">100 renders / month</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">100 animations / mois</span>
+                <span className="text-foreground">100 animations / month</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">25 upscales / mois</span>
+                <span className="text-foreground">25 upscales / month</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">Projets illimités</span>
+                <span className="text-foreground">Unlimited projects</span>
               </li>
             </ul>
             <div className="mt-8">{proFooter}</div>
@@ -241,29 +241,29 @@ export function PricingPlansGrid({
           <Badge variant="outline" className="mb-3 w-fit font-mono text-[10px] uppercase tracking-widest">
             Enterprise
           </Badge>
-          <p className="mb-6 text-sm text-muted-foreground">Équipes & agences</p>
+          <p className="mb-6 text-sm text-muted-foreground">Teams & agencies</p>
           <div className="min-h-[5.5rem]">
             <EntPriceHead interval={interval} />
           </div>
           <p className={cn("text-sm text-muted-foreground", interval === "yearly" ? "invisible" : "")}>
-            {interval === "monthly" ? "Facturation mensuelle" : "\u00a0"}
+            {interval === "monthly" ? "Billed monthly" : "\u00a0"}
           </p>
           <Separator className="my-6" />
           <div className="flex flex-1 flex-col">
             <ul className="space-y-4 text-sm leading-snug text-muted-foreground md:leading-snug">
               <li className="flex items-start gap-2.5">
                 <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">Membres illimités (invitations)</span>
+                <span className="text-foreground">Unlimited members (invitations)</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
                 <span className="text-foreground">
-                  Pool partagé : 1000 rendus, 250 animations, 100 upscales / mois
+                  Shared pool: 1000 renders, 250 animations, 100 upscales / month
                 </span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">Catalogue mobilier & priorité</span>
+                <span className="text-foreground">Furniture catalog & priority</span>
               </li>
             </ul>
             <div className="mt-8">{enterpriseFooter}</div>

@@ -19,7 +19,7 @@ const config = {
     extend: {
       fontFamily: {
         sans: ["'Funnel Display'", "system-ui", "sans-serif"],
-        mono: ["var(--font-mono)", "monospace"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -79,12 +79,27 @@ const config = {
           "50%": { backgroundPosition: "100% 50%" },
           "100%": { backgroundPosition: "0% 50%" },
         },
+        marquee: {
+          from: { transform: "translateX(0)" },
+          to: { transform: "translateX(-50%)" },
+        },
+        "ba-wipe": {
+          "0%, 100%": { clipPath: "inset(0 0 0 0%)" },
+          "50%": { clipPath: "inset(0 0 0 100%)" },
+        },
+        "ba-line": {
+          "0%, 100%": { left: "100%" },
+          "50%": { left: "0%" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         dash: "dash 3s linear infinite",
         aurora: "aurora 8s ease-in-out infinite",
+        marquee: "marquee var(--marquee-duration,40s) linear infinite",
+        "ba-wipe": "ba-wipe 8s ease-in-out infinite",
+        "ba-line": "ba-line 8s ease-in-out infinite",
       },
     },
   },

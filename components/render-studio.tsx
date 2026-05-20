@@ -36,6 +36,8 @@ import {
 } from "@/lib/api/gemini-image-config";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { Render4KBadge, renderShows4KBadge } from "@/components/render-4k-badge";
+import { VisibilityChip } from "@/components/visibility-chip";
+import { useSession } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
 interface RenderMetadata {
@@ -60,6 +62,9 @@ interface RenderMetadata {
 
 interface Render {
   id: string;
+  user_id?: string;
+  organization_id?: string | null;
+  visibility?: "private" | "organization";
   original_image_url: string | null;
   generated_image_url: string | null;
   upscaled_image_url: string | null;
@@ -123,6 +128,7 @@ export function RenderStudio({
   mobileLaunchToolsFullscreen = false,
   mobileFloatingSheet = false,
 }: RenderStudioProps) {
+  const { data: session } = useSession();
   const [currentRender, setCurrentRender] = useState<Render>(render);
   const [modifyPrompt, setModifyPrompt] = useState("");
   const [modifyRatio, setModifyRatio] = useState<AspectRatio>(
@@ -139,6 +145,7 @@ export function RenderStudio({
   /** Render id for which we are polling video generation — overlay only when it matches the current view. */
   const [videoGeneratingForRenderId, setVideoGeneratingForRenderId] = useState<string | null>(null);
   const [isFavoriting, setIsFavoriting] = useState(false);
+  const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMoveMenu, setShowMoveMenu] = useState(false);
@@ -188,6 +195,108 @@ export function RenderStudio({
     return [currentRender, ...merged];
   }, [galleryRenders, currentRender]);
 
+  /**
+   * Chaîne de versions du rendu courant (ancêtres → courant → descendants).
+   *
+   * Détection des liens parent/enfant :
+   *  - upscale : `metadata.upscale_source_render_id` (cf. /api/upscale/route.ts)
+   *  - modify  : `original_image_url` enfant = `generated_image_url`
+   *              (ou `upscaled_image_url`) du parent — cf. render-studio handleModify
+   */
+  const lineageRenders = useMemo(() => {
+    const list = galleryRenders ?? [];
+    const byId = new Map<string, Render>();
+    for (const r of list) byId.set(r.id, r);
+    byId.set(currentRender.id, currentRender);
+    const all = Array.from(byId.values());
+
+    if (all.length <= 1) return [currentRender];
+
+    const findParent = (r: Render): Render | null => {
+      const upId = r.metadata?.upscale_source_render_id;
+      if (typeof upId === "string" && byId.has(upId)) {
+        return byId.get(upId) ?? null;
+      }
+      const inUrl = r.original_image_url;
+      if (!inUrl) return null;
+      const candidates = all.filter(
+        (x) =>
+          x.id !== r.id &&
+          (x.generated_image_url === inUrl || x.upscaled_image_url === inUrl)
+      );
+      if (candidates.length === 0) return null;
+      candidates.sort(
+        (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
+      );
+      return candidates[0] ?? null;
+    };
+
+    const findChildren = (r: Render): Render[] => {
+      const out: Render[] = [];
+      for (const c of all) {
+        if (c.id === r.id) continue;
+        if (c.metadata?.upscale_source_render_id === r.id) {
+          out.push(c);
+          continue;
+        }
+        const cOrig = c.original_image_url;
+        if (!cOrig) continue;
+        if (
+          r.generated_image_url &&
+          cOrig === r.generated_image_url &&
+          c.metadata?.upscale_source_render_id !== r.id
+        ) {
+          out.push(c);
+          continue;
+        }
+        if (
+          r.upscaled_image_url &&
+          cOrig === r.upscaled_image_url &&
+          c.metadata?.upscale_source_render_id !== r.id
+        ) {
+          out.push(c);
+        }
+      }
+      return out;
+    };
+
+    const visited = new Set<string>([currentRender.id]);
+
+    const ancestors: Render[] = [];
+    let node: Render | null = currentRender;
+    let safety = 50;
+    while (safety-- > 0 && node) {
+      const parent: Render | null = findParent(node);
+      if (!parent || visited.has(parent.id)) break;
+      visited.add(parent.id);
+      ancestors.unshift(parent);
+      node = parent;
+    }
+
+    const descendants: Render[] = [];
+    const queue: Render[] = [currentRender];
+    while (queue.length) {
+      const n = queue.shift()!;
+      const children = findChildren(n)
+        .filter((c) => !visited.has(c.id))
+        .sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
+      for (const c of children) {
+        if (visited.has(c.id)) continue;
+        visited.add(c.id);
+        descendants.push(c);
+        queue.push(c);
+      }
+    }
+
+    return [...ancestors, currentRender, ...descendants];
+  }, [galleryRenders, currentRender]);
+
+  const hasLineage = lineageRenders.length > 1;
+  const lineageActiveIndex = useMemo(
+    () => lineageRenders.findIndex((r) => r.id === currentRender.id),
+    [lineageRenders, currentRender.id]
+  );
+
   const currentNavIndex = useMemo(
     () => navigableRenders.findIndex((r) => r.id === currentRender.id),
     [navigableRenders, currentRender.id]
@@ -208,6 +317,7 @@ export function RenderStudio({
   }, [canGoNext, currentNavIndex, navigableRenders, onNavigateToRender]);
 
   const thumbStripRef = useRef<HTMLDivElement>(null);
+  const lineageStripRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
   useEffect(() => {
     isMountedRef.current = true;
@@ -340,6 +450,14 @@ export function RenderStudio({
     );
     el?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
   }, [currentNavIndex, currentRender.id]);
+
+  useEffect(() => {
+    if (!lineageStripRef.current || lineageActiveIndex < 0) return;
+    const el = lineageStripRef.current.querySelector(
+      `[data-lineage-index="${lineageActiveIndex}"]`
+    );
+    el?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+  }, [lineageActiveIndex, currentRender.id]);
 
   useEffect(() => {
     if (showUpscaleToast) {
@@ -550,6 +668,34 @@ export function RenderStudio({
     }
   };
 
+  const handleToggleVisibility = async (next: "private" | "organization") => {
+    if (isTogglingVisibility) return;
+    setIsTogglingVisibility(true);
+    const prevVisibility = currentRender.visibility ?? "private";
+    const updated = { ...currentRender, visibility: next };
+    setCurrentRender(updated);
+    onRenderUpdate(updated);
+    try {
+      const res = await fetch(`/api/render/${currentRender.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibility: next }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "Mise à jour impossible");
+      }
+    } catch (error) {
+      // Rollback
+      const rollback = { ...currentRender, visibility: prevVisibility };
+      setCurrentRender(rollback);
+      onRenderUpdate(rollback);
+      alert(error instanceof Error ? error.message : "Mise à jour impossible");
+    } finally {
+      setIsTogglingVisibility(false);
+    }
+  };
+
   const handleMoveToProject = async (projectId: string | null) => {
     try {
       const res = await fetch(`/api/render/${currentRender.id}`, {
@@ -672,6 +818,71 @@ export function RenderStudio({
             : "max-h-[min(62vh,100%)] shrink-0 lg:max-h-none lg:min-h-0 lg:flex-1"
         }`}
       >
+        {/* Top strip — version lineage (parent → courant → enfants : modify + 4K). */}
+        {hasLineage && (
+          <div className="flex-shrink-0 border-b border-border bg-muted/30 px-1.5 py-2">
+            <div className="mb-1 flex items-center gap-2 px-1.5">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                Versions
+              </span>
+              <span className="text-[10px] tabular-nums text-muted-foreground/70">
+                {lineageActiveIndex >= 0 ? lineageActiveIndex + 1 : 0}/{lineageRenders.length}
+              </span>
+            </div>
+            <div
+              ref={lineageStripRef}
+              className="flex max-w-full gap-1.5 overflow-x-auto overflow-y-hidden pb-0.5 [scrollbar-width:thin]"
+            >
+              {lineageRenders.map((r, i) => {
+                const thumb = thumbUrlForRender(r);
+                const active = r.id === currentRender.id;
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    data-lineage-index={i}
+                    onClick={() => onNavigateToRender?.(r)}
+                    className={`relative h-12 w-12 shrink-0 overflow-hidden rounded border-2 transition-colors sm:h-14 sm:w-14 ${
+                      active
+                        ? "border-foreground ring-1 ring-ring/40"
+                        : "border-border opacity-80 hover:border-foreground/40 hover:opacity-100"
+                    }`}
+                    title={`Version ${i + 1}/${lineageRenders.length}`}
+                    aria-label={`Aller à la version ${i + 1}`}
+                    aria-current={active ? "true" : undefined}
+                  >
+                    {thumb ? (
+                      <img
+                        src={thumb}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        draggable={false}
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-muted/50">
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+                    {renderShows4KBadge(r) && (
+                      <Render4KBadge compact className="absolute left-0.5 top-0.5 z-[1]" />
+                    )}
+                    {r.metadata?.video_url && (
+                      <span className="absolute bottom-0.5 right-0.5 rounded bg-foreground/85 p-0.5">
+                        <Play className="h-2 w-2 text-background" />
+                      </span>
+                    )}
+                    <span
+                      className="absolute bottom-0.5 left-0.5 rounded bg-foreground/85 px-1 text-[9px] font-mono font-semibold tabular-nums text-background"
+                      aria-hidden
+                    >
+                      v{i + 1}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div
           className={`relative flex min-h-0 flex-1 items-center justify-center bg-gradient-to-b from-muted/70 via-muted/40 to-background p-2 transition-all duration-300 sm:p-4 lg:p-8 ${
             mobilePanelCollapsed
@@ -1108,26 +1319,41 @@ export function RenderStudio({
             <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">
               Actions
             </span>
-            <div className="flex flex-wrap gap-1.5 sm:gap-2">
-              {/* Favorite */}
-              <button
-                onClick={handleToggleFavorite}
-                disabled={isFavoriting}
-                className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded font-mono text-[10px] transition-all ${
-                  isFavorite
-                    ? "bg-pink-500/15 text-pink-400 border border-pink-500/20"
-                    : "bg-muted/50 text-muted-foreground border border-border hover:bg-muted"
-                }`}
-              >
-                {isFavoriting ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Heart className={`w-3 h-3 ${isFavorite ? "fill-current" : ""}`} />
-                )}
-                {isFavorite ? "FAVORITED" : "FAVORITE"}
-              </button>
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              {/* Visibility (privé / partagé avec l'org) */}
+              <VisibilityChip
+                visibility={currentRender.visibility ?? "private"}
+                loading={isTogglingVisibility}
+                canShare={!!currentRender.organization_id}
+                onToggle={
+                  session && currentRender.user_id === session.user.id
+                    ? (next) => handleToggleVisibility(next)
+                    : undefined
+                }
+              />
 
-              {/* Move to project */}
+              {/* Favorite — créateur uniquement */}
+              {session && currentRender.user_id === session.user.id && (
+                <button
+                  onClick={handleToggleFavorite}
+                  disabled={isFavoriting}
+                  className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded font-mono text-[10px] transition-all ${
+                    isFavorite
+                      ? "bg-pink-500/15 text-pink-400 border border-pink-500/20"
+                      : "bg-muted/50 text-muted-foreground border border-border hover:bg-muted"
+                  }`}
+                >
+                  {isFavoriting ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Heart className={`w-3 h-3 ${isFavorite ? "fill-current" : ""}`} />
+                  )}
+                  {isFavorite ? "FAVORITED" : "FAVORITE"}
+                </button>
+              )}
+
+              {/* Move to project — créateur uniquement */}
+              {session && currentRender.user_id === session.user.id && (
               <div className="relative">
                 <button
                   onClick={() => setShowMoveMenu(!showMoveMenu)}
@@ -1146,7 +1372,7 @@ export function RenderStudio({
                       disabled={!currentRender.project_id}
                     >
                       <Inbox className="w-3 h-3 flex-shrink-0" />
-                      Unassigned
+                      Unfiled
                     </button>
                     {projects.map((p) => (
                       <button
@@ -1166,8 +1392,9 @@ export function RenderStudio({
                   </div>
                 )}
               </div>
+              )}
 
-              {/* Download */}
+              {/* Download — toujours dispo (téléchargement local) */}
               <button
                 onClick={() => {
                   if (displayImageUrl)
@@ -1179,14 +1406,16 @@ export function RenderStudio({
                 DOWNLOAD
               </button>
 
-              {/* Delete */}
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded font-mono text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all"
-              >
-                <Trash2 className="w-3 h-3" />
-                DELETE
-              </button>
+              {/* Delete — créateur uniquement */}
+              {session && currentRender.user_id === session.user.id && (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded font-mono text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  DELETE
+                </button>
+              )}
             </div>
           </div>
 

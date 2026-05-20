@@ -307,6 +307,8 @@ async function processUpscale(
       .from('renders')
       .insert({
         user_id: parent.user_id,
+        organization_id: parent.organization_id ?? null,
+        visibility: parent.visibility ?? 'private',
         project_id: parent.project_id,
         original_image_url: parent.generated_image_url || parent.original_image_url,
         prompt: typeof parent.prompt === 'string' ? parent.prompt : '',

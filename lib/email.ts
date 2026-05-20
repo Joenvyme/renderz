@@ -173,6 +173,87 @@ export function getResetPasswordEmailHtml(url: string, userName?: string) {
   `;
 }
 
+// Template pour l'invitation à rejoindre une organisation
+export function getOrganizationInvitationEmailHtml({
+  inviteUrl,
+  organizationName,
+  inviterName,
+  inviterEmail,
+  role,
+  recipientEmail,
+}: {
+  inviteUrl: string;
+  organizationName: string;
+  inviterName?: string | null;
+  inviterEmail?: string | null;
+  role: string;
+  recipientEmail: string;
+}) {
+  const inviter = inviterName || inviterEmail || "Un membre";
+  const roleLabel =
+    role === "owner" ? "Propriétaire" : role === "admin" ? "Admin" : "Membre";
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invitation à rejoindre ${organizationName} sur RENDERZ</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #000000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #000000; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" max-width="500" cellpadding="0" cellspacing="0" style="max-width: 500px;">
+          <tr>
+            <td align="center" style="padding-bottom: 32px;">
+              <h1 style="margin: 0; font-size: 32px; font-weight: bold; letter-spacing: -0.05em; color: #ffffff;">RENDERZ</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #111111; border: 1px solid #222222; padding: 40px;">
+              <h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 600; color: #ffffff;">
+                Vous êtes invité à rejoindre ${organizationName}
+              </h2>
+              <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #aaaaaa;">
+                ${inviter} vous invite à rejoindre <strong style="color: #ffffff;">${organizationName}</strong> en tant que <strong style="color: #ffffff;">${roleLabel}</strong> sur RENDERZ.
+              </p>
+              <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #888888;">
+                Vous pourrez accéder aux rendus, images sources et catalogues partagés avec l'organisation, et collaborer en équipe sur vos projets.
+              </p>
+              <table cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
+                <tr>
+                  <td style="background-color: #ffffff; padding: 12px 24px;">
+                    <a href="${inviteUrl}" style="color: #000000; text-decoration: none; font-size: 14px; font-weight: 600; font-family: monospace;">
+                      ACCEPTER L'INVITATION
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 0 0 12px 0; font-size: 12px; color: #666666;">
+                Cette invitation a été envoyée à <strong style="color: #888888;">${recipientEmail}</strong>.
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #666666;">
+                Si vous n'attendiez pas cette invitation, vous pouvez l'ignorer.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding-top: 24px;">
+              <p style="margin: 0; font-size: 12px; color: #444444;">
+                © ${new Date().getFullYear()} RENDERZ. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+}
+
 // Template pour l'invitation
 export function getInvitationEmailHtml(appUrl: string, recipientName?: string) {
   return `

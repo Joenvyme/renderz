@@ -1,22 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { getOrgContext, buildReadScopeFilter } from "@/lib/org-context";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    // Vérifier l'authentification
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
-    if (!session) {
-      return NextResponse.json(
-        { error: "Non authentifié" },
-        { status: 401 }
-      );
+    const ctx = await getOrgContext();
+    if (!ctx) {
+      return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
     }
 
     const supabase = createClient(
@@ -27,18 +19,45 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get("project_id");
     const favoritesOnly = searchParams.get("favorites") === "true";
+    // Filtre multi-sélection : "private", "organization" ou "private,organization".
+    // Cas particulier : si rien ou les deux cochés → équivalent à pas de contrainte.
+    const visibilityParam = (searchParams.get("visibility") || "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter((v): v is "private" | "organization" =>
+        v === "private" || v === "organization"
+      );
+    const onlyPrivate =
+      visibilityParam.length === 1 && visibilityParam[0] === "private";
+    const onlyShared =
+      visibilityParam.length === 1 && visibilityParam[0] === "organization";
     const rawLimit = Number(searchParams.get("limit") || "24");
     const rawOffset = Number(searchParams.get("offset") || "0");
     const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 24;
     const offset = Number.isFinite(rawOffset) ? Math.max(rawOffset, 0) : 0;
+    const statusFilter = searchParams.get("status");
+    const allowedStatuses = ["pending", "processing", "completed", "failed"] as const;
+    const status =
+      statusFilter && allowedStatuses.includes(statusFilter as (typeof allowedStatuses)[number])
+        ? (statusFilter as (typeof allowedStatuses)[number])
+        : null;
 
-    // Récupérer les rendus de l'utilisateur, éventuellement filtrés par projet
     let query = supabase
       .from("renders")
       .select("*")
-      .eq("user_id", session.user.id)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false });
+
+    if (onlyPrivate) {
+      // Privés uniquement → forcément les miens (les privés des autres ne sont pas visibles).
+      query = query.eq("user_id", ctx.userId).eq("visibility", "private");
+    } else if (onlyShared) {
+      // Partagés uniquement : scope read standard + filtre visibility = organization.
+      query = query.or(buildReadScopeFilter(ctx)).eq("visibility", "organization");
+    } else {
+      // Pas de filtre OU les deux cochés : mes items + items partagés dans mes orgs.
+      query = query.or(buildReadScopeFilter(ctx));
+    }
 
     if (projectId === "unassigned") {
       query = query.is("project_id", null);
@@ -48,6 +67,10 @@ export async function GET(request: NextRequest) {
 
     if (projectId === "favorites" || favoritesOnly) {
       query = query.contains("metadata", { favorite: true });
+    }
+
+    if (status) {
+      query = query.eq("status", status);
     }
 
     const { data: renders, error } = await query.range(offset, offset + limit);
@@ -72,10 +95,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error:", error);
-    return NextResponse.json(
-      { error: "Erreur serveur" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
   }
 }
-

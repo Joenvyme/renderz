@@ -36,7 +36,9 @@ export interface Database {
         Row: {
           id: string
           user_id: string
-          original_image_url: string
+          organization_id: string | null
+          visibility: 'private' | 'organization'
+          original_image_url: string | null
           prompt: string
           generated_image_url: string | null
           upscaled_image_url: string | null
@@ -48,7 +50,9 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
-          original_image_url: string
+          organization_id?: string | null
+          visibility?: 'private' | 'organization'
+          original_image_url?: string | null
           prompt: string
           generated_image_url?: string | null
           upscaled_image_url?: string | null
@@ -60,7 +64,9 @@ export interface Database {
         Update: {
           id?: string
           user_id?: string
-          original_image_url?: string
+          organization_id?: string | null
+          visibility?: 'private' | 'organization'
+          original_image_url?: string | null
           prompt?: string
           generated_image_url?: string | null
           upscaled_image_url?: string | null
@@ -74,6 +80,8 @@ export interface Database {
         Row: {
           id: string
           user_id: string
+          organization_id: string | null
+          visibility: 'private' | 'organization'
           name: string
           description: string | null
           cover_image_url: string | null
@@ -83,6 +91,8 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
+          organization_id?: string | null
+          visibility?: 'private' | 'organization'
           name: string
           description?: string | null
           cover_image_url?: string | null
@@ -92,11 +102,112 @@ export interface Database {
         Update: {
           id?: string
           user_id?: string
+          organization_id?: string | null
+          visibility?: 'private' | 'organization'
           name?: string
           description?: string | null
           cover_image_url?: string | null
           created_at?: string
           updated_at?: string
+        }
+      }
+      catalog_folders: {
+        Row: {
+          id: string
+          user_id: string
+          organization_id: string | null
+          visibility: 'private' | 'organization'
+          parent_id: string | null
+          name: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          organization_id?: string | null
+          visibility?: 'private' | 'organization'
+          parent_id?: string | null
+          name: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          organization_id?: string | null
+          visibility?: 'private' | 'organization'
+          parent_id?: string | null
+          name?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      catalog_items: {
+        Row: {
+          id: string
+          user_id: string
+          organization_id: string | null
+          visibility: 'private' | 'organization'
+          folder_id: string | null
+          title: string
+          description: string | null
+          image_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          organization_id?: string | null
+          visibility?: 'private' | 'organization'
+          folder_id?: string | null
+          title: string
+          description?: string | null
+          image_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          organization_id?: string | null
+          visibility?: 'private' | 'organization'
+          folder_id?: string | null
+          title?: string
+          description?: string | null
+          image_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      source_images: {
+        Row: {
+          id: string
+          user_id: string
+          organization_id: string | null
+          visibility: 'private' | 'organization'
+          url: string
+          storage_path: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          organization_id?: string | null
+          visibility?: 'private' | 'organization'
+          url: string
+          storage_path?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          organization_id?: string | null
+          visibility?: 'private' | 'organization'
+          url?: string
+          storage_path?: string | null
+          created_at?: string
         }
       }
       furniture_catalog: {

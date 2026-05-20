@@ -33,6 +33,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   ArrowUpRightIcon,
+  FolderInput,
 } from "lucide-react";
 import Link from "next/link";
 import { BrandLogo } from "@/components/brand-logo";
@@ -41,6 +42,13 @@ import { ProjectSidebar, Project, RENDER_DRAG_MIME } from "@/components/project-
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { Render4KBadge, galleryItemShows4KBadge } from "@/components/render-4k-badge";
 import { RenderStudio, type StudioPreviewVariant } from "@/components/render-studio";
+import { OrganizationSwitcher } from "@/components/organization-switcher";
+import { VisibilityChip } from "@/components/visibility-chip";
+import {
+  VisibilityFilter,
+  serializeVisibilityFilter,
+  type VisibilityFilterValue,
+} from "@/components/visibility-filter";
 import type { BillingPayload } from "@/lib/billing/billing-types";
 
 interface RenderMetadata {
@@ -57,6 +65,9 @@ interface RenderMetadata {
 
 interface Render {
   id: string;
+  user_id?: string;
+  organization_id?: string | null;
+  visibility?: "private" | "organization";
   original_image_url: string | null;
   generated_image_url: string | null;
   upscaled_image_url: string | null;
@@ -332,6 +343,8 @@ function ProfilePage() {
   const [hasMoreRenders, setHasMoreRenders] = useState(false);
   const [nextOffset, setNextOffset] = useState(0);
   const [favoritingIds, setFavoritingIds] = useState<Set<string>>(new Set());
+  const [togglingVisibilityIds, setTogglingVisibilityIds] = useState<Set<string>>(new Set());
+  const [visibilityFilter, setVisibilityFilter] = useState<Set<VisibilityFilterValue>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [studioRender, setStudioRender] = useState<Render | null>(null);
   /** Which gallery tile opened the studio (standard / 4k / video) — drives initial preview mode */
@@ -366,6 +379,7 @@ function ProfilePage() {
   const [draggingRenderIds, setDraggingRenderIds] = useState<Set<string>>(new Set());
   const [selectedRenderIds, setSelectedRenderIds] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
   /** Gallery strip: still images vs video tiles only (Midjourney-style) */
   const [galleryMediaMode, setGalleryMediaMode] = useState<"images" | "videos">("images");
   const [galleryTopCorners, setGalleryTopCorners] = useState<GalleryTopCorners>({
@@ -508,6 +522,8 @@ function ProfilePage() {
       if (selectedProjectId === "favorites" || favoritesOnly) {
         params.set("favorites", "true");
       }
+      const vis = serializeVisibilityFilter(visibilityFilter);
+      if (vis) params.set("visibility", vis);
       params.set("limit", PAGE_SIZE.toString());
       params.set("offset", offset.toString());
       const url = `/api/user/renders${params.toString() ? `?${params}` : ""}`;
@@ -527,7 +543,7 @@ function ProfilePage() {
         setIsLoadingMore(false);
       }
     }
-  }, [selectedProjectId, favoritesOnly]);
+  }, [selectedProjectId, favoritesOnly, visibilityFilter]);
 
   const loadMoreRenders = useCallback(() => {
     if (isLoading || isLoadingMore || !hasMoreRenders) return;
@@ -707,10 +723,6 @@ function ProfilePage() {
     }
   }, [matchesLg]);
 
-  useEffect(() => {
-    if (!matchesLg && selectionMode) exitSelectionMode();
-  }, [matchesLg, selectionMode, exitSelectionMode]);
-
   const handleCloseStudio = useCallback(() => {
     const r = studioRender;
     if (!r) return;
@@ -799,6 +811,76 @@ function ProfilePage() {
     [renders, fetchRenders, fetchProjects]
   );
 
+  const selectedOwnRenderIds = useMemo(() => {
+    const userId = session?.user?.id;
+    if (!userId) return [];
+    return Array.from(selectedRenderIds).filter((id) => {
+      const r = renders.find((x) => x.id === id);
+      return r?.user_id === userId;
+    });
+  }, [selectedRenderIds, renders, session?.user?.id]);
+
+  const handleBulkFavorite = useCallback(
+    async (favorite: boolean) => {
+      const ids = selectedOwnRenderIds.filter((id) => {
+        const r = renders.find((x) => x.id === id);
+        return r && isFavorite(r) !== favorite;
+      });
+      if (ids.length === 0) return;
+
+      setBulkActionLoading(true);
+      try {
+        await Promise.all(
+          ids.map(async (id) => {
+            const res = await fetch(`/api/render/${id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ favorite }),
+            });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              throw new Error(
+                typeof err.error === "string" ? err.error : "Failed to update favorite"
+              );
+            }
+          })
+        );
+
+        setRenders((prev) =>
+          prev
+            .map((r) =>
+              ids.includes(r.id)
+                ? {
+                    ...r,
+                    metadata: { ...(r.metadata || {}), favorite },
+                  }
+                : r
+            )
+            .filter((r) => !(selectedProjectId === "favorites" && !favorite && ids.includes(r.id)))
+        );
+        setSelectedRenderIds(new Set());
+      } catch (e) {
+        alert(e instanceof Error ? e.message : "Failed to update favorites");
+      } finally {
+        setBulkActionLoading(false);
+      }
+    },
+    [selectedOwnRenderIds, renders, selectedProjectId]
+  );
+
+  const handleBulkMoveToProject = useCallback(
+    async (projectId: string | null) => {
+      if (selectedOwnRenderIds.length === 0) return;
+      setBulkActionLoading(true);
+      try {
+        await handleMoveRendersToProject(selectedOwnRenderIds, projectId);
+      } finally {
+        setBulkActionLoading(false);
+      }
+    },
+    [selectedOwnRenderIds, handleMoveRendersToProject]
+  );
+
   const handleToggleFavorite = async (render: Render) => {
     setFavoritingIds((prev) => new Set(prev).add(render.id));
     const nextFavorite = !isFavorite(render);
@@ -840,6 +922,46 @@ function ProfilePage() {
         const newSet = new Set(prev);
         newSet.delete(render.id);
         return newSet;
+      });
+    }
+  };
+
+  const handleToggleVisibility = async (
+    render: Render,
+    next: "private" | "organization"
+  ) => {
+    if (togglingVisibilityIds.has(render.id)) return;
+    setTogglingVisibilityIds((prev) => new Set(prev).add(render.id));
+    // Optimistic update
+    setRenders((prev) =>
+      prev.map((r) => (r.id === render.id ? { ...r, visibility: next } : r))
+    );
+    try {
+      const res = await fetch(`/api/render/${render.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibility: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Mise à jour impossible");
+      }
+    } catch (error) {
+      console.error("Toggle visibility:", error);
+      // Rollback
+      setRenders((prev) =>
+        prev.map((r) =>
+          r.id === render.id
+            ? { ...r, visibility: next === "private" ? "organization" : "private" }
+            : r
+        )
+      );
+      alert(error instanceof Error ? error.message : "Mise à jour impossible");
+    } finally {
+      setTogglingVisibilityIds((prev) => {
+        const s = new Set(prev);
+        s.delete(render.id);
+        return s;
       });
     }
   };
@@ -962,7 +1084,9 @@ function ProfilePage() {
   }, [loadedImages.size, remeasureGalleryTopCorners]);
 
   const isFavoritesView = favoritesOnly || selectedProjectId === "favorites";
-  const galleryAllActive = !isFavoritesView && selectedProjectId === null;
+  const isVisibilityFiltering = visibilityFilter.size === 1;
+  const galleryAllActive =
+    !isFavoritesView && selectedProjectId === null && !isVisibilityFiltering;
   const galleryUnassignedActive =
     !isFavoritesView && selectedProjectId === "unassigned";
 
@@ -977,8 +1101,10 @@ function ProfilePage() {
           <button
             type="button"
             onClick={() => {
+              // « All » = reset complet de tous les filtres.
               setFavoritesOnly(false);
               setSelectedProjectId(null);
+              setVisibilityFilter(new Set());
             }}
             className={`max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 border-b-2 border-transparent py-2.5 sm:py-0.5 transition-colors ${
               galleryAllActive
@@ -991,9 +1117,15 @@ function ProfilePage() {
           <button
             type="button"
             onClick={() => {
-              setFavoritesOnly(false);
-              setSelectedProjectId("unassigned");
+              // Toggle : clic sur le filtre actif → revient à « All ».
+              if (galleryUnassignedActive) {
+                setSelectedProjectId(null);
+              } else {
+                setFavoritesOnly(false);
+                setSelectedProjectId("unassigned");
+              }
             }}
+            aria-pressed={galleryUnassignedActive}
             className={`max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 inline-flex items-center gap-1.5 border-b-2 border-transparent py-2.5 sm:py-0.5 transition-colors ${
               galleryUnassignedActive
                 ? "font-semibold text-foreground border-foreground"
@@ -1001,14 +1133,21 @@ function ProfilePage() {
             }`}
           >
             <Inbox className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            Unassigned
+            Unfiled
           </button>
           <button
             type="button"
             onClick={() => {
-              setFavoritesOnly(true);
-              setSelectedProjectId(null);
+              // Toggle : clic sur Favorites actif → revient à « All ».
+              if (isFavoritesView) {
+                setFavoritesOnly(false);
+                setSelectedProjectId(null);
+              } else {
+                setFavoritesOnly(true);
+                setSelectedProjectId(null);
+              }
             }}
+            aria-pressed={isFavoritesView}
             className={`max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 inline-flex items-center gap-1.5 border-b-2 border-transparent py-2.5 sm:py-0.5 transition-colors ${
               isFavoritesView
                 ? "font-semibold text-foreground border-foreground"
@@ -1018,8 +1157,9 @@ function ProfilePage() {
             <Heart className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${isFavoritesView ? "fill-current" : ""}`} />
             Favorites
           </button>
+          <VisibilityFilter value={visibilityFilter} onChange={setVisibilityFilter} />
           {renders.length > 0 && !isLoading && (
-            <div className="hidden lg:contents">
+            <>
               <span className="hidden h-4 w-px shrink-0 bg-border sm:inline" aria-hidden />
               <button
                 type="button"
@@ -1044,7 +1184,8 @@ function ProfilePage() {
                         new Set(filteredGalleryItems.map((item) => item.render.id))
                       )
                     }
-                    className="max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 rounded-full border border-border/70 bg-white px-3 py-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/40 sm:px-2.5 sm:py-1 sm:text-xs"
+                    disabled={bulkActionLoading}
+                    className="max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 rounded-full border border-border/70 bg-white px-3 py-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/40 disabled:opacity-50 sm:px-2.5 sm:py-1 sm:text-xs"
                   >
                     Select all
                   </button>
@@ -1053,18 +1194,76 @@ function ProfilePage() {
                       <button
                         type="button"
                         onClick={clearRenderSelection}
-                        className="max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 rounded-full border border-border/70 bg-white px-3 py-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/40 sm:px-2.5 sm:py-1 sm:text-xs"
+                        disabled={bulkActionLoading}
+                        className="max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation shrink-0 rounded-full border border-border/70 bg-white px-3 py-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/40 disabled:opacity-50 sm:px-2.5 sm:py-1 sm:text-xs"
                       >
                         Clear ({selectedRenderIds.size})
                       </button>
-                      <span className="max-lg:max-w-[min(100%,12rem)] max-lg:shrink-0 max-lg:truncate max-lg:text-[11px] sm:max-w-none sm:text-xs text-muted-foreground">
-                        {selectedRenderIds.size} selected — drag to a folder
-                      </span>
+                      {selectedOwnRenderIds.length > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void handleBulkFavorite(true)}
+                            disabled={bulkActionLoading}
+                            title="Add to favorites"
+                            className="max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-white px-3 py-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/40 disabled:opacity-50 sm:px-2.5 sm:py-1 sm:text-xs"
+                          >
+                            {bulkActionLoading ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Heart className="h-3.5 w-3.5" strokeWidth={2} />
+                            )}
+                            Favorites
+                          </button>
+                          <label className="max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation relative inline-flex shrink-0 items-center">
+                            <span className="sr-only">Move to folder</span>
+                            <FolderInput
+                              className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+                              strokeWidth={2}
+                              aria-hidden
+                            />
+                            <select
+                              disabled={bulkActionLoading}
+                              defaultValue=""
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                e.target.value = "";
+                                if (!v) return;
+                                void handleBulkMoveToProject(
+                                  v === "__unfiled__" ? null : v
+                                );
+                              }}
+                              className="h-8 appearance-none rounded-full border border-border/70 bg-white py-0 pl-8 pr-3 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/40 disabled:opacity-50 sm:h-7 sm:pr-2.5 sm:text-xs"
+                            >
+                              <option value="">Move to…</option>
+                              <option value="__unfiled__">Unfiled</option>
+                              {projects.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </>
+                      )}
+                      {matchesLg && selectedOwnRenderIds.length > 0 && (
+                        <span className="max-lg:hidden shrink-0 text-xs text-muted-foreground">
+                          or drag to sidebar
+                        </span>
+                      )}
+                      {selectedOwnRenderIds.length < selectedRenderIds.size && (
+                        <span
+                          className="max-lg:max-w-[min(100%,10rem)] shrink-0 truncate text-[10px] text-muted-foreground sm:max-w-none sm:text-xs"
+                          title="Shared renders from others cannot be moved or favorited"
+                        >
+                          {selectedRenderIds.size - selectedOwnRenderIds.length} skipped (not yours)
+                        </span>
+                      )}
                     </>
                   )}
                 </>
               )}
-            </div>
+            </>
           )}
         </div>
       </div>
@@ -1143,6 +1342,7 @@ function ProfilePage() {
             <BrandLogo className="hover:opacity-90 transition-opacity" />
           </div>
           <div className="flex items-center gap-2">
+            <OrganizationSwitcher className="hidden sm:flex" />
             <Badge
               asChild
               variant="outline"
@@ -1206,6 +1406,16 @@ function ProfilePage() {
           `}
         >
           <ProjectSidebar
+            rendersActive
+            onOpenRenders={() => {
+              setFavoritesOnly(false);
+              setSelectedProjectId(null);
+              setMobileSidebarOpen(false);
+              if (typeof window !== "undefined") {
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }
+            }}
+            onOpenCatalog={() => router.push("/catalog")}
             projects={projects}
             selectedProjectId={selectedProjectId}
             favoritesOnly={favoritesOnly}
@@ -1276,6 +1486,7 @@ function ProfilePage() {
                     onProjectChange={setGeneratorProjectId}
                     compact
                     compactOuterClassName="w-full max-w-[1200px] lg:max-w-none"
+                    enableImageGallery
                   />
                   {galleryToolbar}
                 </div>
@@ -1309,6 +1520,7 @@ function ProfilePage() {
                       compactBarClassName="!bg-white"
                       compactOptionsPanelBelowBar={false}
                       compactOuterClassName="w-full max-lg:!mb-0 lg:max-w-[1200px] lg:max-w-none"
+                      enableImageGallery
                     />
                   </div>
                 </div>
@@ -1473,6 +1685,21 @@ function ProfilePage() {
                                   className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/15 to-transparent"
                                   aria-hidden
                                 />
+                                {/* Visibilité — coin haut gauche */}
+                                <div className="pointer-events-auto absolute left-2.5 top-2.5 sm:left-3 sm:top-3">
+                                  <VisibilityChip
+                                    visibility={item.render.visibility ?? "private"}
+                                    loading={togglingVisibilityIds.has(item.render.id)}
+                                    canShare={!!item.render.organization_id}
+                                    compact
+                                    onToggle={
+                                      session && item.render.user_id === session.user.id
+                                        ? (next) =>
+                                            handleToggleVisibility(item.render, next)
+                                        : undefined
+                                    }
+                                  />
+                                </div>
                                 <div className="absolute inset-0 flex items-center justify-center p-4">
                                   <button
                                     type="button"
@@ -1490,25 +1717,27 @@ function ProfilePage() {
                                   </button>
                                 </div>
                                 <div className="absolute bottom-2.5 right-2.5 flex items-center gap-0.5 sm:bottom-3 sm:right-3 sm:gap-0.5">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleToggleFavorite(item.render);
-                                    }}
-                                    disabled={favoritingIds.has(item.render.id)}
-                                    title={isFavorite(item.render) ? "Retirer des favoris" : "Favori"}
-                                    className="pointer-events-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white transition-colors hover:bg-white/15 disabled:opacity-40"
-                                  >
-                                    {favoritingIds.has(item.render.id) ? (
-                                      <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />
-                                    ) : (
-                                      <Heart
-                                        className={`h-5 w-5 ${isFavorite(item.render) ? "fill-white" : ""}`}
-                                        strokeWidth={2}
-                                      />
-                                    )}
-                                  </button>
+                                  {session && item.render.user_id === session.user.id && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleToggleFavorite(item.render);
+                                      }}
+                                      disabled={favoritingIds.has(item.render.id)}
+                                      title={isFavorite(item.render) ? "Retirer des favoris" : "Favori"}
+                                      className="pointer-events-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white transition-colors hover:bg-white/15 disabled:opacity-40"
+                                    >
+                                      {favoritingIds.has(item.render.id) ? (
+                                        <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />
+                                      ) : (
+                                        <Heart
+                                          className={`h-5 w-5 ${isFavorite(item.render) ? "fill-white" : ""}`}
+                                          strokeWidth={2}
+                                        />
+                                      )}
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -1530,22 +1759,24 @@ function ProfilePage() {
                                   >
                                     <Download className="h-5 w-5" strokeWidth={2} />
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setPendingDeleteRenderId(item.render.id);
-                                    }}
-                                    disabled={deletingIds.has(item.render.id)}
-                                    title="Supprimer"
-                                    className="pointer-events-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white transition-colors hover:bg-white/15 hover:text-red-200 disabled:opacity-40"
-                                  >
-                                    {deletingIds.has(item.render.id) ? (
-                                      <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />
-                                    ) : (
-                                      <Trash2 className="h-5 w-5" strokeWidth={2} />
-                                    )}
-                                  </button>
+                                  {session && item.render.user_id === session.user.id && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPendingDeleteRenderId(item.render.id);
+                                      }}
+                                      disabled={deletingIds.has(item.render.id)}
+                                      title="Supprimer"
+                                      className="pointer-events-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white transition-colors hover:bg-white/15 hover:text-red-200 disabled:opacity-40"
+                                    >
+                                      {deletingIds.has(item.render.id) ? (
+                                        <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />
+                                      ) : (
+                                        <Trash2 className="h-5 w-5" strokeWidth={2} />
+                                      )}
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             </>

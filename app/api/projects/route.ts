@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { getOrgContext, buildReadScopeFilter, parseVisibility } from "@/lib/org-context";
 
 export const dynamic = "force-dynamic";
 
-// GET - List all projects for the authenticated user
+// GET - Liste les projets visibles : créés par moi (toutes orgs) + partagés dans mes organisations.
 export async function GET() {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
-    if (!session) {
+    const ctx = await getOrgContext();
+    if (!ctx) {
       return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
     }
 
@@ -24,7 +20,7 @@ export async function GET() {
     const { data: projects, error } = await supabase
       .from("projects")
       .select("*, renders(count)")
-      .eq("user_id", session.user.id)
+      .or(buildReadScopeFilter(ctx))
       .order("updated_at", { ascending: false });
 
     if (error) {
@@ -35,7 +31,6 @@ export async function GET() {
       );
     }
 
-    // Transform to include render count
     const projectsWithCount = (projects || []).map((p: any) => ({
       ...p,
       render_count: p.renders?.[0]?.count || 0,
@@ -49,19 +44,20 @@ export async function GET() {
   }
 }
 
-// POST - Create a new project
+// POST - Crée un projet dans l'organisation active de l'utilisateur (privé par défaut).
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
-    if (!session) {
+    const ctx = await getOrgContext();
+    if (!ctx) {
       return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
     }
 
     const body = await request.json();
-    const { name, description } = body;
+    const { name, description, visibility: visibilityRaw } = body as {
+      name?: string;
+      description?: string;
+      visibility?: "private" | "organization";
+    };
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -75,10 +71,20 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
+    const visibility = parseVisibility(visibilityRaw, "private");
+    if (visibility === "organization" && !ctx.activeOrgId) {
+      return NextResponse.json(
+        { error: "Aucune organisation active pour le partage" },
+        { status: 400 }
+      );
+    }
+
     const { data: project, error } = await supabase
       .from("projects")
       .insert({
-        user_id: session.user.id,
+        user_id: ctx.userId,
+        organization_id: ctx.activeOrgId,
+        visibility,
         name: name.trim(),
         description: description?.trim() || null,
       })

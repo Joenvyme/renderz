@@ -65,7 +65,7 @@ export function BeforeAfterSlider({
         <div
           className="absolute inset-0"
           style={{
-            backgroundImage: `url(${afterImage})`,
+            backgroundImage: `url("${afterImage}")`,
             backgroundSize: effectiveFit,
             backgroundPosition: "center",
             backgroundRepeat: "no-repeat",
@@ -76,7 +76,7 @@ export function BeforeAfterSlider({
         <div
           className="absolute inset-0"
           style={{
-            backgroundImage: `url(${beforeImage})`,
+            backgroundImage: `url("${beforeImage}")`,
             backgroundSize: effectiveFit,
             backgroundPosition: "center",
             backgroundRepeat: "no-repeat",

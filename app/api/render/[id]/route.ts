@@ -1,233 +1,276 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { getOrgContext, parseVisibility } from "@/lib/org-context";
 
-// Désactiver le cache pour cette route
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const NO_CACHE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
+
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
+
+/**
+ * GET — récupération d'un render.
+ * Visible si :
+ *  - l'utilisateur en est le créateur, OU
+ *  - le render est `visibility='organization'` et l'utilisateur est membre de l'organisation.
+ */
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     const { id } = params;
+    const ctx = await getOrgContext();
+    if (!ctx) {
+      return NextResponse.json(
+        { error: "Non authentifié" },
+        { status: 401, headers: NO_CACHE_HEADERS }
+      );
+    }
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
+    const supabase = getSupabase();
     const { data: render, error } = await supabase
-      .from('renders')
-      .select('*')
-      .eq('id', id)
+      .from("renders")
+      .select("*")
+      .eq("id", id)
       .single();
 
     if (error || !render) {
       return NextResponse.json(
-        { error: 'Render not found' },
-        { 
-          status: 404,
-          headers: {
-            'Cache-Control': 'no-store, no-cache, must-revalidate',
-          },
-        }
+        { error: "Render not found" },
+        { status: 404, headers: NO_CACHE_HEADERS }
       );
     }
 
-    // Log pour debug
-    console.log(`[API /render/${id}] status=${render.status}, generated=${!!render.generated_image_url}`);
+    const r = render as {
+      user_id: string;
+      organization_id: string | null;
+      visibility: "private" | "organization";
+    };
 
-    // Retourner avec headers anti-cache
-    return NextResponse.json(render, {
-      headers: {
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-      },
-    });
+    const allowed =
+      r.user_id === ctx.userId ||
+      (r.visibility === "organization" &&
+        r.organization_id !== null &&
+        ctx.orgIds.includes(r.organization_id));
+
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "Render not found" },
+        { status: 404, headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    return NextResponse.json(render, { headers: NO_CACHE_HEADERS });
   } catch (error) {
-    console.error('Get render error:', error);
+    console.error("Get render error:", error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
 }
 
+/**
+ * PATCH — uniquement par le créateur.
+ * Champs autorisés : project_id (déplacer), favorite (méta), visibility (partage).
+ */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    const ctx = await getOrgContext();
+    if (!ctx) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
     const { id } = params;
-    const body = await request.json();
+    const body = (await request.json().catch(() => ({}))) as {
+      project_id?: string | null;
+      favorite?: boolean;
+      visibility?: "private" | "organization";
+    };
+
     const hasProjectUpdate = Object.prototype.hasOwnProperty.call(body, "project_id");
     const hasFavoriteUpdate = Object.prototype.hasOwnProperty.call(body, "favorite");
-    const { project_id, favorite } = body as { project_id?: string | null; favorite?: boolean };
+    const hasVisibilityUpdate = Object.prototype.hasOwnProperty.call(body, "visibility");
 
-    if (!hasProjectUpdate && !hasFavoriteUpdate) {
-      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+    if (!hasProjectUpdate && !hasFavoriteUpdate && !hasVisibilityUpdate) {
+      return NextResponse.json(
+        { error: "No valid fields to update" },
+        { status: 400 }
+      );
     }
 
-    if (hasFavoriteUpdate && typeof favorite !== "boolean") {
-      return NextResponse.json({ error: "favorite must be a boolean" }, { status: 400 });
+    if (hasFavoriteUpdate && typeof body.favorite !== "boolean") {
+      return NextResponse.json(
+        { error: "favorite must be a boolean" },
+        { status: 400 }
+      );
     }
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    // Verify the render belongs to the user
+    const supabase = getSupabase();
     const { data: render, error: fetchError } = await supabase
-      .from('renders')
-      .select('id, metadata')
-      .eq('id', id)
-      .eq('user_id', session.user.id)
+      .from("renders")
+      .select("id, metadata, organization_id")
+      .eq("id", id)
+      .eq("user_id", ctx.userId)
       .single();
 
     if (fetchError || !render) {
-      return NextResponse.json({ error: 'Render not found or access denied' }, { status: 404 });
+      return NextResponse.json(
+        { error: "Render not found or access denied" },
+        { status: 404 }
+      );
     }
 
-    // If project_id is provided, verify the project belongs to the user
-    if (hasProjectUpdate && project_id) {
+    if (hasProjectUpdate && body.project_id) {
       const { data: project, error: projectError } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('id', project_id)
-        .eq('user_id', session.user.id)
+        .from("projects")
+        .select("id")
+        .eq("id", body.project_id)
+        .eq("user_id", ctx.userId)
         .single();
-
       if (projectError || !project) {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+        return NextResponse.json(
+          { error: "Project not found" },
+          { status: 404 }
+        );
       }
     }
 
     const metadataObject =
-      render?.metadata && typeof render.metadata === "object" && !Array.isArray(render.metadata)
+      render?.metadata &&
+      typeof render.metadata === "object" &&
+      !Array.isArray(render.metadata)
         ? (render.metadata as Record<string, unknown>)
         : {};
 
     const updatePayload: Record<string, unknown> = {};
 
     if (hasProjectUpdate) {
-      updatePayload.project_id = project_id || null;
+      updatePayload.project_id = body.project_id || null;
     }
 
     if (hasFavoriteUpdate) {
-      updatePayload.metadata = {
-        ...metadataObject,
-        favorite,
-      };
+      updatePayload.metadata = { ...metadataObject, favorite: body.favorite };
+    }
+
+    if (hasVisibilityUpdate) {
+      const next = parseVisibility(body.visibility, "private");
+      // On ne peut passer en "organization" que si l'item a bien une organisation rattachée.
+      if (next === "organization" && !render.organization_id) {
+        return NextResponse.json(
+          { error: "Ce rendu n'est rattaché à aucune organisation." },
+          { status: 400 }
+        );
+      }
+      updatePayload.visibility = next;
     }
 
     const { error: updateError } = await supabase
-      .from('renders')
+      .from("renders")
       .update(updatePayload)
-      .eq('id', id);
+      .eq("id", id);
 
     if (updateError) {
-      console.error('Update render error:', updateError);
-      return NextResponse.json({ error: 'Failed to update render' }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Update render error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
-}
-
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    // Vérifier l'authentification
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
-    if (!session) {
+      console.error("Update render error:", updateError);
       return NextResponse.json(
-        { error: 'Non authentifié' },
-        { status: 401 }
-      );
-    }
-
-    const { id } = params;
-
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    // Vérifier que le render appartient à l'utilisateur
-    const { data: render, error: fetchError } = await supabase
-      .from('renders')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', session.user.id)
-      .single();
-
-    if (fetchError || !render) {
-      return NextResponse.json(
-        { error: 'Render not found or access denied' },
-        { status: 404 }
-      );
-    }
-
-    // Supprimer les images du storage si elles existent
-    const filesToDelete: string[] = [];
-    
-    if (render.generated_image_url) {
-      // Extraire le chemin du fichier depuis l'URL
-      const match = render.generated_image_url.match(/generated-renders\/(.+)$/);
-      if (match) filesToDelete.push(match[1]);
-    }
-    
-    if (render.upscaled_image_url && render.upscaled_image_url !== render.generated_image_url) {
-      const match = render.upscaled_image_url.match(/upscaled-renders\/(.+)$/);
-      if (match) {
-        await supabase.storage.from('upscaled-renders').remove([match[1]]);
-      }
-    }
-
-    if (filesToDelete.length > 0) {
-      await supabase.storage.from('generated-renders').remove(filesToDelete);
-    }
-
-    // Supprimer le render de la base de données
-    const { error: deleteError } = await supabase
-      .from('renders')
-      .delete()
-      .eq('id', id);
-
-    if (deleteError) {
-      console.error('Delete error:', deleteError);
-      return NextResponse.json(
-        { error: 'Failed to delete render' },
+        { error: "Failed to update render" },
         { status: 500 }
       );
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Delete render error:', error);
+    console.error("Update render error:", error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE — uniquement par le créateur (même règles qu'avant).
+ */
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const ctx = await getOrgContext();
+    if (!ctx) {
+      return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+    }
+
+    const { id } = params;
+    const supabase = getSupabase();
+
+    const { data: render, error: fetchError } = await supabase
+      .from("renders")
+      .select("*")
+      .eq("id", id)
+      .eq("user_id", ctx.userId)
+      .single();
+
+    if (fetchError || !render) {
+      return NextResponse.json(
+        { error: "Render not found or access denied" },
+        { status: 404 }
+      );
+    }
+
+    const filesToDelete: string[] = [];
+
+    if (render.generated_image_url) {
+      const match = render.generated_image_url.match(/generated-renders\/(.+)$/);
+      if (match) filesToDelete.push(match[1]);
+    }
+
+    if (
+      render.upscaled_image_url &&
+      render.upscaled_image_url !== render.generated_image_url
+    ) {
+      const match = render.upscaled_image_url.match(/upscaled-renders\/(.+)$/);
+      if (match) {
+        await supabase.storage.from("upscaled-renders").remove([match[1]]);
+      }
+    }
+
+    if (filesToDelete.length > 0) {
+      await supabase.storage.from("generated-renders").remove(filesToDelete);
+    }
+
+    const { error: deleteError } = await supabase
+      .from("renders")
+      .delete()
+      .eq("id", id);
+
+    if (deleteError) {
+      console.error("Delete error:", deleteError);
+      return NextResponse.json(
+        { error: "Failed to delete render" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Delete render error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
       { status: 500 }
     );
   }

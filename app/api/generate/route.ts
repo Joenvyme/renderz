@@ -24,6 +24,7 @@ import {
 } from '@/lib/generation-pipeline';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
+import { getOrgContext } from '@/lib/org-context';
 import { notifyRenderCompleted } from '@/lib/api/notifications';
 import {
   assertCanStartImageRender,
@@ -37,11 +38,16 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    // Vérifier l'authentification
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
+    // Vérifier l'authentification + récupérer le contexte d'organisation actif.
+    const ctx = await getOrgContext();
+    if (!ctx) {
+      return NextResponse.json(
+        { error: 'Non authentifié' },
+        { status: 401 }
+      );
+    }
+    // Cible Better Auth pour les helpers internes qui attendent encore `session`.
+    const session = await auth.api.getSession({ headers: await headers() });
     if (!session) {
       return NextResponse.json(
         { error: 'Non authentifié' },
@@ -188,7 +194,9 @@ export async function POST(request: NextRequest) {
     const { data: render, error: dbError } = await supabase
       .from('renders')
       .insert({
-        user_id: session.user.id,
+        user_id: ctx.userId,
+        organization_id: ctx.activeOrgId,
+        visibility: 'private',
         original_image_url: normalizedImages[0].url,
         prompt: promptForDb,
         status: 'processing',
@@ -218,6 +226,33 @@ export async function POST(request: NextRequest) {
         { error: 'Failed to create render record' },
         { status: 500 }
       );
+    }
+
+    // Matérialiser chaque image source dans la table `source_images` (best-effort, ne bloque pas la génération).
+    // Dédoublonné par contrainte UNIQUE (user_id, url) — pas d'erreur si déjà présent.
+    if (ctx.activeOrgId) {
+      try {
+        const rows = Array.from(
+          new Set(
+            normalizedImages
+              .map((img) => img.url)
+              .filter((u): u is string => typeof u === 'string' && u.length > 0)
+          )
+        ).map((url) => ({
+          user_id: ctx.userId,
+          organization_id: ctx.activeOrgId,
+          visibility: 'private' as const,
+          url,
+        }));
+        if (rows.length > 0) {
+          const { error: srcErr } = await supabase
+            .from('source_images')
+            .upsert(rows, { onConflict: 'user_id,url', ignoreDuplicates: true });
+          if (srcErr) console.warn('source_images upsert:', srcErr.message);
+        }
+      } catch (srcCatch) {
+        console.warn('source_images upsert exception:', srcCatch);
+      }
     }
 
     // Lancer la génération en arrière-plan (SANS upscaling automatique)

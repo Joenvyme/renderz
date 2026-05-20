@@ -7,6 +7,7 @@ import {
   useLayoutEffect,
   useRef,
   type Dispatch,
+  type ReactNode,
   type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
@@ -21,11 +22,25 @@ import {
   FolderOpen,
   ImagePlus,
   SlidersHorizontal,
+  Check,
+  Trash2,
+  Library,
+  ChevronRight,
+  Home,
+  Search,
+  Folder,
+  Images,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { FurnitureCatalog } from "@/components/furniture-catalog";
+import {
+  RenderLibraryPicker,
+  getRenderPreviewUrl,
+  type LibraryRender,
+} from "@/components/render-library-picker";
 import { useSession } from "@/lib/auth-client";
 import {
   ASPECT_RATIOS,
@@ -46,6 +61,19 @@ import {
   parseGenerationPipeline,
 } from "@/lib/generation-pipeline";
 import { cn } from "@/lib/utils";
+import { VisibilityChip } from "@/components/visibility-chip";
+
+/** Grille unifiée : uploads, rendus et catalogue dans le sélecteur d’images. */
+const IMAGE_PICKER_GRID =
+  "grid grid-cols-4 gap-2 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7";
+const IMAGE_PICKER_TILE =
+  "relative aspect-square overflow-hidden rounded-[6px] border bg-muted/15 transition-all";
+const IMAGE_PICKER_TILE_SELECTED =
+  "border-foreground ring-2 ring-foreground/30";
+const IMAGE_PICKER_TILE_DEFAULT =
+  "border-border/70 hover:border-foreground/40 hover:shadow-sm";
+
+const IMAGE_PICKER_PAGE_SIZE = 24;
 
 interface UploadedImageItem {
   id: string;
@@ -90,7 +118,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("Impossible de lire l’image."));
+    reader.onerror = () => reject(new Error("Could not read image."));
     reader.readAsDataURL(file);
   });
 }
@@ -99,7 +127,7 @@ function readBlobAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("Impossible de lire l’aperçu."));
+    reader.onerror = () => reject(new Error("Could not read preview."));
     reader.readAsDataURL(blob);
   });
 }
@@ -417,7 +445,7 @@ interface CompactOptionsScrollableInnerProps {
   setAspectRatio: (v: AspectRatio) => void;
   imageSize: ImageOutputSize;
   setImageSize: (v: ImageOutputSize) => void;
-  setShowCatalogToast: (v: boolean) => void;
+  onOpenCatalog: () => void;
   setShowCompactOptions: Dispatch<SetStateAction<boolean>>;
 }
 
@@ -437,7 +465,7 @@ function CompactOptionsScrollableInner({
   setAspectRatio,
   imageSize,
   setImageSize,
-  setShowCatalogToast,
+  onOpenCatalog,
   setShowCompactOptions,
 }: CompactOptionsScrollableInnerProps) {
   const planFieldsLocked = sourceKind === "render_3d";
@@ -562,21 +590,6 @@ function CompactOptionsScrollableInner({
           </section>
         )}
 
-        <section className="md:col-span-2">
-          <button
-            type="button"
-            disabled={sourceKind === "render_3d"}
-            onClick={() => {
-              if (sourceKind === "render_3d") return;
-              setShowCatalogToast(true);
-              setShowCompactOptions(false);
-            }}
-            className="flex w-full items-center justify-center gap-2 rounded-[4px] border border-border/70 bg-white/60 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-          >
-            <Sofa className="h-4 w-4" strokeWidth={1.75} />
-            Catalog
-          </button>
-        </section>
       </div>
     </div>
   );
@@ -585,6 +598,568 @@ function CompactOptionsScrollableInner({
 interface ProjectOption {
   id: string;
   name: string;
+}
+
+export interface AvailableSourceImage {
+  id: string;
+  url: string;
+  createdAt?: string;
+  visibility?: "private" | "organization";
+  isMine?: boolean;
+}
+
+interface CompactGalleryPanelProps {
+  onPickFiles: () => void;
+  isDragging: boolean;
+  setIsDragging: (v: boolean) => void;
+  onDropFiles: (files: File[]) => void;
+  galleryImages: AvailableSourceImage[];
+  galleryLoading: boolean;
+  galleryLoadingMore?: boolean;
+  galleryHasMore?: boolean;
+  onLoadMoreGallery?: () => void;
+  uploadedImages: UploadedImageItem[];
+  onPickGalleryImage: (img: AvailableSourceImage) => void;
+  onDeleteGalleryImage: (img: AvailableSourceImage) => void;
+  onToggleGalleryImageVisibility?: (
+    img: AvailableSourceImage,
+    next: "private" | "organization"
+  ) => void;
+  togglingImageIds?: Set<string>;
+  deletingImageIds: Set<string>;
+  remainingSlots: number;
+}
+
+function CompactGalleryPanel({
+  onPickFiles,
+  isDragging,
+  setIsDragging,
+  onDropFiles,
+  galleryImages,
+  galleryLoading,
+  galleryLoadingMore = false,
+  galleryHasMore = false,
+  onLoadMoreGallery,
+  uploadedImages,
+  onPickGalleryImage,
+  onDeleteGalleryImage,
+  onToggleGalleryImageVisibility,
+  togglingImageIds,
+  deletingImageIds,
+  remainingSlots,
+}: CompactGalleryPanelProps) {
+  const selectedUrls = new Set(uploadedImages.map((img) => img.dataUrl));
+
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <button
+        type="button"
+        onClick={onPickFiles}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          setIsDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsDragging(false);
+          const files = Array.from(e.dataTransfer.files);
+          if (files.length) onDropFiles(files);
+        }}
+        className={cn(
+          "group mx-3 mt-3 flex shrink-0 flex-col items-center justify-center gap-1.5 rounded-[6px] border border-dashed bg-white/60 px-3 py-3 text-center text-muted-foreground transition-colors sm:mx-4 sm:mt-4",
+          "hover:border-foreground/40 hover:bg-muted/40 hover:text-foreground",
+          isDragging ? "border-primary/60 bg-primary/5 text-foreground" : "border-border/80"
+        )}
+      >
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-border/70">
+          <Upload className="h-4 w-4" strokeWidth={1.75} />
+        </span>
+        <span className="text-[11px] font-medium leading-tight text-foreground">
+          Upload a file{" "}
+          <span className="text-muted-foreground">or drop here</span>
+        </span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
+          JPG · PNG · HEIC · WEBP
+        </span>
+      </button>
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Your uploads
+          </span>
+          <span className="text-[10px] tabular-nums text-muted-foreground/80">
+            {galleryImages.length}
+          </span>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain touch-pan-y [-webkit-overflow-scrolling:touch]">
+          {galleryLoading && galleryImages.length === 0 ? (
+            <div className={IMAGE_PICKER_GRID}>
+              {Array.from({ length: 12 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="aspect-square animate-pulse rounded-[6px] bg-muted/40"
+                />
+              ))}
+            </div>
+          ) : galleryImages.length === 0 ? (
+            <div className="flex min-h-[100px] flex-col items-center justify-center gap-2 rounded-[6px] border border-dashed border-border/70 bg-muted/15 px-4 py-6 text-center">
+              <ImagePlus className="h-5 w-5 text-muted-foreground/70" strokeWidth={1.5} />
+              <p className="text-xs text-muted-foreground">
+                No images uploaded yet.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className={IMAGE_PICKER_GRID}>
+                {galleryImages.map((img) => {
+                  const selected = selectedUrls.has(img.url);
+                  const disabledPick = !selected && remainingSlots <= 0;
+                  const deleting = deletingImageIds.has(img.id);
+                  return (
+                    <div
+                      key={img.id}
+                      className={cn(
+                        "group relative",
+                        IMAGE_PICKER_TILE,
+                        selected ? IMAGE_PICKER_TILE_SELECTED : IMAGE_PICKER_TILE_DEFAULT,
+                        deleting && "pointer-events-none opacity-50"
+                      )}
+                    >
+                      <img
+                        src={img.url}
+                        alt=""
+                        className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+                        loading="lazy"
+                      />
+                      <button
+                        type="button"
+                        disabled={disabledPick || deleting}
+                        onClick={() => onPickGalleryImage(img)}
+                        className={cn(
+                          "absolute inset-0 z-[1] flex items-center justify-center bg-transparent outline-none transition-colors focus-visible:ring-2 focus-visible:ring-foreground/40",
+                          selected && "bg-foreground/55 text-background",
+                          disabledPick && "cursor-not-allowed"
+                        )}
+                        title={selected ? "Already selected" : "Add this image"}
+                        aria-label={selected ? "Already selected" : "Add this image"}
+                      >
+                        {selected && <Check className="h-5 w-5" strokeWidth={2.5} />}
+                      </button>
+                      {img.isMine !== false && (
+                        <button
+                          type="button"
+                          disabled={deleting}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteGalleryImage(img);
+                          }}
+                          className={cn(
+                            "absolute right-1 top-1 z-[2] flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-white opacity-0 shadow-sm ring-1 ring-white/20 transition-opacity",
+                            "hover:bg-red-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            "group-hover:opacity-100"
+                          )}
+                          title="Remove from gallery"
+                          aria-label="Remove from gallery"
+                        >
+                          <Trash2 className="h-3 w-3" strokeWidth={2.25} />
+                        </button>
+                      )}
+                      {img.visibility && (
+                        <div className="absolute bottom-1 left-1 z-[2] opacity-0 transition-opacity group-hover:opacity-100">
+                          <VisibilityChip
+                            visibility={img.visibility}
+                            loading={togglingImageIds?.has(img.id) ?? false}
+                            canShare
+                            compact
+                            onToggle={
+                              img.isMine !== false && onToggleGalleryImageVisibility
+                                ? (next) => onToggleGalleryImageVisibility(img, next)
+                                : undefined
+                            }
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {galleryHasMore && onLoadMoreGallery && (
+                <div className="mt-2 flex justify-center pb-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={galleryLoadingMore}
+                    onClick={onLoadMoreGallery}
+                    className="h-7 text-[11px]"
+                  >
+                    {galleryLoadingMore ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      "Load more"
+                    )}
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export interface CatalogFolderEntry {
+  id: string;
+  parent_id: string | null;
+  name: string;
+}
+
+export interface CatalogItemEntry {
+  id: string;
+  folder_id: string | null;
+  title: string;
+  description: string | null;
+  image_url: string | null;
+}
+
+interface CompactCatalogPanelProps {
+  folders: CatalogFolderEntry[];
+  items: CatalogItemEntry[];
+  loading: boolean;
+  currentFolderId: string | null;
+  setCurrentFolderId: (id: string | null) => void;
+  query: string;
+  setQuery: (q: string) => void;
+  uploadedImages: UploadedImageItem[];
+  onPickItem: (item: CatalogItemEntry) => void;
+  onOpenFullCatalog: () => void;
+  remainingSlots: number;
+}
+
+function CompactCatalogPanel({
+  folders,
+  items,
+  loading,
+  currentFolderId,
+  setCurrentFolderId,
+  query,
+  setQuery,
+  uploadedImages,
+  onPickItem,
+  onOpenFullCatalog,
+  remainingSlots,
+}: CompactCatalogPanelProps) {
+  const selectedUrls = new Set(uploadedImages.map((img) => img.dataUrl));
+  const trimmedQuery = query.trim().toLowerCase();
+
+  // Index parent → enfants pour la nav
+  const childFolders = folders.filter((f) => f.parent_id === currentFolderId);
+
+  // Items affichés : par défaut, items du dossier courant (null = racine "Non classé")
+  let visibleItems: CatalogItemEntry[] = items.filter((it) => {
+    if (!trimmedQuery) {
+      return it.folder_id === currentFolderId;
+    }
+    // Recherche globale : on cherche sur title + description, tous dossiers confondus
+    const hay = `${it.title} ${it.description ?? ""}`.toLowerCase();
+    return hay.includes(trimmedQuery);
+  });
+
+  // Dossiers affichés : filtrés par la recherche si présente, sinon enfants directs
+  let visibleFolders: CatalogFolderEntry[] = childFolders;
+  if (trimmedQuery) {
+    visibleFolders = folders.filter((f) =>
+      f.name.toLowerCase().includes(trimmedQuery)
+    );
+  }
+
+  // Breadcrumbs
+  const breadcrumbs: CatalogFolderEntry[] = [];
+  {
+    let cursor: string | null = currentFolderId;
+    const safety = new Set<string>();
+    while (cursor) {
+      if (safety.has(cursor)) break;
+      safety.add(cursor);
+      const f = folders.find((x) => x.id === cursor);
+      if (!f) break;
+      breadcrumbs.unshift(f);
+      cursor = f.parent_id;
+    }
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {/* Header : breadcrumbs + recherche + accès catalogue complet */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 bg-muted/15 px-3 py-2 sm:px-4">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-[12px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setCurrentFolderId(null);
+            }}
+            className={cn(
+              "flex shrink-0 items-center gap-1 rounded-[4px] px-1.5 py-1 transition-colors",
+              currentFolderId === null && !trimmedQuery
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+            )}
+            title="Catalog root"
+          >
+            <Home className="h-3.5 w-3.5" strokeWidth={1.75} />
+            <span className="hidden sm:inline">All</span>
+          </button>
+          {breadcrumbs.map((f) => (
+            <span key={f.id} className="flex shrink-0 items-center gap-1">
+              <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/60" strokeWidth={2} />
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setCurrentFolderId(f.id);
+                }}
+                className={cn(
+                  "shrink-0 rounded-[4px] px-1.5 py-1 transition-colors",
+                  currentFolderId === f.id && !trimmedQuery
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                )}
+                title={f.name}
+              >
+                <span className="max-w-[140px] truncate">{f.name}</span>
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70"
+              strokeWidth={1.75}
+            />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search"
+              className="h-7 w-[140px] rounded-[4px] border border-border/70 bg-white/70 pl-6 pr-2 text-[12px] text-foreground placeholder:text-muted-foreground/70 focus:border-foreground/40 focus:outline-none focus:ring-0 sm:w-[180px]"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={onOpenFullCatalog}
+            className="flex h-7 shrink-0 items-center gap-1 rounded-[4px] border border-border/70 bg-white/70 px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-muted/40 hover:text-foreground"
+            title="Open full catalog"
+          >
+            <Library className="h-3.5 w-3.5" strokeWidth={1.75} />
+            <span className="hidden sm:inline">Manage</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain touch-pan-y p-3 sm:p-4 [-webkit-overflow-scrolling:touch]">
+        {loading && folders.length === 0 && items.length === 0 ? (
+          <div className={IMAGE_PICKER_GRID}>
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div
+                key={i}
+                className="aspect-square animate-pulse rounded-[6px] bg-muted/40"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {visibleFolders.length > 0 && (
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {trimmedQuery ? "Matching folders" : "Subfolders"}
+                  </span>
+                  <span className="text-[10px] tabular-nums text-muted-foreground/80">
+                    {visibleFolders.length}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                  {visibleFolders.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => {
+                        setQuery("");
+                        setCurrentFolderId(f.id);
+                      }}
+                      className="group flex items-center gap-2 rounded-[6px] border border-border/70 bg-white/60 px-2.5 py-2 text-left text-[12px] font-medium text-foreground transition-colors hover:border-foreground/40 hover:bg-muted/35"
+                      title={`Open ${f.name}`}
+                    >
+                      <Folder
+                        className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
+                        strokeWidth={1.75}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {trimmedQuery ? "Matching items" : "Items"}
+                </span>
+                <span className="text-[10px] tabular-nums text-muted-foreground/80">
+                  {visibleItems.length}
+                </span>
+              </div>
+              {visibleItems.length === 0 ? (
+                <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/70 bg-muted/15 px-4 py-8 text-center">
+                  <Library className="h-5 w-5 text-muted-foreground/70" strokeWidth={1.5} />
+                  <p className="text-xs text-muted-foreground">
+                    {trimmedQuery
+                      ? "No items match your search."
+                      : "No items in this folder."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onOpenFullCatalog}
+                    className="mt-1 text-[11px] font-medium text-foreground underline-offset-2 hover:underline"
+                  >
+                    Open the catalog to add some
+                  </button>
+                </div>
+              ) : (
+                <div className={IMAGE_PICKER_GRID}>
+                  {visibleItems.map((item) => {
+                    const disabledNoImage = !item.image_url;
+                    const selected = item.image_url ? selectedUrls.has(item.image_url) : false;
+                    const disabledPick = disabledNoImage || (!selected && remainingSlots <= 0);
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        disabled={disabledPick}
+                        onClick={() => onPickItem(item)}
+                        className={cn(
+                          "group relative text-left",
+                          IMAGE_PICKER_TILE,
+                          selected ? IMAGE_PICKER_TILE_SELECTED : IMAGE_PICKER_TILE_DEFAULT,
+                          disabledPick && "cursor-not-allowed opacity-60"
+                        )}
+                        title={
+                          disabledNoImage
+                            ? "No image for this item"
+                            : selected
+                              ? "Already added to render"
+                              : item.title
+                        }
+                      >
+                        {item.image_url ? (
+                          <img
+                            src={item.image_url}
+                            alt={item.title}
+                            className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-muted/30 text-muted-foreground/60">
+                            <ImagePlus className="h-5 w-5" strokeWidth={1.5} />
+                          </div>
+                        )}
+                        {selected && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-foreground/55 text-background">
+                            <Check className="h-5 w-5" strokeWidth={2.5} />
+                          </div>
+                        )}
+                        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-4">
+                          <span className="line-clamp-2 text-[10px] font-medium leading-tight text-white">
+                            {item.title}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export type ImagePickerTab = "uploads" | "renders" | "catalog";
+
+interface CompactImagePickerPanelProps {
+  tab: ImagePickerTab;
+  onTabChange: (tab: ImagePickerTab) => void;
+  uploads: CompactGalleryPanelProps;
+  catalog: CompactCatalogPanelProps;
+  onPickRender: (render: LibraryRender) => void | Promise<void>;
+  selectingRenderId: string | null;
+  pickerDisabled?: boolean;
+}
+
+function CompactImagePickerPanel({
+  tab,
+  onTabChange,
+  uploads,
+  catalog,
+  onPickRender,
+  selectingRenderId,
+  pickerDisabled = false,
+}: CompactImagePickerPanelProps) {
+  const selectedUrls = new Set(uploads.uploadedImages.map((img) => img.dataUrl));
+
+  const tabs: { id: ImagePickerTab; label: string; icon: ReactNode }[] = [
+    { id: "uploads", label: "Uploads", icon: <Upload className="h-3.5 w-3.5" strokeWidth={1.75} /> },
+    { id: "renders", label: "Renders", icon: <Images className="h-3.5 w-3.5" strokeWidth={1.75} /> },
+    { id: "catalog", label: "Catalog", icon: <Library className="h-3.5 w-3.5" strokeWidth={1.75} /> },
+  ];
+
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 gap-1 border-b border-border/60 bg-muted/10 px-2 py-2 sm:px-3">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onTabChange(t.id)}
+            className={cn(
+              "inline-flex flex-1 items-center justify-center gap-1.5 rounded-[6px] px-2 py-1.5 text-[11px] font-medium transition-colors sm:text-xs",
+              tab === t.id
+                ? "bg-foreground text-background shadow-sm"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+            )}
+          >
+            {t.icon}
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+        {tab === "uploads" && <CompactGalleryPanel {...uploads} />}
+        {tab === "renders" && (
+          <RenderLibraryPicker
+            embedded
+            onSelect={onPickRender}
+            selectingId={selectingRenderId}
+            disabled={pickerDisabled}
+            selectedUrls={selectedUrls}
+          />
+        )}
+        {tab === "catalog" && <CompactCatalogPanel {...catalog} />}
+      </div>
+    </div>
+  );
 }
 
 interface RenderGeneratorProps {
@@ -606,6 +1181,8 @@ interface RenderGeneratorProps {
     token: string;
     url: string;
   } | null;
+  /** Active la galerie « réutiliser une image » lors du clic sur le bouton + image. */
+  enableImageGallery?: boolean;
 }
 
 export function RenderGenerator({
@@ -620,6 +1197,7 @@ export function RenderGenerator({
   compactOuterClassName,
   compactOptionsPanelBelowBar = true,
   externalReferenceImage,
+  enableImageGallery = false,
 }: RenderGeneratorProps) {
   const router = useRouter();
   const { data: session } = useSession();
@@ -638,6 +1216,21 @@ export function RenderGenerator({
   const [magnificResemblanceValue, setMagnificResemblanceValue] = useState(0);
   const [magnificCreativityValue, setMagnificCreativityValue] = useState(0);
   const [showCompactOptions, setShowCompactOptions] = useState(false);
+  const [showImagePicker, setShowImagePicker] = useState(false);
+  const [imagePickerTab, setImagePickerTab] = useState<ImagePickerTab>("uploads");
+  const [galleryImages, setGalleryImages] = useState<AvailableSourceImage[]>([]);
+  const [galleryLoading, setGalleryLoading] = useState(false);
+  const [galleryLoadingMore, setGalleryLoadingMore] = useState(false);
+  const [galleryHasMore, setGalleryHasMore] = useState(false);
+  const [galleryOffset, setGalleryOffset] = useState(0);
+  const [deletingGalleryIds, setDeletingGalleryIds] = useState<Set<string>>(new Set());
+  const [togglingGalleryIds, setTogglingGalleryIds] = useState<Set<string>>(new Set());
+  const [catalogFolders, setCatalogFolders] = useState<CatalogFolderEntry[]>([]);
+  const [catalogItems, setCatalogItems] = useState<CatalogItemEntry[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogCurrentFolderId, setCatalogCurrentFolderId] = useState<string | null>(null);
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   /** Zone compacte (vignettes + pilule) — clic extérieur / DnD. */
   const compactOuterRef = useRef<HTMLDivElement>(null);
   /** Conteneur relatif : barre + panneau (landing). */
@@ -667,20 +1260,19 @@ export function RenderGenerator({
     }
   }, [showCatalogToast]);
 
+  const compactPanelOpen = showCompactOptions || showImagePicker;
   useLayoutEffect(() => {
-    if (!compact || landingMode || !showCompactOptions) {
+    if (!compact || landingMode || !compactPanelOpen) {
       setCompactPanelRect(null);
       return;
     }
     const update = () => {
       const outerEl = compactOuterRef.current;
-      const barEl = compactPromptBarRef.current;
-      if (!outerEl || !barEl) {
+      if (!outerEl) {
         setCompactPanelRect(null);
         return;
       }
       const or = outerEl.getBoundingClientRect();
-      const br = barEl.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       const gap = 8;
@@ -689,38 +1281,132 @@ export function RenderGenerator({
       width = Math.min(width, vw - 16);
       left = Math.max(8, Math.min(left, vw - width - 8));
       if (compactOptionsPanelBelowBar) {
-        const top = br.bottom + gap;
+        const top = or.bottom + gap;
         const maxHeight = Math.max(160, Math.min(vh * 0.72, vh - top - 12));
         setCompactPanelRect({ left, width, maxHeight, top });
       } else {
-        const bottom = vh - br.top + gap;
-        const maxHeight = Math.max(160, Math.min(vh * 0.72, br.top - gap - 8));
+        const bottom = vh - or.top + gap;
+        const maxHeight = Math.max(160, Math.min(vh * 0.72, or.top - gap - 8));
         setCompactPanelRect({ left, width, maxHeight, bottom });
       }
     };
     update();
+    const outerEl = compactOuterRef.current;
+    const ro =
+      outerEl && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => update())
+        : null;
+    ro?.observe(outerEl!);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
     return () => {
+      ro?.disconnect();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
       setCompactPanelRect(null);
     };
-  }, [compact, landingMode, showCompactOptions, compactOptionsPanelBelowBar]);
+  }, [
+    compact,
+    landingMode,
+    compactPanelOpen,
+    compactOptionsPanelBelowBar,
+    uploadedImages.length,
+  ]);
 
   useEffect(() => {
-    if (!showCompactOptions) return;
+    if (!compactPanelOpen) return;
     const onPointerDown = (e: PointerEvent) => {
       const t = e.target as Node;
       const wrap = compactOuterRef.current;
       const portal = compactOptionsPortalRef.current;
       if (wrap && !wrap.contains(t) && (!portal || !portal.contains(t))) {
         setShowCompactOptions(false);
+        setShowImagePicker(false);
       }
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [showCompactOptions]);
+  }, [compactPanelOpen]);
+
+  const fetchGalleryPage = useCallback(
+    async (pageOffset: number, replace: boolean) => {
+      if (!session) return;
+      if (pageOffset === 0) setGalleryLoading(true);
+      else setGalleryLoadingMore(true);
+      try {
+        const params = new URLSearchParams({
+          limit: String(IMAGE_PICKER_PAGE_SIZE),
+          offset: String(pageOffset),
+        });
+        const res = await fetch(`/api/user/source-images?${params}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as {
+          images?: AvailableSourceImage[];
+          hasMore?: boolean;
+          nextOffset?: number;
+        };
+        const batch = Array.isArray(data.images) ? data.images : [];
+        setGalleryImages((prev) => (replace ? batch : [...prev, ...batch]));
+        setGalleryHasMore(Boolean(data.hasMore));
+        setGalleryOffset(data.nextOffset ?? pageOffset + batch.length);
+      } catch (err) {
+        console.error("Gallery fetch error:", err);
+      } finally {
+        setGalleryLoading(false);
+        setGalleryLoadingMore(false);
+      }
+    },
+    [session]
+  );
+
+  const fetchGalleryImages = useCallback(() => {
+    void fetchGalleryPage(0, true);
+  }, [fetchGalleryPage]);
+
+  const loadMoreGalleryImages = useCallback(() => {
+    void fetchGalleryPage(galleryOffset, false);
+  }, [fetchGalleryPage, galleryOffset]);
+
+  useEffect(() => {
+    if (!enableImageGallery || !session) return;
+    void fetchGalleryImages();
+  }, [enableImageGallery, session, fetchGalleryImages]);
+
+  const fetchCatalog = useCallback(async () => {
+    if (!session) return;
+    setCatalogLoading(true);
+    try {
+      const [foldersRes, itemsRes] = await Promise.all([
+        fetch("/api/catalog/folders"),
+        fetch("/api/catalog/items?folder_id=all"),
+      ]);
+      if (!foldersRes.ok) throw new Error(`folders HTTP ${foldersRes.status}`);
+      if (!itemsRes.ok) throw new Error(`items HTTP ${itemsRes.status}`);
+      const foldersData = (await foldersRes.json()) as {
+        folders?: CatalogFolderEntry[];
+      };
+      const itemsData = (await itemsRes.json()) as {
+        items?: CatalogItemEntry[];
+      };
+      setCatalogFolders(
+        Array.isArray(foldersData.folders) ? foldersData.folders : []
+      );
+      setCatalogItems(
+        Array.isArray(itemsData.items) ? itemsData.items : []
+      );
+    } catch (err) {
+      console.error("Catalog fetch error:", err);
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (showImagePicker) {
+      void fetchGalleryImages();
+      void fetchCatalog();
+    }
+  }, [showImagePicker, fetchGalleryImages, fetchCatalog]);
 
   // Injecter une image de référence depuis la grille (profile page)
   useEffect(() => {
@@ -784,7 +1470,7 @@ export function RenderGenerator({
       })
       .catch((err) => {
         console.error(err);
-        alert(err instanceof Error ? err.message : "Impossible de charger l’image.");
+        alert(err instanceof Error ? err.message : "Could not load image.");
       });
   }, [addMultipleImages]);
 
@@ -801,7 +1487,7 @@ export function RenderGenerator({
       })
       .catch((err) => {
         console.error(err);
-        alert(err instanceof Error ? err.message : "Impossible de charger l’image.");
+        alert(err instanceof Error ? err.message : "Could not load image.");
       });
   };
 
@@ -926,14 +1612,14 @@ export function RenderGenerator({
           if (!uploadRes.ok) {
             const errJson = (await uploadRes.json().catch(() => ({}))) as { error?: string };
             const detail = errJson.error ?? uploadRes.statusText;
-            throw new Error(`Échec du téléversement pour l’image ${i + 1} (${detail})`);
+            throw new Error(`Upload failed for image ${i + 1} (${detail})`);
           }
 
           const uploadJson = (await uploadRes.json()) as { url?: string };
           const url = uploadJson.url;
           if (!url || typeof url !== "string") {
             throw new Error(
-              `Réponse de téléversement invalide pour l’image ${i + 1} (URL manquante).`
+              `Invalid upload response for image ${i + 1} (missing URL).`
             );
           }
           uploadedUrls.push({ url, role });
@@ -1174,8 +1860,283 @@ export function RenderGenerator({
     setAspectRatio,
     imageSize,
     setImageSize,
-    setShowCatalogToast,
+    onOpenCatalog: () => {
+      setShowCompactOptions(false);
+      setImagePickerTab("catalog");
+      setShowImagePicker(true);
+    },
     setShowCompactOptions,
+  };
+
+  const handlePickCatalogItem = useCallback(
+    (item: CatalogItemEntry) => {
+      if (!item.image_url) return;
+      setUploadedImages((prev) => {
+        if (prev.some((p) => p.dataUrl === item.image_url)) return prev;
+        if (prev.length >= MAX_INPUT_IMAGES) return prev;
+        return [
+          ...prev,
+          {
+            id: `cat-${item.id}-${Date.now()}`,
+            dataUrl: item.image_url!,
+          },
+        ];
+      });
+    },
+    []
+  );
+
+  const compactCatalogProps: CompactCatalogPanelProps = {
+    folders: catalogFolders,
+    items: catalogItems,
+    loading: catalogLoading,
+    currentFolderId: catalogCurrentFolderId,
+    setCurrentFolderId: setCatalogCurrentFolderId,
+    query: catalogQuery,
+    setQuery: setCatalogQuery,
+    uploadedImages,
+    onPickItem: handlePickCatalogItem,
+    onOpenFullCatalog: () => {
+      setShowImagePicker(false);
+      router.push("/catalog");
+    },
+    remainingSlots: Math.max(0, MAX_INPUT_IMAGES - uploadedImages.length),
+  };
+
+  const uploadFileAndRegisterSource = useCallback(
+    async (file: File): Promise<string | null> => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!uploadRes.ok) {
+        const errJson = (await uploadRes.json().catch(() => ({}))) as { error?: string };
+        throw new Error(errJson.error ?? uploadRes.statusText);
+      }
+      const uploadJson = (await uploadRes.json()) as { url?: string };
+      const url = uploadJson.url;
+      if (!url || typeof url !== "string") return null;
+
+      if (session) {
+        const regRes = await fetch("/api/user/source-images", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        if (!regRes.ok) {
+          const errJson = (await regRes.json().catch(() => ({}))) as { error?: string };
+          console.warn("source-images register:", errJson.error ?? regRes.status);
+        }
+      }
+      return url;
+    },
+    [session]
+  );
+
+  const handleGalleryDropFiles = useCallback(
+    (files: File[]) => {
+      const imageFiles = files.filter(isProbablyImageFile);
+      if (imageFiles.length === 0) return;
+
+      if (session && enableImageGallery) {
+        void (async () => {
+          try {
+            const urls: string[] = [];
+            for (const file of imageFiles) {
+              const url = await uploadFileAndRegisterSource(file);
+              if (url) urls.push(url);
+            }
+            if (urls.length > 0) {
+              addMultipleImages(urls);
+              void fetchGalleryImages();
+            }
+          } catch (err) {
+            console.error(err);
+            alert(err instanceof Error ? err.message : "Could not upload image.");
+          }
+        })();
+        return;
+      }
+
+      void Promise.all(imageFiles.map((file) => fileToPreviewDataUrl(file)))
+        .then((dataUrls) => {
+          const validUrls = dataUrls.filter(Boolean);
+          if (validUrls.length > 0) {
+            addMultipleImages(validUrls);
+            setShowImagePicker(false);
+          }
+        })
+        .catch((err) => {
+          console.error(err);
+          alert(err instanceof Error ? err.message : "Could not load image.");
+        });
+    },
+    [
+      session,
+      enableImageGallery,
+      uploadFileAndRegisterSource,
+      addMultipleImages,
+      fetchGalleryImages,
+    ]
+  );
+
+  const handlePickGalleryImage = useCallback(
+    (img: AvailableSourceImage) => {
+      setUploadedImages((prev) => {
+        if (prev.some((p) => p.dataUrl === img.url)) return prev;
+        if (prev.length >= MAX_INPUT_IMAGES) return prev;
+        return [
+          ...prev,
+          {
+            id: `gal-${img.id}-${Date.now()}`,
+            dataUrl: img.url,
+          },
+        ];
+      });
+    },
+    []
+  );
+
+  const handlePickRender = useCallback((render: LibraryRender) => {
+    const url = getRenderPreviewUrl(render);
+    if (!url) return;
+    setUploadedImages((prev) => {
+      if (prev.some((p) => p.dataUrl === url)) return prev;
+      if (prev.length >= MAX_INPUT_IMAGES) return prev;
+      return [
+        ...prev,
+        {
+          id: `render-${render.id}-${Date.now()}`,
+          dataUrl: url,
+        },
+      ];
+    });
+  }, []);
+
+  const openImagePicker = useCallback((tab: ImagePickerTab = "uploads") => {
+    setShowCompactOptions(false);
+    setImagePickerTab(tab);
+    setShowImagePicker(true);
+  }, []);
+
+  const handleDeleteGalleryImage = useCallback(
+    async (img: AvailableSourceImage) => {
+      if (typeof window !== "undefined") {
+        const ok = window.confirm(
+          "Remove this image from your gallery? Already-generated renders will be kept."
+        );
+        if (!ok) return;
+      }
+
+      setDeletingGalleryIds((prev) => {
+        const next = new Set(prev);
+        next.add(img.id);
+        return next;
+      });
+
+      // Retrait optimiste
+      const previousGallery = galleryImages;
+      setGalleryImages((prev) => prev.filter((g) => g.id !== img.id));
+      setUploadedImages((prev) => prev.filter((p) => p.dataUrl !== img.url));
+
+      try {
+        const res = await fetch("/api/user/source-images", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: img.url }),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+      } catch (err) {
+        console.error("Delete gallery image:", err);
+        setGalleryImages(previousGallery);
+        alert(
+          err instanceof Error
+            ? `Delete failed: ${err.message}`
+            : "Delete failed."
+        );
+      } finally {
+        setDeletingGalleryIds((prev) => {
+          const next = new Set(prev);
+          next.delete(img.id);
+          return next;
+        });
+      }
+    },
+    [galleryImages]
+  );
+
+  const handleToggleGalleryImageVisibility = useCallback(
+    async (img: AvailableSourceImage, next: "private" | "organization") => {
+      // Optimistic update : on bascule visuellement avant la réponse serveur.
+      setGalleryImages((prev) =>
+        prev.map((g) => (g.id === img.id ? { ...g, visibility: next } : g))
+      );
+      setTogglingGalleryIds((prev) => {
+        const s = new Set(prev);
+        s.add(img.id);
+        return s;
+      });
+      try {
+        const res = await fetch("/api/user/source-images", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: img.id, visibility: next }),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+      } catch (err) {
+        console.error("toggle visibility:", err);
+        // Rollback
+        setGalleryImages((prev) =>
+          prev.map((g) =>
+            g.id === img.id
+              ? { ...g, visibility: next === "private" ? "organization" : "private" }
+              : g
+          )
+        );
+        alert(err instanceof Error ? err.message : "Update failed");
+      } finally {
+        setTogglingGalleryIds((prev) => {
+          const s = new Set(prev);
+          s.delete(img.id);
+          return s;
+        });
+      }
+    },
+    []
+  );
+
+  const compactGalleryProps: CompactGalleryPanelProps = {
+    onPickFiles: () => fileInputRef.current?.click(),
+    isDragging,
+    setIsDragging,
+    onDropFiles: handleGalleryDropFiles,
+    galleryImages,
+    galleryLoading,
+    galleryLoadingMore,
+    galleryHasMore,
+    onLoadMoreGallery: loadMoreGalleryImages,
+    uploadedImages,
+    onPickGalleryImage: handlePickGalleryImage,
+    onDeleteGalleryImage: handleDeleteGalleryImage,
+    onToggleGalleryImageVisibility: handleToggleGalleryImageVisibility,
+    togglingImageIds: togglingGalleryIds,
+    deletingImageIds: deletingGalleryIds,
+    remainingSlots: Math.max(0, MAX_INPUT_IMAGES - uploadedImages.length),
+  };
+
+  const compactImagePickerProps: CompactImagePickerPanelProps = {
+    tab: imagePickerTab,
+    onTabChange: setImagePickerTab,
+    uploads: compactGalleryProps,
+    catalog: compactCatalogProps,
+    onPickRender: handlePickRender,
+    selectingRenderId: null,
+    pickerDisabled: uploadedImages.length >= MAX_INPUT_IMAGES,
   };
 
   return (
@@ -1222,7 +2183,7 @@ export function RenderGenerator({
                     className={cn(
                       "absolute right-1.5 top-1.5 z-[2] flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white opacity-0 shadow-sm ring-1 ring-white/25 transition-opacity hover:bg-red-600 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:right-2 sm:top-2"
                     )}
-                    aria-label={`Supprimer l’image ${n}`}
+                    aria-label={`Remove image ${n}`}
                   >
                     <X className="h-3.5 w-3.5" strokeWidth={2.5} />
                   </button>
@@ -1245,24 +2206,57 @@ export function RenderGenerator({
           )}
         >
           {uploadedImages.length < MAX_INPUT_IMAGES && (
-            <label
-              className={cn(
-                "relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center self-center overflow-hidden rounded-xl border-0 bg-transparent text-muted-foreground outline-none ring-0 transition-colors sm:h-9 sm:w-9",
-                "hover:bg-black/[0.07] hover:text-foreground",
-                "active:scale-[0.97]",
-                "focus-within:outline-none focus-within:ring-0"
-              )}
-              title="Ajouter des images"
-            >
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleFileSelect}
-                className="absolute inset-0 cursor-pointer opacity-0 outline-none ring-0 focus:outline-none focus:ring-0"
-              />
-              <ImagePlus className="h-[18px] w-[18px] sm:h-5 sm:w-5" strokeWidth={2} aria-hidden />
-            </label>
+            enableImageGallery ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (showImagePicker) {
+                    setShowImagePicker(false);
+                  } else {
+                    openImagePicker("uploads");
+                  }
+                }}
+                className={cn(
+                  "relative flex h-9 w-9 shrink-0 items-center justify-center self-center overflow-hidden rounded-xl border-0 bg-transparent text-muted-foreground outline-none ring-0 transition-colors sm:h-9 sm:w-9",
+                  "hover:bg-black/[0.07] hover:text-foreground",
+                  "active:scale-[0.97]",
+                  showImagePicker && "bg-black/[0.07] text-foreground"
+                )}
+                title="Add image — uploads, renders, or catalog"
+                aria-expanded={showImagePicker}
+              >
+                <ImagePlus className="h-[18px] w-[18px] sm:h-5 sm:w-5" strokeWidth={2} aria-hidden />
+              </button>
+            ) : (
+              <label
+                className={cn(
+                  "relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center self-center overflow-hidden rounded-xl border-0 bg-transparent text-muted-foreground outline-none ring-0 transition-colors sm:h-9 sm:w-9",
+                  "hover:bg-black/[0.07] hover:text-foreground",
+                  "active:scale-[0.97]",
+                  "focus-within:outline-none focus-within:ring-0"
+                )}
+                title="Add images"
+              >
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="absolute inset-0 cursor-pointer opacity-0 outline-none ring-0 focus:outline-none focus:ring-0"
+                />
+                <ImagePlus className="h-[18px] w-[18px] sm:h-5 sm:w-5" strokeWidth={2} aria-hidden />
+              </label>
+            )
+          )}
+          {enableImageGallery && (
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+            />
           )}
           <div className="flex min-h-9 min-w-0 flex-1 flex-col justify-center sm:min-h-9">
             <Textarea
@@ -1281,7 +2275,15 @@ export function RenderGenerator({
           <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
             <button
               type="button"
-              onClick={() => setShowCompactOptions((o) => !o)}
+              onClick={() =>
+                setShowCompactOptions((o) => {
+                  const next = !o;
+                  if (next) {
+                    setShowImagePicker(false);
+                  }
+                  return next;
+                })
+              }
               className={cn(
                 "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border-0 bg-transparent text-muted-foreground outline-none ring-0 transition-colors hover:bg-black/[0.07] hover:text-foreground focus-visible:outline-none focus-visible:ring-0 sm:h-9 sm:w-9",
                 showCompactOptions && "bg-black/[0.07] text-foreground"
@@ -1322,6 +2324,11 @@ export function RenderGenerator({
           </div>
         )}
         </div>
+        {showImagePicker && landingMode && (
+          <div className="relative z-[150] mt-2 flex h-[min(65vh,calc(100dvh-8rem))] max-h-[min(65vh,calc(100dvh-8rem))] min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-border/80 bg-white/95 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-md">
+            <CompactImagePickerPanel {...compactImagePickerProps} />
+          </div>
+        )}
         {showCompactOptions &&
           !landingMode &&
           typeof document !== "undefined" &&
@@ -1330,7 +2337,7 @@ export function RenderGenerator({
             <div
               ref={compactOptionsPortalRef}
               role="dialog"
-              aria-label="Options de génération"
+              aria-label="Generation options"
               className="flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-white/95 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-md"
               style={{
                 position: "fixed",
@@ -1344,6 +2351,32 @@ export function RenderGenerator({
               }}
             >
               <CompactOptionsScrollableInner {...compactOptionsScrollableProps} />
+            </div>,
+            document.body
+          )}
+        {showImagePicker &&
+          !landingMode &&
+          typeof document !== "undefined" &&
+          compactPanelRect &&
+          createPortal(
+            <div
+              ref={compactOptionsPortalRef}
+              role="dialog"
+              aria-label="Add image"
+              className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-white/95 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-md"
+              style={{
+                position: "fixed",
+                zIndex: 210,
+                left: compactPanelRect.left,
+                width: compactPanelRect.width,
+                height: compactPanelRect.maxHeight,
+                maxHeight: compactPanelRect.maxHeight,
+                ...(compactPanelRect.top !== undefined
+                  ? { top: compactPanelRect.top }
+                  : { bottom: compactPanelRect.bottom! }),
+              }}
+            >
+              <CompactImagePickerPanel {...compactImagePickerProps} />
             </div>,
             document.body
           )}
