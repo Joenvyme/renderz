@@ -29,27 +29,28 @@ export function TrustedByCarousel({ className }: TrustedByCarouselProps) {
 
   return (
     <div className={cn("w-full", className)}>
-      <p className="mb-5 text-center font-mono text-[10px] font-medium uppercase tracking-[0.32em] text-foreground/45 sm:mb-6 sm:text-[11px]">
-        Trusted by leading architecture studios
+      <p className="mb-4 px-1 text-center font-mono text-[9px] font-medium uppercase tracking-[0.22em] text-foreground/45 sm:mb-6 sm:px-0 sm:text-[11px] sm:tracking-[0.32em]">
+        <span className="sm:hidden">Trusted by studios</span>
+        <span className="hidden sm:inline">Trusted by leading architecture studios</span>
       </p>
       <div
-        className="group relative overflow-hidden"
+        className="group relative -mx-1 overflow-hidden sm:mx-0"
         style={{
           maskImage:
-            "linear-gradient(to right, transparent, black 8%, black 92%, transparent)",
+            "linear-gradient(to right, transparent, black 4%, black 96%, transparent)",
           WebkitMaskImage:
-            "linear-gradient(to right, transparent, black 8%, black 92%, transparent)",
+            "linear-gradient(to right, transparent, black 4%, black 96%, transparent)",
         }}
       >
         <div
-          className="flex w-max shrink-0 animate-marquee items-center gap-10 pr-10 will-change-transform group-hover:[animation-play-state:paused] sm:gap-14 sm:pr-14 motion-reduce:animate-none"
+          className="flex w-max shrink-0 animate-marquee items-center gap-8 pr-8 will-change-transform group-hover:[animation-play-state:paused] motion-reduce:animate-none sm:gap-14 sm:pr-14"
           style={{ "--marquee-duration": "40s" } as React.CSSProperties}
           aria-hidden
         >
           {items.map((name, i) => (
             <span
               key={`${name}-${i}`}
-              className="shrink-0 whitespace-nowrap font-mono text-sm font-semibold uppercase tracking-wide text-foreground/35 transition-colors duration-300 hover:text-foreground/90 sm:text-base"
+              className="shrink-0 whitespace-nowrap font-mono text-xs font-semibold uppercase tracking-wide text-foreground/35 transition-colors duration-300 hover:text-foreground/90 sm:text-sm md:text-base"
             >
               {name}
             </span>

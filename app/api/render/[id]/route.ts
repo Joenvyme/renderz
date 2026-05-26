@@ -169,14 +169,21 @@ export async function PATCH(
 
     if (hasVisibilityUpdate) {
       const next = parseVisibility(body.visibility, "private");
-      // On ne peut passer en "organization" que si l'item a bien une organisation rattachée.
-      if (next === "organization" && !render.organization_id) {
-        return NextResponse.json(
-          { error: "Ce rendu n'est rattaché à aucune organisation." },
-          { status: 400 }
-        );
+      if (next === "organization") {
+        const orgId = render.organization_id ?? ctx.activeOrgId;
+        if (!orgId) {
+          return NextResponse.json(
+            { error: "Aucune organisation active pour le partage." },
+            { status: 400 }
+          );
+        }
+        updatePayload.visibility = next;
+        if (!render.organization_id && ctx.activeOrgId) {
+          updatePayload.organization_id = ctx.activeOrgId;
+        }
+      } else {
+        updatePayload.visibility = next;
       }
-      updatePayload.visibility = next;
     }
 
     const { error: updateError } = await supabase

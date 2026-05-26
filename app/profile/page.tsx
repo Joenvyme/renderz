@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useSession } from "@/lib/auth-client";
+import { useSession, useActiveOrganization, useListOrganizations } from "@/lib/auth-client";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
 import {
   User,
@@ -40,7 +40,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { RenderGenerator } from "@/components/render-generator";
 import { ProjectSidebar, Project, RENDER_DRAG_MIME } from "@/components/project-sidebar";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
-import { Render4KBadge, galleryItemShows4KBadge } from "@/components/render-4k-badge";
+import { Render4KBadge, galleryItemShows4KBadge, hasLegacyInline4k, hasUpscaleChildExport, isMagnific4KExportMetadata } from "@/components/render-4k-badge";
 import { RenderStudio, type StudioPreviewVariant } from "@/components/render-studio";
 import { OrganizationSwitcher } from "@/components/organization-switcher";
 import { VisibilityChip } from "@/components/visibility-chip";
@@ -76,6 +76,14 @@ interface Render {
   created_at: string;
   project_id: string | null;
   metadata?: RenderMetadata;
+}
+
+function renderOwnedByUser(render: Render, userId: string | undefined): boolean {
+  if (!userId) return false;
+  if (render.user_id != null && render.user_id !== "") {
+    return String(render.user_id) === String(userId);
+  }
+  return (render.visibility ?? "private") === "private";
 }
 
 /** Masonry (colonnes) + ratios metadata ; grands rayons sur coins haut mesurés. */
@@ -314,12 +322,8 @@ function previewVariantAfterStudioClose(
 ): StudioPreviewVariant {
   if (explicit) return explicit;
   if (r.metadata?.video_url) return "video";
-  if (
-    r.upscaled_image_url &&
-    r.generated_image_url &&
-    r.upscaled_image_url !== r.generated_image_url
-  )
-    return "4k";
+  if (isMagnific4KExportMetadata(r.metadata)) return "standard";
+  if (hasLegacyInline4k(r)) return "4k";
   return "standard";
 }
 
@@ -336,6 +340,16 @@ function ProfilePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, isPending } = useSession();
+  const { data: activeOrg } = useActiveOrganization();
+  const { data: orgsRaw } = useListOrganizations();
+  const activeOrgId = (activeOrg as { id?: string } | null | undefined)?.id ?? null;
+  const hasAnyOrganization = Array.isArray(orgsRaw) && orgsRaw.length > 0;
+
+  const canShareRender = useCallback(
+    (render: Render) =>
+      !!(render.organization_id || activeOrgId || hasAnyOrganization),
+    [activeOrgId, hasAnyOrganization]
+  );
   const [renders, setRenders] = useState<Render[]>([]);
   const rendersGalleryOrdered = useMemo(() => sortRendersNewestFirst(renders), [renders]);
   const [isLoading, setIsLoading] = useState(true);
@@ -373,6 +387,7 @@ function ProfilePage() {
   const [generatorProjectId, setGeneratorProjectId] = useState<string | null>(null);
 
   const [pendingDeleteRenderId, setPendingDeleteRenderId] = useState<string | null>(null);
+  const [pendingBulkDeleteIds, setPendingBulkDeleteIds] = useState<string[] | null>(null);
   const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set());
   const [pendingStudioRenderIds, setPendingStudioRenderIds] = useState<Set<string>>(new Set());
   const [readyRenderToast, setReadyRenderToast] = useState<Render | null>(null);
@@ -816,7 +831,7 @@ function ProfilePage() {
     if (!userId) return [];
     return Array.from(selectedRenderIds).filter((id) => {
       const r = renders.find((x) => x.id === id);
-      return r?.user_id === userId;
+      return r ? renderOwnedByUser(r, userId) : false;
     });
   }, [selectedRenderIds, renders, session?.user?.id]);
 
@@ -881,6 +896,42 @@ function ProfilePage() {
     [selectedOwnRenderIds, handleMoveRendersToProject]
   );
 
+  const handleBulkDelete = useCallback(async () => {
+    if (!pendingBulkDeleteIds?.length) return;
+
+    setBulkActionLoading(true);
+    try {
+      await Promise.all(
+        pendingBulkDeleteIds.map(async (id) => {
+          const res = await fetch(`/api/render/${id}`, { method: "DELETE" });
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(
+              typeof errorData.error === "string"
+                ? errorData.error
+                : "Delete failed"
+            );
+          }
+        })
+      );
+
+      const deleted = new Set(pendingBulkDeleteIds);
+      setRenders((prev) => prev.filter((r) => !deleted.has(r.id)));
+      setStudioRender((prev) => (prev && deleted.has(prev.id) ? null : prev));
+      setGalleryQuickPreview((prev) =>
+        prev && deleted.has(prev.render.id) ? null : prev
+      );
+      setSelectedRenderIds(new Set());
+      setPendingBulkDeleteIds(null);
+    } catch (error) {
+      console.error("Bulk delete error:", error);
+      alert(error instanceof Error ? error.message : "Delete failed");
+      await fetchRenders(0, true);
+    } finally {
+      setBulkActionLoading(false);
+    }
+  }, [pendingBulkDeleteIds, fetchRenders]);
+
   const handleToggleFavorite = async (render: Render) => {
     setFavoritingIds((prev) => new Set(prev).add(render.id));
     const nextFavorite = !isFavorite(render);
@@ -932,9 +983,19 @@ function ProfilePage() {
   ) => {
     if (togglingVisibilityIds.has(render.id)) return;
     setTogglingVisibilityIds((prev) => new Set(prev).add(render.id));
+    const prevVisibility = render.visibility ?? "private";
+    const prevOrgId = render.organization_id ?? null;
+    const nextOrgId =
+      next === "organization" && !render.organization_id && activeOrgId
+        ? activeOrgId
+        : render.organization_id ?? null;
     // Optimistic update
     setRenders((prev) =>
-      prev.map((r) => (r.id === render.id ? { ...r, visibility: next } : r))
+      prev.map((r) =>
+        r.id === render.id
+          ? { ...r, visibility: next, organization_id: nextOrgId }
+          : r
+      )
     );
     try {
       const res = await fetch(`/api/render/${render.id}`, {
@@ -952,7 +1013,7 @@ function ProfilePage() {
       setRenders((prev) =>
         prev.map((r) =>
           r.id === render.id
-            ? { ...r, visibility: next === "private" ? "organization" : "private" }
+            ? { ...r, visibility: prevVisibility, organization_id: prevOrgId }
             : r
         )
       );
@@ -985,6 +1046,9 @@ function ProfilePage() {
 
   const gridItems: GridItem[] = rendersGalleryOrdered.flatMap((render) => {
     const items: GridItem[] = [];
+    const legacyInline4k = hasLegacyInline4k(render);
+    const hasChildExport = hasUpscaleChildExport(render.metadata);
+
     if (render.generated_image_url) {
       items.push({
         render,
@@ -993,14 +1057,12 @@ function ProfilePage() {
         key: `${render.id}-std`,
       });
     }
-    if (
-      render.upscaled_image_url &&
-      render.upscaled_image_url !== render.generated_image_url
-    ) {
+    // Ancien modèle uniquement : 4K inline sur la même ligne (pas de rendu enfant séparé).
+    if (legacyInline4k && !hasChildExport) {
       items.push({
         render,
         variant: "4k",
-        imageUrl: render.upscaled_image_url,
+        imageUrl: render.upscaled_image_url!,
         key: `${render.id}-4k`,
       });
     }
@@ -1244,6 +1306,22 @@ function ProfilePage() {
                               ))}
                             </select>
                           </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPendingBulkDeleteIds([...selectedOwnRenderIds])
+                            }
+                            disabled={bulkActionLoading}
+                            title="Delete selected renders"
+                            className="max-lg:snap-start max-lg:snap-always max-lg:touch-manipulation inline-flex shrink-0 items-center gap-1.5 rounded-full border border-red-200 bg-white px-3 py-2 text-[11px] font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 sm:px-2.5 sm:py-1 sm:text-xs"
+                          >
+                            {bulkActionLoading ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+                            )}
+                            Delete
+                          </button>
                         </>
                       )}
                       {matchesLg && selectedOwnRenderIds.length > 0 && (
@@ -1654,13 +1732,32 @@ function ProfilePage() {
                                 }}
                               />
                               {item.variant === "video" && (
-                                <div className="absolute top-1 right-1 z-[7] max-lg:hidden sm:top-2 sm:right-2 rounded-[4px] border border-white/20 bg-black/70 p-0.5 text-white sm:p-1">
+                                <div className="absolute bottom-1 left-1 z-[7] max-lg:hidden sm:bottom-2 sm:left-2 rounded-[4px] border border-white/20 bg-black/70 p-0.5 text-white sm:p-1">
                                   <Clapperboard className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                                 </div>
                               )}
                               {galleryItemShows4KBadge(item.variant, item.render.metadata) && (
                                 <Render4KBadge className="absolute left-1 top-1 z-[7] max-lg:hidden sm:left-2 sm:top-2" />
                               )}
+                              {session &&
+                                renderOwnedByUser(item.render, session.user.id) && (
+                                  <div
+                                    className="pointer-events-auto absolute right-1.5 top-1.5 z-20 sm:right-2 sm:top-2"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                  >
+                                    <VisibilityChip
+                                      visibility={item.render.visibility ?? "private"}
+                                      loading={togglingVisibilityIds.has(item.render.id)}
+                                      canShare={canShareRender(item.render)}
+                                      compact
+                                      className="shadow-sm ring-1 ring-black/10"
+                                      onToggle={(next) =>
+                                        void handleToggleVisibility(item.render, next)
+                                      }
+                                    />
+                                  </div>
+                                )}
                               {isSelected && (
                                 <>
                                   <div
@@ -1685,21 +1782,6 @@ function ProfilePage() {
                                   className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/15 to-transparent"
                                   aria-hidden
                                 />
-                                {/* Visibilité — coin haut gauche */}
-                                <div className="pointer-events-auto absolute left-2.5 top-2.5 sm:left-3 sm:top-3">
-                                  <VisibilityChip
-                                    visibility={item.render.visibility ?? "private"}
-                                    loading={togglingVisibilityIds.has(item.render.id)}
-                                    canShare={!!item.render.organization_id}
-                                    compact
-                                    onToggle={
-                                      session && item.render.user_id === session.user.id
-                                        ? (next) =>
-                                            handleToggleVisibility(item.render, next)
-                                        : undefined
-                                    }
-                                  />
-                                </div>
                                 <div className="absolute inset-0 flex items-center justify-center p-4">
                                   <button
                                     type="button"
@@ -1717,7 +1799,8 @@ function ProfilePage() {
                                   </button>
                                 </div>
                                 <div className="absolute bottom-2.5 right-2.5 flex items-center gap-0.5 sm:bottom-3 sm:right-3 sm:gap-0.5">
-                                  {session && item.render.user_id === session.user.id && (
+                                  {session &&
+                                    renderOwnedByUser(item.render, session.user.id) && (
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -1759,7 +1842,8 @@ function ProfilePage() {
                                   >
                                     <Download className="h-5 w-5" strokeWidth={2} />
                                   </button>
-                                  {session && item.render.user_id === session.user.id && (
+                                  {session &&
+                                    renderOwnedByUser(item.render, session.user.id) && (
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -1785,6 +1869,25 @@ function ProfilePage() {
                               className={`relative flex w-full flex-col items-center justify-center gap-2 overflow-hidden ${rad.inner}`}
                               style={{ aspectRatio: getAspectRatio(item.render) }}
                             >
+                              {session &&
+                                renderOwnedByUser(item.render, session.user.id) && (
+                                  <div
+                                    className="pointer-events-auto absolute right-1.5 top-1.5 z-20 sm:right-2 sm:top-2"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                  >
+                                    <VisibilityChip
+                                      visibility={item.render.visibility ?? "private"}
+                                      loading={togglingVisibilityIds.has(item.render.id)}
+                                      canShare={canShareRender(item.render)}
+                                      compact
+                                      className="shadow-sm ring-1 ring-black/10"
+                                      onToggle={(next) =>
+                                        void handleToggleVisibility(item.render, next)
+                                      }
+                                    />
+                                  </div>
+                                )}
                               {isSelected && (
                                 <>
                                   <div
@@ -1926,6 +2029,28 @@ function ProfilePage() {
           await handleDeleteRender(renderId);
           setPendingDeleteRenderId(null);
         }}
+      />
+
+      <ConfirmActionDialog
+        open={pendingBulkDeleteIds !== null}
+        title={
+          pendingBulkDeleteIds?.length === 1
+            ? "Delete 1 render?"
+            : `Delete ${pendingBulkDeleteIds?.length ?? 0} renders?`
+        }
+        description={
+          pendingBulkDeleteIds?.length === 1
+            ? "This render will be permanently deleted. This action cannot be undone."
+            : `${pendingBulkDeleteIds?.length ?? 0} renders will be permanently deleted. This action cannot be undone.`
+        }
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        danger
+        isLoading={bulkActionLoading}
+        requiredText={String(pendingBulkDeleteIds?.length ?? "")}
+        requiredTextLabel={`Type ${pendingBulkDeleteIds?.length ?? 0} to confirm deletion.`}
+        onCancel={() => setPendingBulkDeleteIds(null)}
+        onConfirm={handleBulkDelete}
       />
 
       {/* Toast */}

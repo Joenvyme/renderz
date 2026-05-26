@@ -84,19 +84,12 @@ export function BeforeAfterSlider({
           }}
         />
 
-        {/* Slider control */}
+        {/* Slider divider — bar only, no center handle */}
         <div
-          className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg z-10 pointer-events-none"
+          className="pointer-events-none absolute top-0 bottom-0 z-10 w-0.5 -translate-x-1/2 bg-white shadow-lg"
           style={{ left: `${sliderPosition}%` }}
-        >
-          {/* Handle circulaire */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 sm:w-10 sm:h-10 bg-white rounded-full shadow-lg flex items-center justify-center border-2 border-border">
-            <div className="flex gap-0.5 sm:gap-1">
-              <div className="w-0.5 h-0.5 sm:w-1 sm:h-1 bg-black rounded-full"></div>
-              <div className="w-0.5 h-0.5 sm:w-1 sm:h-1 bg-black rounded-full"></div>
-            </div>
-          </div>
-        </div>
+          aria-hidden
+        />
 
         {/* Input range invisible pour le contrôle */}
         <input
@@ -112,13 +105,13 @@ export function BeforeAfterSlider({
         {/* Labels */}
         {!hideLabels && (
           <>
-            <div className="absolute left-3 top-3 rounded-[2px] border border-white/20 bg-black/70 px-2 py-1 backdrop-blur-sm sm:left-4 sm:top-4 sm:px-3 sm:py-1.5">
-              <span className="text-[10px] sm:text-xs font-mono text-white uppercase tracking-wider">
+            <div className="absolute left-2 top-2 rounded-[2px] border border-white/20 bg-black/70 px-1.5 py-0.5 backdrop-blur-sm sm:left-4 sm:top-4 sm:px-3 sm:py-1.5">
+              <span className="text-[9px] font-mono uppercase tracking-wider text-white sm:text-xs">
                 {beforeLabel}
               </span>
             </div>
-            <div className="absolute right-3 top-3 rounded-[2px] border border-white/20 bg-black/70 px-2 py-1 backdrop-blur-sm sm:right-4 sm:top-4 sm:px-3 sm:py-1.5">
-              <span className="text-[10px] sm:text-xs font-mono text-white uppercase tracking-wider">
+            <div className="absolute right-2 top-2 rounded-[2px] border border-white/20 bg-black/70 px-1.5 py-0.5 backdrop-blur-sm sm:right-4 sm:top-4 sm:px-3 sm:py-1.5">
+              <span className="text-[9px] font-mono uppercase tracking-wider text-white sm:text-xs">
                 {afterLabel}
               </span>
             </div>

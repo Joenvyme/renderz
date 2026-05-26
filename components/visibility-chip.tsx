@@ -71,7 +71,7 @@ export function VisibilityChip({
   const nextValue: Visibility = isShared ? "private" : "organization";
   const tooltip = disabled
     ? !canShare && !isShared
-      ? "Aucune organisation rattachée"
+      ? "Aucune organisation disponible — sélectionnez-en une dans le header"
       : "Mise à jour en cours…"
     : isShared
       ? "Rendre privé"

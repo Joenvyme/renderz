@@ -140,7 +140,7 @@ export function PricingPlansGrid({
           className={cn(
             shellFreeEnt(
               emphasizeFree,
-              "flex w-full min-w-0 flex-1 flex-col rounded-[6px] bg-white/50 p-5 text-left shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:p-6 md:p-8"
+              "flex w-full min-w-0 flex-1 flex-col rounded-[6px] bg-white/50 p-4 text-left shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:p-6 md:p-8"
             )
           )}
         >
@@ -186,7 +186,7 @@ export function PricingPlansGrid({
         {/* Pro */}
         <div
           className={cn(
-            "relative flex w-full min-w-0 flex-1 flex-col rounded-[6px] border-2 border-black bg-white/80 p-5 text-left shadow-[0_8px_32px_rgba(0,0,0,0.08)] backdrop-blur-xl ring-1 ring-black/10 sm:p-6 md:p-8",
+            "relative flex w-full min-w-0 flex-1 flex-col rounded-[6px] border-2 border-black bg-white/80 p-4 text-left shadow-[0_8px_32px_rgba(0,0,0,0.08)] backdrop-blur-xl ring-1 ring-black/10 sm:p-6 md:p-8",
             subscriberTier === "pro" && "ring-2 ring-black/15"
           )}
         >
@@ -234,7 +234,7 @@ export function PricingPlansGrid({
           className={cn(
             shellFreeEnt(
               emphasizeEnterprise,
-              "flex w-full min-w-0 flex-1 flex-col rounded-[6px] bg-white/50 p-5 text-left shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:p-6 md:p-8"
+              "flex w-full min-w-0 flex-1 flex-col rounded-[6px] bg-white/50 p-4 text-left shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:p-6 md:p-8"
             )
           )}
         >

@@ -6,7 +6,8 @@ import { AuroraText } from "@/components/ui/aurora-text";
 import { cn } from "@/lib/utils";
 
 const ZOOM = 3;
-const MAGNIFIER_SIZE = 176; // px (= size-44)
+const MAGNIFIER_SIZE_DESKTOP = 176;
+const MAGNIFIER_SIZE_MOBILE = 120;
 
 type MagnifierState = {
   x: number;
@@ -32,6 +33,7 @@ export function FourKShowcase() {
   const [active, setActive] = React.useState(false);
   const [isCoarse, setIsCoarse] = React.useState(false);
   const [reduceMotion, setReduceMotion] = React.useState(false);
+  const [magnifierSize, setMagnifierSize] = React.useState(MAGNIFIER_SIZE_DESKTOP);
   const [magnifier, setMagnifier] = React.useState<MagnifierState>({
     x: 0,
     y: 0,
@@ -43,10 +45,22 @@ export function FourKShowcase() {
   // Détecter pointeur / motion-reduce
   React.useEffect(() => {
     if (typeof window === "undefined") return;
-    setIsCoarse(window.matchMedia("(pointer: coarse)").matches);
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    const narrow = window.matchMedia("(max-width: 639px)").matches;
+    setIsCoarse(coarse);
+    setMagnifierSize(narrow ? MAGNIFIER_SIZE_MOBILE : MAGNIFIER_SIZE_DESKTOP);
     setReduceMotion(
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
     );
+    const onResize = () => {
+      setMagnifierSize(
+        window.matchMedia("(max-width: 639px)").matches
+          ? MAGNIFIER_SIZE_MOBILE
+          : MAGNIFIER_SIZE_DESKTOP
+      );
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
 
   // IntersectionObserver pour déclencher l'animation d'entrée
@@ -136,41 +150,18 @@ export function FourKShowcase() {
         }}
       />
 
-      {/* Layout */}
-      <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-[1600px] flex-col justify-between px-5 py-8 sm:px-8 sm:py-12 md:px-12 md:py-14 lg:px-16 lg:py-16">
-        {/* HEADER — eyebrow + tech meta */}
-        <header
-          className={cn(
-            "flex flex-col items-center justify-between gap-3 transition-all duration-1000 ease-out sm:flex-row",
-            "motion-reduce:transition-none motion-reduce:translate-y-0 motion-reduce:opacity-100",
-            active ? "translate-y-0 opacity-100" : "-translate-y-3 opacity-0"
-          )}
-        >
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.24em] text-white/85 backdrop-blur-md sm:text-[11px]">
-            <span className="relative flex size-1.5">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-70 motion-reduce:hidden" />
-              <span className="relative inline-flex size-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.7)]" />
-            </span>
-            Resolution
-          </span>
-          <span
-            aria-hidden
-            className="font-mono text-xl font-semibold tracking-[0.04em] text-white/25 sm:text-2xl md:text-3xl lg:text-4xl"
-          >
-            3840 × 2160
-          </span>
-        </header>
-
-        {/* IMAGE — centrée, scale-in à l'entrée */}
-        <div className="flex flex-1 items-center justify-center py-6 sm:py-8 md:py-10">
+      {/* Layout — même colonne que les sections landing (container + max-w-5xl) */}
+      <div className="container relative mx-auto w-full min-w-0 px-3 sm:px-6">
+        <div className="mx-auto flex w-full max-w-5xl flex-col justify-center gap-8 py-12 sm:gap-10 sm:py-16 md:min-h-[min(85dvh,48rem)] md:gap-12 md:py-20 lg:py-24">
+          {/* IMAGE — pleine largeur de la colonne contenu */}
           <div
             ref={imageRef}
             onPointerMove={handlePointerMove}
             onPointerEnter={handlePointerEnter}
             onPointerLeave={handlePointerLeave}
             className={cn(
-              "relative aspect-[16/9] w-full max-w-[1400px] overflow-hidden rounded-2xl ring-1 ring-white/15",
-              "max-h-[min(62dvh,42rem)]",
+              "relative aspect-[16/9] w-full overflow-hidden rounded-[6px] border border-white/15",
+              "max-h-[min(50dvh,20rem)] sm:max-h-[min(58dvh,36rem)] md:max-h-[min(62dvh,42rem)]",
               "shadow-[0_40px_120px_-30px_rgba(0,0,0,0.7)]",
               "transition-[transform,opacity,filter] duration-[1400ms] ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform",
               "motion-reduce:transition-none motion-reduce:scale-100 motion-reduce:opacity-100 motion-reduce:blur-0",
@@ -184,7 +175,7 @@ export function FourKShowcase() {
               src="/4K.png"
               alt="Ultra-high resolution render at 4K"
               fill
-              sizes="(max-width: 1400px) 100vw, 1400px"
+              sizes="(max-width: 1024px) 100vw, 1024px"
               priority
               className="object-cover"
             />
@@ -207,8 +198,8 @@ export function FourKShowcase() {
                     : ""
                 )}
                 style={{
-                  width: MAGNIFIER_SIZE,
-                  height: MAGNIFIER_SIZE,
+                  width: magnifierSize,
+                  height: magnifierSize,
                   left: magnifier.x,
                   top: magnifier.y,
                   transform: "translate(-50%, -50%)",
@@ -218,8 +209,8 @@ export function FourKShowcase() {
                     magnifier.h * ZOOM
                   }px`,
                   backgroundPosition: `${
-                    MAGNIFIER_SIZE / 2 - magnifier.x * ZOOM
-                  }px ${MAGNIFIER_SIZE / 2 - magnifier.y * ZOOM}px`,
+                    magnifierSize / 2 - magnifier.x * ZOOM
+                  }px ${magnifierSize / 2 - magnifier.y * ZOOM}px`,
                 }}
               >
                 {/* Réticule */}
@@ -236,17 +227,16 @@ export function FourKShowcase() {
               </div>
             )}
           </div>
-        </div>
 
-        {/* FOOTER — titre + description */}
-        <footer
-          className={cn(
-            "max-w-3xl space-y-3 transition-all delay-200 duration-1000 ease-out sm:space-y-4",
-            "motion-reduce:transition-none motion-reduce:translate-y-0 motion-reduce:opacity-100",
-            active ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
-          )}
-        >
-          <h2 className="text-balance text-2xl font-bold tracking-tight text-white sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl">
+          {/* FOOTER — titre + description, aligné sur la même colonne */}
+          <footer
+            className={cn(
+              "w-full space-y-3 transition-all delay-200 duration-1000 ease-out sm:space-y-4",
+              "motion-reduce:transition-none motion-reduce:translate-y-0 motion-reduce:opacity-100",
+              active ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
+            )}
+          >
+          <h2 className="text-balance text-xl font-bold tracking-tight text-white sm:text-2xl md:text-4xl lg:text-5xl xl:text-6xl">
             Upgrade to <AuroraText>4K</AuroraText> quality
           </h2>
           <p className="max-w-xl text-pretty text-sm leading-relaxed text-white/65 sm:text-base md:text-lg">
@@ -255,7 +245,8 @@ export function FourKShowcase() {
           <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/40 sm:text-[11px]">
             {isCoarse ? "Watch the lens reveal the detail" : "Move your cursor to inspect →"}
           </p>
-        </footer>
+          </footer>
+        </div>
       </div>
     </section>
   );

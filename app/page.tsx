@@ -31,20 +31,20 @@ import { LANDING_RENDER_FORM_STORAGE_KEYS } from "@/lib/landing-render-form-stor
  * Garantit un rythme régulier le long de la page.
  */
 const SECTION_PADDING =
-  "py-20 sm:py-28 md:py-32";
+  "py-12 sm:py-20 md:py-28 lg:py-32";
 
 /**
  * Espacement standard du bloc de titre (eyebrow / h2 / description)
  * → marge basse qui sépare le titre du contenu de la section.
  */
 const HEADING_SPACING =
-  "mb-12 sm:mb-16 md:mb-20 space-y-3 sm:space-y-4 text-center";
+  "mb-8 space-y-2.5 text-center sm:mb-12 sm:space-y-3 md:mb-16 md:space-y-4 lg:mb-20";
 
 const SECTION_H2_CLASSES =
-  "text-balance text-3xl font-bold tracking-tight text-black sm:text-4xl md:text-5xl lg:text-6xl";
+  "text-balance text-2xl font-bold tracking-tight text-black sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl";
 
 const SECTION_LEAD_CLASSES =
-  "mx-auto max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg md:text-xl";
+  "mx-auto max-w-2xl text-pretty text-sm leading-relaxed text-muted-foreground sm:text-base md:text-lg lg:text-xl";
 
 export default function LandingPage() {
   const { data: session } = useSession();
@@ -164,18 +164,18 @@ export default function LandingPage() {
       {/* ────────────────────────────────────────────────────────────────── */}
       {/* PAGE CONTENT                                                       */}
       {/* ────────────────────────────────────────────────────────────────── */}
-      <div className="relative z-10">
+      <div className="relative z-10 overflow-x-hidden">
         {/* ─── Section 1: HERO ───────────────────────────────────────────── */}
-        <section className="relative flex flex-col overflow-hidden border-b border-border/40 bg-white md:min-h-[calc(100dvh-4rem)]">
-          {/* Background animé : avant/après en boucle, fadé sur les côtés */}
+        <section className="relative flex flex-col border-b border-border/40 bg-white md:min-h-[calc(100dvh-4rem)]">
+          {/* Background animé — overflow isolé ici pour ne pas couper le glow du générateur */}
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 z-0"
+            className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
             style={{
               maskImage:
-                "radial-gradient(ellipse 60% 55% at center, transparent 0%, transparent 32%, black 92%)",
+                "radial-gradient(ellipse 72% 62% at center, transparent 0%, transparent 38%, black 94%)",
               WebkitMaskImage:
-                "radial-gradient(ellipse 60% 55% at center, transparent 0%, transparent 32%, black 92%)",
+                "radial-gradient(ellipse 72% 62% at center, transparent 0%, transparent 38%, black 94%)",
             }}
           >
             <AutoBeforeAfter
@@ -193,11 +193,12 @@ export default function LandingPage() {
           </div>
 
           {/* Contenu — centré verticalement dans la hauteur disponible */}
-          <main className="relative z-10 flex w-full flex-1 flex-col items-center justify-center overflow-x-hidden px-4 py-10 sm:px-6 sm:py-14 md:py-16">
+          <main className="relative z-10 flex w-full flex-1 flex-col items-center justify-center px-3 py-8 sm:px-6 sm:py-12 md:py-16">
             <HeroIntro />
 
-            <div className="mx-auto mt-6 w-full max-w-xl shrink-0 touch-manipulation px-0 sm:mt-8 sm:max-w-2xl md:mt-10">
-              <GlowBorder duration={5}>
+            {/* Padding latéral pour le halo animé — pas d'overflow-hidden qui créerait un cadre */}
+            <div className="mx-auto mt-5 w-full min-w-0 max-w-xl shrink-0 touch-manipulation px-2 py-3 sm:mt-8 sm:max-w-2xl sm:px-3 sm:py-4 md:mt-10">
+              <GlowBorder duration={5} className="w-full max-w-full overflow-visible">
                 <RenderGenerator
                   compact
                   landingMode
@@ -214,7 +215,7 @@ export default function LandingPage() {
               </GlowBorder>
             </div>
 
-            <TrustedByCarousel className="relative z-0 mx-auto mt-10 w-full max-w-3xl shrink-0 px-0 sm:mt-12 md:mt-14" />
+            <TrustedByCarousel className="relative z-0 mx-auto mt-8 w-full min-w-0 max-w-3xl shrink-0 px-0 sm:mt-10 md:mt-14" />
           </main>
         </section>
 
@@ -276,18 +277,18 @@ export default function LandingPage() {
 
         {/* ─── Section 6: CTA ────────────────────────────────────────────── */}
         <section className={`relative border-t border-border/50 bg-white ${SECTION_PADDING}`}>
-          <div className="container mx-auto w-full min-w-0 px-4 sm:px-6">
-            <div className="mx-auto max-w-3xl space-y-6 text-center sm:space-y-8">
+          <div className="container mx-auto w-full min-w-0 px-3 sm:px-6">
+            <div className="mx-auto max-w-3xl space-y-5 text-center sm:space-y-8">
               <h2 className={SECTION_H2_CLASSES}>
                 Ready to <AuroraText>transform</AuroraText> your workflow?
               </h2>
-              <p className="mx-auto max-w-xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg md:text-xl">
+              <p className="mx-auto max-w-xl text-pretty text-sm leading-relaxed text-muted-foreground sm:text-base md:text-lg">
                 Start creating stunning renders in seconds. No design skills required.
               </p>
               <button
                 type="button"
                 onClick={scrollToTop}
-                className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-[2px] border border-border/50 bg-black px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-[0_8px_32px_rgba(0,0,0,0.12)] transition-colors duration-200 hover:bg-black/85 active:bg-black/90 sm:min-h-12 sm:px-10 sm:py-4 sm:text-base"
+                className="inline-flex min-h-11 w-full max-w-xs touch-manipulation items-center justify-center gap-2 rounded-[2px] border border-border/50 bg-black px-5 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-[0_8px_32px_rgba(0,0,0,0.12)] transition-colors duration-200 hover:bg-black/85 active:bg-black/90 sm:w-auto sm:max-w-none sm:min-h-12 sm:px-10 sm:py-4 sm:text-base"
               >
                 Get started now
                 <ArrowRight className="size-4" />

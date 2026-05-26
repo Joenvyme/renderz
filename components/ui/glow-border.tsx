@@ -44,32 +44,33 @@ export function GlowBorder({
     <div
       {...rest}
       className={cn(
-        "relative isolate",
+        "relative",
         !disabled && "animate-glow-spin motion-reduce:[animation:none]",
         className
       )}
       style={cssVars}
     >
-      {/* Halo flou en arrière-plan */}
+      {/* Halo flou — derrière le contenu, sans isolate qui coupe l'effet */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -inset-4 -z-10 rounded-[28px] opacity-90"
+        className="pointer-events-none absolute -inset-2 rounded-[20px] opacity-90 sm:-inset-4 sm:rounded-[28px]"
         style={{
           background: haloGradient,
           filter: "blur(22px)",
+          zIndex: 0,
         }}
       />
-      {/* Anneau plus net, juste autour de la pilule */}
+      {/* Anneau coloré — aligné sur rounded-xl du générateur compact */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -inset-[1.5px] -z-[5] rounded-[14px]"
+        className="pointer-events-none absolute -inset-px rounded-xl opacity-85"
         style={{
           background: ringGradient,
           filter: "blur(2.5px)",
-          opacity: 0.85,
+          zIndex: 1,
         }}
       />
-      {children}
+      <div className="relative z-[2]">{children}</div>
     </div>
   );
 }

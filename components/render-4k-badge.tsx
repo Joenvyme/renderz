@@ -8,6 +8,34 @@ export function isMagnific4KExportMetadata(metadata: unknown): boolean {
   );
 }
 
+export function getUpscaleSourceRenderId(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const id = (metadata as Record<string, unknown>).upscale_source_render_id;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+export function getUpscaleExportedChildId(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const id = (metadata as Record<string, unknown>).upscale_exported_render_id;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+/** Ancien modèle : 4K stocké dans `upscaled_image_url` sur la même ligne. */
+export function hasLegacyInline4k(render: {
+  upscaled_image_url?: string | null;
+  generated_image_url?: string | null;
+}): boolean {
+  return Boolean(
+    render.upscaled_image_url &&
+      render.generated_image_url &&
+      render.upscaled_image_url !== render.generated_image_url
+  );
+}
+
+export function hasUpscaleChildExport(metadata: unknown): boolean {
+  return getUpscaleExportedChildId(metadata) != null;
+}
+
 /** Tuile galerie : afficher la pastille 4K (variante dédiée ou export upscale). */
 export function galleryItemShows4KBadge(
   variant: "standard" | "4k" | "video",

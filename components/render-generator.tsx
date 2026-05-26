@@ -323,15 +323,6 @@ function Magnific3DControls({
       </div>
       <div>
         <span className={labelCls}>Resemblance</span>
-        <p
-          className={
-            compact
-              ? "mb-1.5 text-[9px] leading-snug text-muted-foreground"
-              : "mb-2 text-[10px] leading-relaxed text-muted-foreground font-mono"
-          }
-        >
-          Stay closer to your original (Magnific Creative / Freepik: resemblance, −10…+10, default 0).
-        </p>
         <div
           className={
             compact
@@ -366,15 +357,6 @@ function Magnific3DControls({
       </div>
       <div>
         <span className={labelCls}>Creativity</span>
-        <p
-          className={
-            compact
-              ? "mb-1.5 text-[9px] leading-snug text-muted-foreground"
-              : "mb-2 text-[10px] leading-relaxed text-muted-foreground font-mono"
-          }
-        >
-          More AI invention and change (Magnific Creative / Freepik: creativity, −10…+10, default 0).
-        </p>
         <div
           className={
             compact
@@ -407,24 +389,6 @@ function Magnific3DControls({
           <span>+10</span>
         </div>
       </div>
-      <p
-        className={
-          compact
-            ? "text-[9px] leading-snug text-muted-foreground"
-            : "text-[10px] leading-relaxed text-muted-foreground font-mono"
-        }
-      >
-        Both sliders are sent together, as in the{" "}
-        <a
-          href="https://docs.freepik.com/api-reference/image-upscaler-creative/post-image-upscaler"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline underline-offset-2 hover:text-foreground"
-        >
-          Freepik Upscaler Creative
-        </a>{" "}
-        spec. Reusing the same prompt as for your image often improves results.
-      </p>
     </div>
   );
 }
@@ -861,9 +825,12 @@ function CompactCatalogPanel({
   // Index parent → enfants pour la nav
   const childFolders = folders.filter((f) => f.parent_id === currentFolderId);
 
-  // Items affichés : par défaut, items du dossier courant (null = racine "Non classé")
+  // Items affichés : « All » = tout le catalogue ; dossier = items directs de ce dossier
   let visibleItems: CatalogItemEntry[] = items.filter((it) => {
     if (!trimmedQuery) {
+      if (currentFolderId === null) {
+        return true;
+      }
       return it.folder_id === currentFolderId;
     }
     // Recherche globale : on cherche sur title + description, tous dossiers confondus
@@ -1025,7 +992,9 @@ function CompactCatalogPanel({
                   <p className="text-xs text-muted-foreground">
                     {trimmedQuery
                       ? "No items match your search."
-                      : "No items in this folder."}
+                      : currentFolderId === null
+                        ? "No catalog items yet."
+                        : "No items in this folder."}
                   </p>
                   <button
                     type="button"
@@ -2142,7 +2111,7 @@ export function RenderGenerator({
     <Card
       className={
         compact
-          ? "border-0 bg-transparent p-0 shadow-none backdrop-blur-none"
+          ? "overflow-visible rounded-none border-0 bg-transparent p-0 shadow-none backdrop-blur-none"
           : "space-y-4 border-white/20 bg-white/10 p-4 backdrop-blur-xl sm:p-6 gradient-shadow"
       }
     >

@@ -35,9 +35,9 @@ import {
   isValidImageOutputSize,
 } from "@/lib/api/gemini-image-config";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
-import { Render4KBadge, renderShows4KBadge } from "@/components/render-4k-badge";
+import { Render4KBadge, renderShows4KBadge, getUpscaleExportedChildId, hasLegacyInline4k, isMagnific4KExportMetadata } from "@/components/render-4k-badge";
 import { VisibilityChip } from "@/components/visibility-chip";
-import { useSession } from "@/lib/auth-client";
+import { useSession, useActiveOrganization, useListOrganizations } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
 interface RenderMetadata {
@@ -129,7 +129,14 @@ export function RenderStudio({
   mobileFloatingSheet = false,
 }: RenderStudioProps) {
   const { data: session } = useSession();
+  const { data: activeOrg } = useActiveOrganization();
+  const { data: orgsRaw } = useListOrganizations();
+  const activeOrgId = (activeOrg as { id?: string } | null | undefined)?.id ?? null;
+  const hasAnyOrganization = Array.isArray(orgsRaw) && orgsRaw.length > 0;
   const [currentRender, setCurrentRender] = useState<Render>(render);
+  const canShareCurrentRender = !!(
+    currentRender.organization_id || activeOrgId || hasAnyOrganization
+  );
   const [modifyPrompt, setModifyPrompt] = useState("");
   const [modifyRatio, setModifyRatio] = useState<AspectRatio>(
     (render.metadata?.aspectRatio as AspectRatio) || "1:1"
@@ -343,8 +350,7 @@ export function RenderStudio({
 
     const hasVid = Boolean(render.metadata?.video_url);
     const hasUp =
-      Boolean(render.upscaled_image_url) &&
-      render.upscaled_image_url !== render.generated_image_url;
+      hasLegacyInline4k(render) || isMagnific4KExportMetadata(render.metadata);
 
     if (previewVariant === "video" && hasVid) {
       setShowVideo(true);
@@ -380,6 +386,25 @@ export function RenderStudio({
   useEffect(() => {
     if (!shouldPollRenderStatus) return;
     let cancelled = false;
+
+    const openExportedUpscaleChild = async (parent: Render) => {
+      const childId = getUpscaleExportedChildId(parent.metadata);
+      onNewRenderCreated();
+      if (!childId || !onNavigateToRender) return;
+      try {
+        const childRes = await fetch(`/api/render/${childId}`);
+        if (!childRes.ok) return;
+        const data = (await childRes.json()) as { render?: Render };
+        const child = data.render ?? (data as unknown as Render);
+        if (child?.id) {
+          onRenderUpdate(child);
+          onNavigateToRender(child);
+        }
+      } catch {
+        /* parent refresh already done via onNewRenderCreated */
+      }
+    };
+
     const poll = async () => {
       while (!cancelled) {
         await new Promise((r) => setTimeout(r, 2000));
@@ -397,7 +422,13 @@ export function RenderStudio({
               updated.status === "pending" ||
               updated.status === "upscaling";
             if (!busy) {
-              if (updated.status === "completed") onNewRenderCreated();
+              if (updated.status === "completed") {
+                if (getUpscaleExportedChildId(updated.metadata)) {
+                  await openExportedUpscaleChild(updated);
+                } else {
+                  onNewRenderCreated();
+                }
+              }
               return;
             }
           }
@@ -410,7 +441,13 @@ export function RenderStudio({
     return () => {
       cancelled = true;
     };
-  }, [currentRender.id, shouldPollRenderStatus, onNewRenderCreated, onRenderUpdate]);
+  }, [
+    currentRender.id,
+    shouldPollRenderStatus,
+    onNewRenderCreated,
+    onRenderUpdate,
+    onNavigateToRender,
+  ]);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -466,19 +503,23 @@ export function RenderStudio({
     }
   }, [showUpscaleToast]);
 
-  const isUpscaled =
-    currentRender.upscaled_image_url &&
-    currentRender.upscaled_image_url !== currentRender.generated_image_url;
+  const isLegacyUpscaled = hasLegacyInline4k(currentRender);
+  const has4kChildExport = Boolean(getUpscaleExportedChildId(currentRender.metadata));
+  const is4kExportRender = isMagnific4KExportMetadata(currentRender.metadata);
+  const isUpscaled = isLegacyUpscaled;
   const isFavorite = Boolean(currentRender.metadata?.favorite);
   const hasVideo = Boolean(currentRender.metadata?.video_url);
   const videoProcessing = currentRender.metadata?.video_status === "processing";
   const isVideoBusyForCurrentView =
     videoProcessing ||
     (isGeneratingVideo && videoGeneratingForRenderId === currentRender.id);
+  const alreadyHas4kVersion =
+    isLegacyUpscaled || has4kChildExport || is4kExportRender;
   const canUpscale =
     currentRender.status === "completed" &&
     currentRender.generated_image_url &&
-    (!isUpscaled || billingUnlimited) &&
+    !is4kExportRender &&
+    (!alreadyHas4kVersion || billingUnlimited) &&
     !showVideo;
 
   const displayImageUrl = viewingUpscaled && isUpscaled
@@ -672,7 +713,16 @@ export function RenderStudio({
     if (isTogglingVisibility) return;
     setIsTogglingVisibility(true);
     const prevVisibility = currentRender.visibility ?? "private";
-    const updated = { ...currentRender, visibility: next };
+    const prevOrgId = currentRender.organization_id ?? null;
+    const nextOrgId =
+      next === "organization" && !currentRender.organization_id && activeOrgId
+        ? activeOrgId
+        : currentRender.organization_id ?? null;
+    const updated = {
+      ...currentRender,
+      visibility: next,
+      organization_id: nextOrgId,
+    };
     setCurrentRender(updated);
     onRenderUpdate(updated);
     try {
@@ -686,8 +736,11 @@ export function RenderStudio({
         throw new Error(data.error || "Mise à jour impossible");
       }
     } catch (error) {
-      // Rollback
-      const rollback = { ...currentRender, visibility: prevVisibility };
+      const rollback = {
+        ...currentRender,
+        visibility: prevVisibility,
+        organization_id: prevOrgId,
+      };
       setCurrentRender(rollback);
       onRenderUpdate(rollback);
       alert(error instanceof Error ? error.message : "Mise à jour impossible");
@@ -1324,7 +1377,7 @@ export function RenderStudio({
               <VisibilityChip
                 visibility={currentRender.visibility ?? "private"}
                 loading={isTogglingVisibility}
-                canShare={!!currentRender.organization_id}
+                canShare={canShareCurrentRender}
                 onToggle={
                   session && currentRender.user_id === session.user.id
                     ? (next) => handleToggleVisibility(next)

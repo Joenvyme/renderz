@@ -17,6 +17,7 @@ import {
   parseMagnificAdjustMode,
   parseMagnificScale,
 } from '@/lib/generation-pipeline';
+import { getUpscaleExportedChildId, hasLegacyInline4k } from '@/components/render-4k-badge';
 
 function resolveUpscaleResemblanceCreativity(body: {
   scale?: number;
@@ -141,14 +142,16 @@ export async function POST(request: NextRequest) {
     }
 
     const billingUnlimited = isBillingUnlimitedEmail(session.user.email);
-    // Comptes illimités : nouvel upscale possible (réglages différents, nouvelle sortie) ; les autres : 1× 4K par rendu.
-    if (
-      !billingUnlimited &&
-      render.upscaled_image_url &&
-      render.upscaled_image_url !== render.generated_image_url
-    ) {
+    const exportedChildId = getUpscaleExportedChildId(render.metadata);
+    const legacyInline4k = hasLegacyInline4k(render);
+    // Comptes illimités : nouvel upscale possible ; les autres : 1× 4K par rendu (enfant portfolio ou legacy inline).
+    if (!billingUnlimited && (legacyInline4k || exportedChildId)) {
       return NextResponse.json(
-        { error: 'Already upscaled', upscaled_image_url: render.upscaled_image_url },
+        {
+          error: 'Already upscaled',
+          upscaled_image_url: legacyInline4k ? render.upscaled_image_url : null,
+          child_render_id: exportedChildId,
+        },
         { status: 400 }
       );
     }

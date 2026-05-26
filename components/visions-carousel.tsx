@@ -77,7 +77,6 @@ export function VisionsCarousel() {
     };
   }, [api]);
 
-  const total = PAIRS.length;
   const currentPair = PAIRS[current];
 
   return (
@@ -106,25 +105,19 @@ export function VisionsCarousel() {
         </CarouselContent>
       </Carousel>
 
-      {/* Caption — pagination + slide title */}
+      {/* Caption — slide title only */}
       <p
         key={currentPair?.id}
-        className="mt-5 animate-in fade-in-50 text-center font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground duration-500 sm:mt-6 sm:text-xs"
+        className="mt-4 animate-in fade-in-50 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground duration-500 sm:mt-6 sm:text-xs sm:tracking-[0.24em]"
       >
-        <span className="text-foreground">
-          {String(current + 1).padStart(2, "0")}
-        </span>
-        <span className="mx-2 text-foreground/30">/</span>
-        <span>{String(total).padStart(2, "0")}</span>
-        <span className="mx-3 text-foreground/30">·</span>
-        <span>{currentPair?.caption}</span>
+        {currentPair?.caption}
       </p>
 
-      {/* Thumbnails — navigation principale */}
+      {/* Thumbnails — 2×2 sur mobile pour de meilleures zones tactiles */}
       <div
         role="tablist"
         aria-label="Slide navigation"
-        className="mx-auto mt-4 grid max-w-2xl grid-cols-4 gap-2 sm:mt-6 sm:gap-3"
+        className="mx-auto mt-3 grid max-w-2xl grid-cols-2 gap-2 sm:mt-6 sm:grid-cols-4 sm:gap-3"
       >
         {PAIRS.map((pair, i) => {
           const isActive = current === i;
@@ -138,11 +131,11 @@ export function VisionsCarousel() {
               aria-label={`Show ${pair.caption}`}
               onClick={() => api?.scrollTo(i)}
               className={cn(
-                "group relative aspect-[16/9] overflow-hidden rounded-md transition-all duration-300 ease-out",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                "group relative aspect-[16/9] overflow-hidden rounded-[4px] border transition-all duration-300 ease-out touch-manipulation",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-1 focus-visible:ring-offset-white sm:ring-offset-2",
                 isActive
-                  ? "ring-2 ring-foreground ring-offset-2 ring-offset-white"
-                  : "opacity-55 ring-1 ring-border/50 hover:opacity-100 hover:ring-foreground/40"
+                  ? "border-foreground ring-2 ring-foreground ring-offset-1 ring-offset-white sm:ring-offset-2"
+                  : "border-border/50 opacity-55 hover:border-foreground/40 hover:opacity-100 active:opacity-100"
               )}
             >
               <Image
@@ -155,19 +148,6 @@ export function VisionsCarousel() {
                   !isActive && "group-hover:scale-[1.04]"
                 )}
               />
-
-              {/* Indicateur numérique en haut-gauche, plus marqué quand actif */}
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute left-1 top-1 rounded-[2px] px-1 py-0.5 font-mono text-[8.5px] uppercase tracking-wider backdrop-blur-sm transition-colors sm:left-1.5 sm:top-1.5 sm:px-1.5 sm:text-[9px]",
-                  isActive
-                    ? "bg-foreground text-white"
-                    : "bg-black/45 text-white/90"
-                )}
-              >
-                {String(i + 1).padStart(2, "0")}
-              </span>
             </button>
           );
         })}
