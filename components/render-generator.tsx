@@ -74,6 +74,8 @@ const IMAGE_PICKER_TILE_DEFAULT =
   "border-border/70 hover:border-foreground/40 hover:shadow-sm";
 
 const IMAGE_PICKER_PAGE_SIZE = 24;
+/** Hauteur max du prompt compact avant scroll interne. */
+const COMPACT_PROMPT_MAX_HEIGHT_PX = 160;
 
 interface UploadedImageItem {
   id: string;
@@ -1184,6 +1186,7 @@ export function RenderGenerator({
   const [magnificScale, setMagnificScale] = useState<MagnificScaleFactor>(4);
   const [magnificResemblanceValue, setMagnificResemblanceValue] = useState(0);
   const [magnificCreativityValue, setMagnificCreativityValue] = useState(0);
+  const [compactPromptMultiline, setCompactPromptMultiline] = useState(false);
   const [showCompactOptions, setShowCompactOptions] = useState(false);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [imagePickerTab, setImagePickerTab] = useState<ImagePickerTab>("uploads");
@@ -1206,6 +1209,7 @@ export function RenderGenerator({
   const compactOptionsRef = useRef<HTMLDivElement>(null);
   /** Pilule prompt — bord bas = ouverture du panneau dessous. */
   const compactPromptBarRef = useRef<HTMLDivElement>(null);
+  const compactPromptTextareaRef = useRef<HTMLTextAreaElement>(null);
   /** Portail profil : panneau d’options, largeur = zone compacte (au-dessus ou sous la barre selon prop). */
   const compactOptionsPortalRef = useRef<HTMLDivElement>(null);
   /** Évite un double envoi si le bouton n’est plus `disabled` pendant `isGenerating`. */
@@ -1229,6 +1233,24 @@ export function RenderGenerator({
     }
   }, [showCatalogToast]);
 
+  const syncCompactPromptHeight = useCallback(() => {
+    const el = compactPromptTextareaRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    const scroll = el.scrollHeight;
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 22;
+    const isMultiline = prompt.includes("\n") || scroll > lineHeight + 4;
+    setCompactPromptMultiline(isMultiline);
+    const next = Math.min(scroll, COMPACT_PROMPT_MAX_HEIGHT_PX);
+    el.style.height = `${next}px`;
+    el.style.overflowY = scroll > COMPACT_PROMPT_MAX_HEIGHT_PX ? "auto" : "hidden";
+  }, [prompt]);
+
+  useLayoutEffect(() => {
+    if (!compact) return;
+    syncCompactPromptHeight();
+  }, [compact, prompt, syncCompactPromptHeight]);
+
   const compactPanelOpen = showCompactOptions || showImagePicker;
   useLayoutEffect(() => {
     if (!compact || !compactPanelOpen) {
@@ -1237,11 +1259,13 @@ export function RenderGenerator({
     }
     const update = () => {
       const outerEl = compactOuterRef.current;
+      const barEl = compactPromptBarRef.current;
       if (!outerEl) {
         setCompactPanelRect(null);
         return;
       }
       const or = outerEl.getBoundingClientRect();
+      const anchor = barEl?.getBoundingClientRect() ?? or;
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       const gap = 8;
@@ -1250,22 +1274,22 @@ export function RenderGenerator({
       width = Math.min(width, vw - 16);
       left = Math.max(8, Math.min(left, vw - width - 8));
       if (compactOptionsPanelBelowBar) {
-        const top = or.bottom + gap;
+        const top = anchor.bottom + gap;
         const maxHeight = Math.max(160, Math.min(vh * 0.72, vh - top - 12));
         setCompactPanelRect({ left, width, maxHeight, top });
       } else {
-        const bottom = vh - or.top + gap;
-        const maxHeight = Math.max(160, Math.min(vh * 0.72, or.top - gap - 8));
+        const bottom = vh - anchor.top + gap;
+        const maxHeight = Math.max(160, Math.min(vh * 0.72, anchor.top - gap - 8));
         setCompactPanelRect({ left, width, maxHeight, bottom });
       }
     };
     update();
     const outerEl = compactOuterRef.current;
+    const barEl = compactPromptBarRef.current;
     const ro =
-      outerEl && typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(() => update())
-        : null;
-    ro?.observe(outerEl!);
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => update()) : null;
+    ro?.observe(outerEl);
+    if (barEl && barEl !== outerEl) ro?.observe(barEl);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
     return () => {
@@ -1279,6 +1303,7 @@ export function RenderGenerator({
     compactPanelOpen,
     compactOptionsPanelBelowBar,
     uploadedImages.length,
+    prompt,
   ]);
 
   useEffect(() => {
@@ -2119,23 +2144,36 @@ export function RenderGenerator({
       {compact ? (
         <div
           ref={compactOuterRef}
-          className={cn("relative mb-3 w-full sm:mb-4", compactOuterClassName)}
+          className={cn(
+            "relative mb-3 w-full sm:mb-4",
+            landingMode && "max-sm:mb-0",
+            compactOuterClassName
+          )}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
           {uploadedImages.length > 0 && (
-            <div className="relative z-0 mb-1.5 flex min-h-0 flex-nowrap items-center gap-2.5 overflow-x-auto pb-0.5 pt-0.5 [scrollbar-width:thin] sm:gap-3">
+            <div
+              className={cn(
+                "relative z-0 mb-1.5 flex min-h-0 flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 pt-0.5 [scrollbar-width:thin] sm:gap-3",
+                landingMode && "max-sm:mb-1 max-sm:gap-1.5"
+              )}
+            >
             {uploadedImages.map((img, index) => {
               const n = index + 1;
               return (
                 <div
                   key={img.id}
-                  className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-border/80 bg-muted/15 transition-colors hover:border-foreground/30 sm:h-24 sm:w-24"
+                  className={cn(
+                    "group relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-border/80 bg-muted/15 transition-colors hover:border-foreground/30 sm:h-24 sm:w-24",
+                    landingMode && "max-sm:h-14 max-sm:w-14 max-sm:rounded-lg"
+                  )}
                 >
                   <span
                     className={cn(
-                      "absolute left-1.5 top-1.5 z-[1] flex h-6 min-w-6 items-center justify-center rounded-full bg-emerald-400 px-1.5 font-mono text-[10px] font-bold tabular-nums text-emerald-950 shadow-sm ring-1 ring-emerald-600/15 sm:left-2 sm:top-2 sm:h-7 sm:min-w-7 sm:text-[11px]"
+                      "absolute left-1.5 top-1.5 z-[1] flex h-6 min-w-6 items-center justify-center rounded-full bg-emerald-400 px-1.5 font-mono text-[10px] font-bold tabular-nums text-emerald-950 shadow-sm ring-1 ring-emerald-600/15 sm:left-2 sm:top-2 sm:h-7 sm:min-w-7 sm:text-[11px]",
+                      landingMode && "max-sm:left-1 max-sm:top-1 max-sm:h-5 max-sm:min-w-5 max-sm:px-1 max-sm:text-[9px]"
                     )}
                   >
                     {n}
@@ -2168,7 +2206,10 @@ export function RenderGenerator({
         <div
           ref={compactPromptBarRef}
           className={cn(
-            "flex flex-nowrap items-center gap-2 rounded-xl border border-border/80 bg-muted/15 px-3 py-2 shadow-[0_6px_28px_rgba(0,0,0,0.09)] touch-manipulation sm:gap-2.5 sm:px-3.5 sm:py-2",
+            "flex flex-nowrap gap-2 rounded-xl border border-border/80 bg-muted/15 px-3 py-2 shadow-[0_6px_28px_rgba(0,0,0,0.09)] touch-manipulation sm:gap-2.5 sm:px-3.5 sm:py-2.5",
+            compactPromptMultiline ? "items-start" : "items-center",
+            landingMode &&
+              "max-sm:min-h-[2.75rem] max-sm:gap-1.5 max-sm:rounded-lg max-sm:px-2.5 max-sm:py-1.5 max-sm:shadow-[0_4px_20px_rgba(0,0,0,0.08)]",
             isDragging && "border-primary/40 ring-2 ring-primary/20",
             compactBarClassName
           )}
@@ -2185,7 +2226,9 @@ export function RenderGenerator({
                   }
                 }}
                 className={cn(
-                  "relative flex h-9 w-9 shrink-0 items-center justify-center self-center overflow-hidden rounded-xl border-0 bg-transparent text-muted-foreground outline-none ring-0 transition-colors sm:h-9 sm:w-9",
+                  "relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border-0 bg-transparent text-muted-foreground outline-none ring-0 transition-colors sm:h-9 sm:w-9",
+                  landingMode && "max-sm:h-8 max-sm:w-8 max-sm:rounded-lg",
+                  compactPromptMultiline && "mt-0.5",
                   "hover:bg-black/[0.07] hover:text-foreground",
                   "active:scale-[0.97]",
                   showImagePicker && "bg-black/[0.07] text-foreground"
@@ -2193,12 +2236,18 @@ export function RenderGenerator({
                 title="Add image — uploads, renders, or catalog"
                 aria-expanded={showImagePicker}
               >
-                <ImagePlus className="h-[18px] w-[18px] sm:h-5 sm:w-5" strokeWidth={2} aria-hidden />
+                <ImagePlus
+                  className={cn("h-[18px] w-[18px] sm:h-5 sm:w-5", landingMode && "max-sm:h-4 max-sm:w-4")}
+                  strokeWidth={2}
+                  aria-hidden
+                />
               </button>
             ) : (
               <label
                 className={cn(
-                  "relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center self-center overflow-hidden rounded-xl border-0 bg-transparent text-muted-foreground outline-none ring-0 transition-colors sm:h-9 sm:w-9",
+                  "relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-xl border-0 bg-transparent text-muted-foreground outline-none ring-0 transition-colors sm:h-9 sm:w-9",
+                  landingMode && "max-sm:h-8 max-sm:w-8 max-sm:rounded-lg",
+                  compactPromptMultiline && "mt-0.5",
                   "hover:bg-black/[0.07] hover:text-foreground",
                   "active:scale-[0.97]",
                   "focus-within:outline-none focus-within:ring-0"
@@ -2212,7 +2261,11 @@ export function RenderGenerator({
                   onChange={handleFileSelect}
                   className="absolute inset-0 cursor-pointer opacity-0 outline-none ring-0 focus:outline-none focus:ring-0"
                 />
-                <ImagePlus className="h-[18px] w-[18px] sm:h-5 sm:w-5" strokeWidth={2} aria-hidden />
+                <ImagePlus
+                  className={cn("h-[18px] w-[18px] sm:h-5 sm:w-5", landingMode && "max-sm:h-4 max-sm:w-4")}
+                  strokeWidth={2}
+                  aria-hidden
+                />
               </label>
             )
           )}
@@ -2226,21 +2279,35 @@ export function RenderGenerator({
               className="hidden"
             />
           )}
-          <div className="flex min-h-9 min-w-0 flex-1 flex-col justify-center sm:min-h-9">
+          <div className="flex min-w-0 flex-1 items-center">
             <Textarea
+              ref={compactPromptTextareaRef}
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
+              onChange={(e) => {
+                setPrompt(e.target.value.slice(0, 500));
+                requestAnimationFrame(syncCompactPromptHeight);
+              }}
               placeholder={
                 sourceKind === "render_3d"
                   ? "Optional: lighting, materials, detail…"
-                  : "What will you create?"
+                  : landingMode
+                    ? "Describe your look…"
+                    : "Describe the look — e.g. warm oak, soft afternoon light…"
               }
               rows={1}
-              className="max-h-[120px] min-h-0 w-full resize-none rounded-none border-0 !border-transparent bg-transparent px-1 py-0 text-base font-medium leading-[1.35rem] text-foreground shadow-none outline-none ring-0 ring-offset-0 placeholder:text-muted-foreground/65 focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50 sm:text-sm sm:leading-[1.4rem]"
+              className={cn(
+                "!min-h-0 max-h-none w-full resize-none overflow-hidden rounded-none border-0 !border-transparent bg-transparent px-1 py-0 text-sm font-medium leading-[1.35rem] text-foreground shadow-none outline-none ring-0 ring-offset-0 placeholder:text-muted-foreground/65 focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50 sm:text-sm sm:leading-[1.4rem]",
+                landingMode && "max-sm:text-[13px] max-sm:leading-[1.3rem]"
+              )}
             />
           </div>
 
-          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+          <div
+            className={cn(
+              "flex shrink-0 items-center gap-0.5 sm:gap-1",
+              compactPromptMultiline && "mt-0.5"
+            )}
+          >
             <button
               type="button"
               onClick={() =>
@@ -2254,12 +2321,16 @@ export function RenderGenerator({
               }
               className={cn(
                 "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border-0 bg-transparent text-muted-foreground outline-none ring-0 transition-colors hover:bg-black/[0.07] hover:text-foreground focus-visible:outline-none focus-visible:ring-0 sm:h-9 sm:w-9",
+                landingMode && "max-sm:h-8 max-sm:w-8 max-sm:rounded-lg",
                 showCompactOptions && "bg-black/[0.07] text-foreground"
               )}
               title="Source, format, resolution, folder…"
               aria-expanded={showCompactOptions}
             >
-              <SlidersHorizontal className="h-[18px] w-[18px] sm:h-[20px] sm:w-[20px]" strokeWidth={1.75} />
+              <SlidersHorizontal
+                className={cn("h-[18px] w-[18px] sm:h-[20px] sm:w-[20px]", landingMode && "max-sm:h-4 max-sm:w-4")}
+                strokeWidth={1.75}
+              />
             </button>
 
             <button
@@ -2272,15 +2343,22 @@ export function RenderGenerator({
               aria-busy={isGenerating}
               className={cn(
                 "relative z-[120] flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border-0 bg-transparent text-black outline-none ring-0 transition-colors hover:bg-black/[0.07] focus-visible:outline-none focus-visible:ring-0 sm:h-9 sm:w-9",
+                landingMode && "max-sm:h-8 max-sm:w-8 max-sm:rounded-lg",
                 "disabled:pointer-events-none disabled:bg-transparent disabled:text-muted-foreground disabled:opacity-55",
                 isGenerating && "pointer-events-none cursor-wait opacity-90"
               )}
               aria-label="Generate"
             >
               {isGenerating ? (
-                <Sparkles className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" strokeWidth={2} />
+                <Sparkles
+                  className={cn("h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4", landingMode && "max-sm:h-3 max-sm:w-3")}
+                  strokeWidth={2}
+                />
               ) : (
-                <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={2} />
+                <ArrowRight
+                  className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", landingMode && "max-sm:h-3 max-sm:w-3")}
+                  strokeWidth={2}
+                />
               )}
             </button>
           </div>

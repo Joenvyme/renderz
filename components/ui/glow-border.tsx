@@ -53,7 +53,7 @@ export function GlowBorder({
       {/* Halo flou — derrière le contenu, sans isolate qui coupe l'effet */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -inset-2 rounded-[20px] opacity-90 sm:-inset-4 sm:rounded-[28px]"
+        className="pointer-events-none absolute -inset-1.5 rounded-2xl opacity-90 sm:-inset-4 sm:rounded-[28px]"
         style={{
           background: haloGradient,
           filter: "blur(22px)",

@@ -20,6 +20,8 @@ import { BrandLogo } from "@/components/brand-logo";
 import { CatalogShowcase } from "@/components/catalog-showcase";
 import { VisionsCarousel } from "@/components/visions-carousel";
 import { FourKShowcase } from "@/components/four-k-showcase";
+import { MaterialOptionsShowcase } from "@/components/material-options-showcase";
+import { RenderDetailControlShowcase } from "@/components/render-detail-control-showcase";
 import { GlowBorder } from "@/components/ui/glow-border";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
 
@@ -166,7 +168,7 @@ export default function LandingPage() {
       {/* ────────────────────────────────────────────────────────────────── */}
       <div className="relative z-10 overflow-x-hidden">
         {/* ─── Section 1: HERO ───────────────────────────────────────────── */}
-        <section className="relative flex flex-col border-b border-border/40 bg-white md:min-h-[calc(100dvh-4rem)]">
+        <section className="relative flex flex-col border-b border-border/40 bg-white max-sm:min-h-[82dvh] sm:min-h-[calc(100dvh-4rem)]">
           {/* Background animé — overflow isolé ici pour ne pas couper le glow du générateur */}
           <div
             aria-hidden
@@ -192,30 +194,34 @@ export default function LandingPage() {
             <div className="absolute inset-0 bg-white/30" />
           </div>
 
-          {/* Contenu — centré verticalement dans la hauteur disponible */}
-          <main className="relative z-10 flex w-full flex-1 flex-col items-center justify-center px-3 py-8 sm:px-6 sm:py-12 md:py-16">
-            <HeroIntro />
+          {/* Mobile : hauteur naturelle, trusted dans le flux — Desktop : plein écran, trusted en bas */}
+          <main className="relative z-10 flex w-full flex-col items-center justify-center px-4 py-10 max-sm:min-h-[82dvh] sm:min-h-0 sm:flex-1 sm:justify-start sm:px-6 sm:py-0">
+            <div className="flex w-full max-w-xl flex-col items-center sm:max-w-2xl sm:flex-1 sm:justify-center sm:py-14 md:py-16 lg:py-20">
+              <HeroIntro className="w-full" />
 
-            {/* Padding latéral pour le halo animé — pas d'overflow-hidden qui créerait un cadre */}
-            <div className="mx-auto mt-5 w-full min-w-0 max-w-xl shrink-0 touch-manipulation px-2 py-3 sm:mt-8 sm:max-w-2xl sm:px-3 sm:py-4 md:mt-10">
-              <GlowBorder duration={5} className="w-full max-w-full overflow-visible">
-                <RenderGenerator
-                  compact
-                  landingMode
-                  onUnauthenticated={() => setShowAuthModal(true)}
-                  onGenerateSuccess={(payload) => {
-                    const renderId = payload?.renderId;
-                    if (renderId) {
-                      localStorage.setItem(LANDING_RENDER_FORM_STORAGE_KEYS.RENDER_ID, renderId);
-                      router.push(`/profile?studio=${renderId}`);
-                    }
-                  }}
-                  compactBarClassName="w-full bg-white"
-                />
-              </GlowBorder>
+              <div className="mt-10 w-full min-w-0 shrink-0 touch-manipulation sm:mt-10 md:mt-12">
+                <GlowBorder duration={5} className="w-full max-w-full overflow-visible">
+                  <RenderGenerator
+                    compact
+                    landingMode
+                    onUnauthenticated={() => setShowAuthModal(true)}
+                    onGenerateSuccess={(payload) => {
+                      const renderId = payload?.renderId;
+                      if (renderId) {
+                        localStorage.setItem(LANDING_RENDER_FORM_STORAGE_KEYS.RENDER_ID, renderId);
+                        router.push(`/profile?studio=${renderId}`);
+                      }
+                    }}
+                    compactOuterClassName="mb-0 sm:mb-4"
+                    compactBarClassName="w-full bg-white"
+                  />
+                </GlowBorder>
+              </div>
+
+              <TrustedByCarousel className="relative z-0 mt-12 w-full min-w-0 max-w-3xl shrink-0 sm:hidden" />
             </div>
 
-            <TrustedByCarousel className="relative z-0 mx-auto mt-8 w-full min-w-0 max-w-3xl shrink-0 px-0 sm:mt-10 md:mt-14" />
+            <TrustedByCarousel className="relative z-0 mx-auto hidden w-full min-w-0 max-w-3xl shrink-0 sm:mt-auto sm:mb-10 sm:block md:mb-14" />
           </main>
         </section>
 
@@ -225,10 +231,10 @@ export default function LandingPage() {
             <div className="mx-auto max-w-5xl">
               <div className={HEADING_SPACING}>
                 <h2 className={SECTION_H2_CLASSES}>
-                  Transform your <AuroraText>visions</AuroraText> into reality
+                  From sketch to photoreal, <AuroraText>same angle</AuroraText>, same design
                 </h2>
                 <p className={SECTION_LEAD_CLASSES}>
-                  From sketches to photorealistic renders, and from 3D base models to stunning visualizations.
+                  Drop in a floor plan, site photo, or SketchUp screen. Get a geometry-faithful render back — not generic AI that warps your layout.
                 </p>
               </div>
 
@@ -245,13 +251,58 @@ export default function LandingPage() {
         {/* ─── Section 4: CATALOG SHOWCASE ───────────────────────────────── */}
         <section className={`relative border-t border-border/50 bg-white ${SECTION_PADDING}`}>
           <div className="container mx-auto w-full min-w-0 px-4 sm:px-6">
-            <div className="mx-auto w-full max-w-6xl min-w-0">
+            <div className="mx-auto w-full max-w-5xl min-w-0">
+              <div className={HEADING_SPACING}>
+                <h2 className={SECTION_H2_CLASSES}>
+                  Furnish any space from your <AuroraText>catalog</AuroraText>
+                </h2>
+                <p className={SECTION_LEAD_CLASSES}>
+                  Place real products in the scene — chair, table, rug — photoreal and correctly scaled. No manual staging in 3D.
+                </p>
+              </div>
+
               <CatalogShowcase />
             </div>
           </div>
         </section>
 
-        {/* ─── Section 5: PRICING ────────────────────────────────────────── */}
+        {/* ─── Section 5: MATERIAL OPTIONS ───────────────────────────────── */}
+        <section className={`relative border-t border-border/50 bg-white ${SECTION_PADDING}`}>
+          <div className="container mx-auto w-full min-w-0 px-4 sm:px-6">
+            <div className="mx-auto w-full max-w-6xl min-w-0">
+              <div className={HEADING_SPACING}>
+                <h2 className={SECTION_H2_CLASSES}>
+                  Show oak vs walnut in the <AuroraText>same view</AuroraText>
+                </h2>
+                <p className={SECTION_LEAD_CLASSES}>
+                  Same camera, same layout — swap materials and moods in seconds so clients decide on the spot, not in the next meeting.
+                </p>
+              </div>
+
+              <MaterialOptionsShowcase />
+            </div>
+          </div>
+        </section>
+
+        {/* ─── Section 6: RENDER DETAIL CONTROL ─────────────────────────── */}
+        <section className={`relative border-t border-border/50 bg-white ${SECTION_PADDING}`}>
+          <div className="container mx-auto w-full min-w-0 px-4 sm:px-6">
+            <div className="mx-auto w-full max-w-6xl min-w-0">
+              <div className={HEADING_SPACING}>
+                <h2 className={SECTION_H2_CLASSES}>
+                  Iterate without re-rendering from <AuroraText>scratch</AuroraText>
+                </h2>
+                <p className={SECTION_LEAD_CLASSES}>
+                  Add a piece, remove clutter, or shift a finish — describe the change in plain language and keep the rest of the scene intact.
+                </p>
+              </div>
+
+              <RenderDetailControlShowcase />
+            </div>
+          </div>
+        </section>
+
+        {/* ─── Section 7: PRICING ────────────────────────────────────────── */}
         <section
           id="pricing-section"
           className={`relative border-t border-border/50 bg-white ${SECTION_PADDING}`}
@@ -263,7 +314,7 @@ export default function LandingPage() {
                   Simple <AuroraText>pricing</AuroraText>
                 </h2>
                 <p className={SECTION_LEAD_CLASSES}>
-                  Start for free. Upgrade when you need more.
+                  Start free. Scale when client output picks up.
                 </p>
               </div>
 
@@ -275,29 +326,29 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ─── Section 6: CTA ────────────────────────────────────────────── */}
+        {/* ─── Section 8: CTA ────────────────────────────────────────────── */}
         <section className={`relative border-t border-border/50 bg-white ${SECTION_PADDING}`}>
           <div className="container mx-auto w-full min-w-0 px-3 sm:px-6">
             <div className="mx-auto max-w-3xl space-y-5 text-center sm:space-y-8">
               <h2 className={SECTION_H2_CLASSES}>
-                Ready to <AuroraText>transform</AuroraText> your workflow?
+                Your next client meeting starts <AuroraText>here</AuroraText>
               </h2>
               <p className="mx-auto max-w-xl text-pretty text-sm leading-relaxed text-muted-foreground sm:text-base md:text-lg">
-                Start creating stunning renders in seconds. No design skills required.
+                Present better concepts this week. No 3D software, no render queue.
               </p>
               <button
                 type="button"
                 onClick={scrollToTop}
                 className="inline-flex min-h-11 w-full max-w-xs touch-manipulation items-center justify-center gap-2 rounded-[2px] border border-border/50 bg-black px-5 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-[0_8px_32px_rgba(0,0,0,0.12)] transition-colors duration-200 hover:bg-black/85 active:bg-black/90 sm:w-auto sm:max-w-none sm:min-h-12 sm:px-10 sm:py-4 sm:text-base"
               >
-                Get started now
+                Start creating free
                 <ArrowRight className="size-4" />
               </button>
             </div>
           </div>
         </section>
 
-        {/* ─── Section 7: CONTACT ────────────────────────────────────────── */}
+        {/* ─── Section 9: CONTACT ────────────────────────────────────────── */}
         <section
           id="contact-section"
           className={`relative border-t border-border/50 bg-white ${SECTION_PADDING}`}

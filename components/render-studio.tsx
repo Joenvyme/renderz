@@ -203,12 +203,15 @@ export function RenderStudio({
   }, [galleryRenders, currentRender]);
 
   /**
-   * Chaîne de versions du rendu courant (ancêtres → courant → descendants).
+   * Versions connectées au rendu courant (même famille), triées depuis la racine.
    *
    * Détection des liens parent/enfant :
    *  - upscale : `metadata.upscale_source_render_id` (cf. /api/upscale/route.ts)
    *  - modify  : `original_image_url` enfant = `generated_image_url`
    *              (ou `upscaled_image_url`) du parent — cf. render-studio handleModify
+   *
+   * Important : on part de la racine de la famille puis on parcourt tous les descendants,
+   * pour conserver les versions "sœurs" visibles même si on régénère depuis une ancienne version.
    */
   const lineageRenders = useMemo(() => {
     const list = galleryRenders ?? [];
@@ -267,21 +270,21 @@ export function RenderStudio({
       return out;
     };
 
-    const visited = new Set<string>([currentRender.id]);
-
-    const ancestors: Render[] = [];
+    // 1) Remonter jusqu'à la racine de la famille.
+    let root: Render = currentRender;
     let node: Render | null = currentRender;
     let safety = 50;
     while (safety-- > 0 && node) {
-      const parent: Render | null = findParent(node);
-      if (!parent || visited.has(parent.id)) break;
-      visited.add(parent.id);
-      ancestors.unshift(parent);
+      const parent = findParent(node);
+      if (!parent || parent.id === root.id) break;
+      root = parent;
       node = parent;
     }
 
-    const descendants: Render[] = [];
-    const queue: Render[] = [currentRender];
+    // 2) Parcourir tous les descendants depuis la racine (incluant toutes les branches).
+    const ordered: Render[] = [root];
+    const visited = new Set<string>([root.id]);
+    const queue: Render[] = [root];
     while (queue.length) {
       const n = queue.shift()!;
       const children = findChildren(n)
@@ -290,12 +293,12 @@ export function RenderStudio({
       for (const c of children) {
         if (visited.has(c.id)) continue;
         visited.add(c.id);
-        descendants.push(c);
+        ordered.push(c);
         queue.push(c);
       }
     }
 
-    return [...ancestors, currentRender, ...descendants];
+    return ordered;
   }, [galleryRenders, currentRender]);
 
   const hasLineage = lineageRenders.length > 1;

@@ -237,13 +237,13 @@ export function FourKShowcase() {
             )}
           >
           <h2 className="text-balance text-xl font-bold tracking-tight text-white sm:text-2xl md:text-4xl lg:text-5xl xl:text-6xl">
-            Upgrade to <AuroraText>4K</AuroraText> quality
+            Print-ready detail when they <AuroraText>zoom in</AuroraText>
           </h2>
           <p className="max-w-xl text-pretty text-sm leading-relaxed text-white/65 sm:text-base md:text-lg">
-            Ultra-high resolution renders that hold every detail, texture and reflection — even when you zoom in.
+            4K upscales that hold texture, reflection, and material nuance — even on the big screen in the review.
           </p>
           <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/40 sm:text-[11px]">
-            {isCoarse ? "Watch the lens reveal the detail" : "Move your cursor to inspect →"}
+            {isCoarse ? "Watch the lens reveal the detail" : "Hover to inspect the finish →"}
           </p>
           </footer>
         </div>
