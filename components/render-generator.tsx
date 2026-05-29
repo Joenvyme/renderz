@@ -1288,7 +1288,7 @@ export function RenderGenerator({
     const barEl = compactPromptBarRef.current;
     const ro =
       typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => update()) : null;
-    ro?.observe(outerEl);
+    if (outerEl) ro?.observe(outerEl);
     if (barEl && barEl !== outerEl) ro?.observe(barEl);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
