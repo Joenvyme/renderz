@@ -22,6 +22,7 @@ import { VisionsCarousel } from "@/components/visions-carousel";
 import { FourKShowcase } from "@/components/four-k-showcase";
 import { MaterialOptionsShowcase } from "@/components/material-options-showcase";
 import { RenderDetailControlShowcase } from "@/components/render-detail-control-showcase";
+import { LandingCta } from "@/components/landing-cta";
 import { GlowBorder } from "@/components/ui/glow-border";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
 
@@ -60,7 +61,9 @@ export default function LandingPage() {
   const [contactSuccess, setContactSuccess] = useState(false);
   const [contactError, setContactError] = useState("");
 
-  const scrollToTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
+  const scrollToHero = () => {
+    document.getElementById("hero-section")?.scrollIntoView({ behavior: "smooth" });
+  };
   const scrollToContact = () => {
     document.getElementById("contact-section")?.scrollIntoView({ behavior: "smooth" });
   };
@@ -168,7 +171,10 @@ export default function LandingPage() {
       {/* ────────────────────────────────────────────────────────────────── */}
       <div className="relative z-10 overflow-x-hidden">
         {/* ─── Section 1: HERO ───────────────────────────────────────────── */}
-        <section className="relative flex flex-col border-b border-border/40 bg-white max-sm:min-h-[82dvh] sm:min-h-[calc(100dvh-4rem)]">
+        <section
+          id="hero-section"
+          className="relative flex flex-col border-b border-border/40 bg-white max-sm:min-h-[82dvh] sm:min-h-[calc(100dvh-4rem)]"
+        >
           {/* Background animé — overflow isolé ici pour ne pas couper le glow du générateur */}
           <div
             aria-hidden
@@ -221,7 +227,7 @@ export default function LandingPage() {
               <TrustedByCarousel className="relative z-0 mt-12 w-full min-w-0 max-w-3xl shrink-0 sm:hidden" />
             </div>
 
-            <TrustedByCarousel className="relative z-0 mx-auto hidden w-full min-w-0 max-w-3xl shrink-0 sm:mt-auto sm:mb-10 sm:block md:mb-14" />
+            <TrustedByCarousel className="relative z-0 mx-auto hidden w-full min-w-0 max-w-3xl shrink-0 sm:mt-auto sm:mb-16 sm:block md:mb-20 lg:mb-24" />
           </main>
         </section>
 
@@ -240,6 +246,11 @@ export default function LandingPage() {
 
               <div className="mx-auto max-w-4xl min-w-0">
                 <VisionsCarousel />
+                <LandingCta
+                  onClick={scrollToHero}
+                  label="Try it free"
+                  className="mt-10 sm:mt-12 md:mt-14"
+                />
               </div>
             </div>
           </div>
@@ -280,6 +291,11 @@ export default function LandingPage() {
               </div>
 
               <MaterialOptionsShowcase />
+              <LandingCta
+                onClick={scrollToHero}
+                label="Create your first render"
+                className="mt-10 sm:mt-12 md:mt-14"
+              />
             </div>
           </div>
         </section>
@@ -319,7 +335,7 @@ export default function LandingPage() {
               </div>
 
               <MarketingPricingSection
-                onGetStarted={scrollToTop}
+                onGetStarted={scrollToHero}
                 onContact={scrollToContact}
               />
             </div>
@@ -336,14 +352,7 @@ export default function LandingPage() {
               <p className="mx-auto max-w-xl text-pretty text-sm leading-relaxed text-muted-foreground sm:text-base md:text-lg">
                 Present better concepts this week. No 3D software, no render queue.
               </p>
-              <button
-                type="button"
-                onClick={scrollToTop}
-                className="inline-flex min-h-11 w-full max-w-xs touch-manipulation items-center justify-center gap-2 rounded-[2px] border border-border/50 bg-black px-5 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-[0_8px_32px_rgba(0,0,0,0.12)] transition-colors duration-200 hover:bg-black/85 active:bg-black/90 sm:w-auto sm:max-w-none sm:min-h-12 sm:px-10 sm:py-4 sm:text-base"
-              >
-                Start creating free
-                <ArrowRight className="size-4" />
-              </button>
+              <LandingCta onClick={scrollToHero} className="mx-auto" />
             </div>
           </div>
         </section>

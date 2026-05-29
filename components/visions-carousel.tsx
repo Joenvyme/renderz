@@ -56,12 +56,7 @@ const PAIRS: Pair[] = [
 ];
 
 /**
- * Carrousel de démos avant/après — navigation par vignettes en dessous.
- *  - Chaque slide héberge un `<BeforeAfterSlider>` totalement interactif.
- *  - Embla : `watchDrag: false` pour ne pas entrer en conflit avec la
- *    poignée du slider interne.
- *  - Pas de flèches : navigation purement via les vignettes (cohérent
- *    avec le branding éditorial du reste de la landing).
+ * Carrousel de démos avant/après — vignettes + libellés au-dessus du slider.
  */
 export function VisionsCarousel() {
   const [api, setApi] = React.useState<CarouselApi>();
@@ -77,10 +72,63 @@ export function VisionsCarousel() {
     };
   }, [api]);
 
-  const currentPair = PAIRS[current];
-
   return (
-    <div className="relative">
+    <div className="relative flex flex-col gap-4 sm:gap-6">
+      {/* Vignettes + titres au-dessus */}
+      <div
+        role="tablist"
+        aria-label="Slide navigation"
+        className="mx-auto grid w-full max-w-2xl grid-cols-2 gap-x-2 gap-y-3 sm:max-w-none sm:grid-cols-4 sm:gap-x-3 sm:gap-y-0"
+      >
+        {PAIRS.map((pair, i) => {
+          const isActive = current === i;
+          return (
+            <button
+              key={pair.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={`vision-slide-${pair.id}`}
+              aria-label={`Show ${pair.caption}`}
+              onClick={() => api?.scrollTo(i)}
+              className={cn(
+                "group flex flex-col items-stretch text-left transition-opacity duration-300 touch-manipulation",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                !isActive && "opacity-70 hover:opacity-100"
+              )}
+            >
+              <span
+                className={cn(
+                  "relative aspect-[16/9] w-full overflow-hidden rounded-[4px] border transition-all duration-300 ease-out",
+                  isActive
+                    ? "border-foreground ring-2 ring-foreground ring-offset-1 ring-offset-white"
+                    : "border-border/60 group-hover:border-foreground/35"
+                )}
+              >
+                <Image
+                  src={pair.afterImage}
+                  alt=""
+                  fill
+                  sizes="(max-width: 640px) 45vw, 180px"
+                  className={cn(
+                    "object-cover transition-transform duration-500 ease-out",
+                    !isActive && "group-hover:scale-[1.03]"
+                  )}
+                />
+              </span>
+              <span
+                className={cn(
+                  "mt-2 text-center font-mono text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors sm:mt-2.5 sm:text-xs sm:tracking-[0.18em]",
+                  isActive ? "text-foreground" : "text-muted-foreground group-hover:text-foreground/80"
+                )}
+              >
+                {pair.caption}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       <Carousel
         setApi={setApi}
         opts={{
@@ -104,54 +152,6 @@ export function VisionsCarousel() {
           ))}
         </CarouselContent>
       </Carousel>
-
-      {/* Caption — slide title only */}
-      <p
-        key={currentPair?.id}
-        className="mt-4 animate-in fade-in-50 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground duration-500 sm:mt-6 sm:text-xs sm:tracking-[0.24em]"
-      >
-        {currentPair?.caption}
-      </p>
-
-      {/* Thumbnails — 2×2 sur mobile pour de meilleures zones tactiles */}
-      <div
-        role="tablist"
-        aria-label="Slide navigation"
-        className="mx-auto mt-3 grid max-w-2xl grid-cols-2 gap-2 sm:mt-6 sm:grid-cols-4 sm:gap-3"
-      >
-        {PAIRS.map((pair, i) => {
-          const isActive = current === i;
-          return (
-            <button
-              key={pair.id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              aria-controls={`vision-slide-${pair.id}`}
-              aria-label={`Show ${pair.caption}`}
-              onClick={() => api?.scrollTo(i)}
-              className={cn(
-                "group relative aspect-[16/9] overflow-hidden rounded-[4px] border transition-all duration-300 ease-out touch-manipulation",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-1 focus-visible:ring-offset-white sm:ring-offset-2",
-                isActive
-                  ? "border-foreground ring-2 ring-foreground ring-offset-1 ring-offset-white sm:ring-offset-2"
-                  : "border-border/50 opacity-55 hover:border-foreground/40 hover:opacity-100 active:opacity-100"
-              )}
-            >
-              <Image
-                src={pair.afterImage}
-                alt={`Slide ${i + 1}: ${pair.caption}`}
-                fill
-                sizes="(max-width: 768px) 25vw, 160px"
-                className={cn(
-                  "object-cover transition-transform duration-500 ease-out",
-                  !isActive && "group-hover:scale-[1.04]"
-                )}
-              />
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }
