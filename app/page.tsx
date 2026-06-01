@@ -28,6 +28,12 @@ import { StripedPattern } from "@/components/magicui/striped-pattern";
 
 import { signOut, useSession } from "@/lib/auth-client";
 import { LANDING_RENDER_FORM_STORAGE_KEYS } from "@/lib/landing-render-form-storage";
+import {
+  setPendingCheckoutPlan,
+  settingsUrlForCheckoutPlan,
+} from "@/lib/billing/pending-checkout";
+import type { CheckoutPlanKey } from "@/lib/stripe/server";
+import type { PricingInterval } from "@/components/pricing-plans-grid";
 
 /**
  * Padding vertical commun à toutes les sections "contenu" (hors hero & 4K cinematic).
@@ -53,6 +59,20 @@ export default function LandingPage() {
   const { data: session } = useSession();
   const router = useRouter();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authInitialMode, setAuthInitialMode] = useState<"signin" | "signup">("signin");
+  const [authIntent, setAuthIntent] = useState<"default" | "subscribe">("default");
+  const [authRedirectAfter, setAuthRedirectAfter] = useState<string | undefined>();
+
+  const openAuthModal = (opts?: {
+    mode?: "signin" | "signup";
+    intent?: "default" | "subscribe";
+    redirectAfter?: string;
+  }) => {
+    setAuthInitialMode(opts?.mode ?? "signin");
+    setAuthIntent(opts?.intent ?? "default");
+    setAuthRedirectAfter(opts?.redirectAfter);
+    setShowAuthModal(true);
+  };
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
@@ -66,6 +86,29 @@ export default function LandingPage() {
   };
   const scrollToContact = () => {
     document.getElementById("contact-section")?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const beginPaidCheckout = (plan: CheckoutPlanKey) => {
+    if (session?.user) {
+      router.push(settingsUrlForCheckoutPlan(plan));
+      return;
+    }
+    setPendingCheckoutPlan(plan);
+    openAuthModal({
+      mode: "signup",
+      intent: "subscribe",
+      redirectAfter: settingsUrlForCheckoutPlan(plan),
+    });
+  };
+
+  const chooseProFromLanding = (interval: PricingInterval) => {
+    beginPaidCheckout(interval === "monthly" ? "pro_monthly" : "pro_yearly");
+  };
+
+  const chooseEnterpriseFromLanding = (interval: PricingInterval) => {
+    beginPaidCheckout(
+      interval === "monthly" ? "enterprise_monthly" : "enterprise_yearly"
+    );
   };
 
   const handleContactSubmit = async (e: React.FormEvent) => {
@@ -158,7 +201,7 @@ export default function LandingPage() {
             <Button
               variant="outline"
               className="min-h-10 touch-manipulation rounded-[2px] px-3 font-mono text-[10px] sm:min-h-9 sm:px-4 sm:text-xs"
-              onClick={() => setShowAuthModal(true)}
+              onClick={() => openAuthModal({ mode: "signin" })}
             >
               SIGN IN
             </Button>
@@ -210,7 +253,7 @@ export default function LandingPage() {
                   <RenderGenerator
                     compact
                     landingMode
-                    onUnauthenticated={() => setShowAuthModal(true)}
+                    onUnauthenticated={() => openAuthModal({ mode: "signup" })}
                     onGenerateSuccess={(payload) => {
                       const renderId = payload?.renderId;
                       if (renderId) {
@@ -330,12 +373,14 @@ export default function LandingPage() {
                   Simple <AuroraText>pricing</AuroraText>
                 </h2>
                 <p className={SECTION_LEAD_CLASSES}>
-                  Start free. Scale when client output picks up.
+                  Try free with 5 renders per month — upgrade when your pipeline can&apos;t run without it.
                 </p>
               </div>
 
               <MarketingPricingSection
                 onGetStarted={scrollToHero}
+                onChoosePro={chooseProFromLanding}
+                onChooseEnterprise={chooseEnterpriseFromLanding}
                 onContact={scrollToContact}
               />
             </div>
@@ -486,7 +531,14 @@ export default function LandingPage() {
       {/* Auth Modal */}
       <AuthModal
         isOpen={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
+        initialMode={authInitialMode}
+        intent={authIntent}
+        onClose={() => {
+          setShowAuthModal(false);
+          setAuthRedirectAfter(undefined);
+          setAuthIntent("default");
+        }}
+        redirectAfterAuth={authRedirectAfter}
         onSuccess={() => {
           setShowAuthModal(false);
         }}

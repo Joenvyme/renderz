@@ -50,6 +50,7 @@ import {
   type VisibilityFilterValue,
 } from "@/components/visibility-filter";
 import type { BillingPayload } from "@/lib/billing/billing-types";
+import { QuotaUsageBanner } from "@/components/quota-usage-banner";
 
 interface RenderMetadata {
   aspectRatio?: string;
@@ -405,6 +406,17 @@ function ProfilePage() {
 
   const [billing, setBilling] = useState<BillingPayload | null>(null);
   const [billingLoading, setBillingLoading] = useState(true);
+  const [quotaBannerDismissed, setQuotaBannerDismissed] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("renderz_quota_banner_dismissed") === "1") {
+        setQuotaBannerDismissed(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const fetchBilling = useCallback(async () => {
     setBillingLoading(true);
@@ -1532,6 +1544,19 @@ function ProfilePage() {
                     className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-white from-0% via-white/95 via-[38%] to-transparent to-100% backdrop-blur-[2px] supports-[backdrop-filter]:from-white/[0.97] supports-[backdrop-filter]:via-white/90"
                     aria-hidden
                   />
+                  <QuotaUsageBanner
+                    billing={billingLoading ? null : billing}
+                    dismissed={quotaBannerDismissed}
+                    onDismiss={() => {
+                      setQuotaBannerDismissed(true);
+                      try {
+                        sessionStorage.setItem("renderz_quota_banner_dismissed", "1");
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
+                  />
+
                   <div className="hidden lg:block">
                     <button
                       type="button"
@@ -1569,7 +1594,19 @@ function ProfilePage() {
                   {galleryToolbar}
                 </div>
               ) : (
-                <div className="mb-2 sticky top-14 z-[85] -mx-2 bg-white/95 px-2 py-1.5 backdrop-blur-md supports-[backdrop-filter]:bg-white/88 sm:top-16 lg:hidden">
+                <div className="mb-2 sticky top-14 z-[85] -mx-2 space-y-2 bg-white/95 px-2 py-1.5 backdrop-blur-md supports-[backdrop-filter]:bg-white/88 sm:top-16 lg:hidden">
+                  <QuotaUsageBanner
+                    billing={billingLoading ? null : billing}
+                    dismissed={quotaBannerDismissed}
+                    onDismiss={() => {
+                      setQuotaBannerDismissed(true);
+                      try {
+                        sessionStorage.setItem("renderz_quota_banner_dismissed", "1");
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
+                  />
                   {galleryToolbar}
                 </div>
               )}

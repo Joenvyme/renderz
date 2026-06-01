@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles } from "lucide-react";
 import type { BillingPayload } from "@/lib/billing/billing-types";
+import { startStripeCheckout } from "@/lib/billing/stripe-checkout-client";
+import type { CheckoutPlanKey } from "@/lib/stripe/server";
 import { PricingPlansGrid, type PricingInterval } from "@/components/pricing-plans-grid";
 
 export function SubscriptionPlans({
@@ -17,17 +19,10 @@ export function SubscriptionPlans({
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
 
-  const startCheckout = async (plan: string) => {
+  const startCheckout = async (plan: CheckoutPlanKey) => {
     setCheckoutLoading(plan);
     try {
-      const res = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Checkout failed");
-      if (data.url) window.location.href = data.url;
+      await startStripeCheckout(plan);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Checkout error");
     } finally {

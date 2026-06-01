@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AuroraText } from "@/components/ui/aurora-text";
 import { cn } from "@/lib/utils";
+import { FREE_GENERATIONS_PER_MONTH } from "@/lib/billing/constants";
 
 /**
  * Bloc d'intro du hero — rendu uniquement côté client pour éviter tout
@@ -60,6 +61,9 @@ export function HeroIntro({ className }: HeroIntroProps) {
         <span className="hidden sm:inline">
           Turn plans, sketches, and photos into presentation-ready visuals — in plain English, without a 3D pipeline.
         </span>
+      </p>
+      <p className="mx-auto mt-2 max-w-[19rem] font-mono text-[11px] uppercase tracking-wide text-foreground/70 sm:mt-3 sm:max-w-lg sm:text-xs">
+        Start free — {FREE_GENERATIONS_PER_MONTH} renders/month, no card required
       </p>
     </div>
   );

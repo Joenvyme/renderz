@@ -8,6 +8,8 @@ import { PricingPlansGrid, type PricingInterval } from "@/components/pricing-pla
 
 type MarketingPricingSectionProps = {
   onGetStarted: () => void;
+  onChoosePro: (interval: PricingInterval) => void;
+  onChooseEnterprise: (interval: PricingInterval) => void;
   onContact: () => void;
   className?: string;
 };
@@ -15,7 +17,13 @@ type MarketingPricingSectionProps = {
 /**
  * Grille tarifaire marketing (page d’accueil) — même grille que Paramètres / abonnement.
  */
-export function MarketingPricingSection({ onGetStarted, onContact, className }: MarketingPricingSectionProps) {
+export function MarketingPricingSection({
+  onGetStarted,
+  onChoosePro,
+  onChooseEnterprise,
+  onContact,
+  className,
+}: MarketingPricingSectionProps) {
   const [interval, setInterval] = useState<PricingInterval>("monthly");
 
   return (
@@ -31,13 +39,13 @@ export function MarketingPricingSection({ onGetStarted, onContact, className }: 
           onClick={onGetStarted}
           className="min-h-11 w-full touch-manipulation rounded-[2px] border-2 border-black font-mono text-xs tracking-wider hover:bg-black hover:text-white"
         >
-          GET STARTED
+          START FREE — NO CARD
         </Button>
       }
       proFooter={
         <Button
           type="button"
-          onClick={onGetStarted}
+          onClick={() => onChoosePro(interval)}
           className="min-h-11 w-full touch-manipulation rounded-[4px] bg-black font-mono text-xs tracking-wider text-white hover:bg-black/85"
         >
           CHOOSE PRO
@@ -47,10 +55,10 @@ export function MarketingPricingSection({ onGetStarted, onContact, className }: 
         <Button
           type="button"
           variant="outline"
-          onClick={onContact}
+          onClick={() => onChooseEnterprise(interval)}
           className="min-h-11 w-full touch-manipulation rounded-[2px] border-2 border-black font-mono text-xs tracking-wider hover:bg-black hover:text-white"
         >
-          CONTACT US
+          CHOOSE ENTERPRISE
         </Button>
       }
     />

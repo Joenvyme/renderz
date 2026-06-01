@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -30,14 +30,30 @@ const GoogleIcon = () => (
   </svg>
 );
 
+type AuthModalMode = "signin" | "signup" | "forgot";
+
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  /** Écran affiché à l’ouverture (ex. signup depuis la landing pricing). */
+  initialMode?: "signin" | "signup";
+  /** Texte d’intro sous le titre. */
+  intent?: "default" | "subscribe";
+  /** Après connexion email ; Google OAuth utilise la même URL en callback. */
+  redirectAfterAuth?: string;
 }
 
-export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
-  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
+export function AuthModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  initialMode = "signin",
+  intent = "default",
+  redirectAfterAuth,
+}: AuthModalProps) {
+  const postAuthUrl = redirectAfterAuth || "/profile";
+  const [mode, setMode] = useState<AuthModalMode>(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -45,6 +61,13 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setMode(initialMode);
+    setError(null);
+    setSuccessMessage(null);
+  }, [isOpen, initialMode]);
 
   if (!isOpen) return null;
 
@@ -80,7 +103,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     try {
       await signIn.social({
         provider: "google",
-        callbackURL: "/profile",
+        callbackURL: postAuthUrl,
       });
     } catch (err) {
       setError("Error signing in with Google");
@@ -119,8 +142,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       
       onSuccess();
       onClose();
-      // Rediriger vers la page profil après connexion réussie
-      window.location.href = "/profile";
+      window.location.href = postAuthUrl;
     } catch (err) {
       setError("An error occurred. Please try again.");
     } finally {
@@ -156,11 +178,15 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             {mode === "signin" ? "Sign In" : mode === "signup" ? "Sign Up" : "Forgot Password"}
           </h2>
           <p className="text-sm text-muted-foreground mt-1 font-mono">
-            {mode === "signin" 
-              ? "Sign in to generate renders" 
+            {mode === "forgot"
+              ? "Enter your email to reset your password"
               : mode === "signup"
-              ? "Create an account to get started"
-              : "Enter your email to reset your password"}
+                ? intent === "subscribe"
+                  ? "Create your account, then you’ll complete payment on Stripe"
+                  : "Create an account to get started"
+                : intent === "subscribe"
+                  ? "Sign in to continue to payment"
+                  : "Sign in to generate renders"}
           </p>
         </div>
 

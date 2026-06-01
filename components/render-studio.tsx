@@ -39,6 +39,8 @@ import { Render4KBadge, renderShows4KBadge, getUpscaleExportedChildId, hasLegacy
 import { VisibilityChip } from "@/components/visibility-chip";
 import { useSession, useActiveOrganization, useListOrganizations } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
+import { QuotaLimitDialog } from "@/components/quota-limit-dialog";
+import { useQuotaLimitDialog } from "@/hooks/use-quota-limit-dialog";
 
 interface RenderMetadata {
   aspectRatio?: string;
@@ -129,6 +131,12 @@ export function RenderStudio({
   mobileFloatingSheet = false,
 }: RenderStudioProps) {
   const { data: session } = useSession();
+  const {
+    quotaDialogOpen,
+    quotaDialogContent,
+    closeQuotaDialog,
+    handleQuotaApiError,
+  } = useQuotaLimitDialog();
   const { data: activeOrg } = useActiveOrganization();
   const { data: orgsRaw } = useListOrganizations();
   const activeOrgId = (activeOrg as { id?: string } | null | undefined)?.id ?? null;
@@ -573,12 +581,18 @@ export function RenderStudio({
         }),
       });
 
+      const errorData = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.message || "Generation failed");
+        if (handleQuotaApiError(res.status, errorData)) return;
+        throw new Error(
+          (errorData as { error?: string; message?: string }).error ||
+            (errorData as { message?: string }).message ||
+            "Generation failed"
+        );
       }
 
-      const { renderId } = await res.json();
+      const { renderId } = errorData as { renderId?: string };
+      if (!renderId) throw new Error("Invalid render response");
       onRenderQueued?.(renderId);
 
       const statusRes = await fetch(`/api/render/${renderId}`);
@@ -619,6 +633,7 @@ export function RenderStudio({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (handleQuotaApiError(res.status, data)) return;
         throw new Error(typeof data.error === "string" ? data.error : "Upscale failed");
       }
       const snap = await fetch(`/api/render/${currentRender.id}`);
@@ -654,9 +669,12 @@ export function RenderStudio({
         }),
       });
 
+      const errorData = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Video generation failed");
+        if (handleQuotaApiError(res.status, errorData)) return;
+        throw new Error(
+          (errorData as { error?: string }).error || "Video generation failed"
+        );
       }
 
       let attempts = 0;
@@ -1593,6 +1611,12 @@ export function RenderStudio({
           </div>
         </div>
       )}
+
+      <QuotaLimitDialog
+        open={quotaDialogOpen}
+        content={quotaDialogContent}
+        onClose={closeQuotaDialog}
+      />
     </div>
   );
 }

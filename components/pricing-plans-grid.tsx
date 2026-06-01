@@ -147,7 +147,7 @@ export function PricingPlansGrid({
           <Badge variant="outline" className="mb-3 w-fit font-mono text-[10px] uppercase tracking-widest">
             Free
           </Badge>
-          <p className="mb-6 text-sm text-muted-foreground">Try it out</p>
+          <p className="mb-6 text-sm text-muted-foreground">Free trial — no card</p>
           <div className="min-h-[5.5rem]">
             <div className="flex flex-wrap items-baseline gap-1">
               <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">0</span>

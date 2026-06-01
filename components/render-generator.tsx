@@ -62,6 +62,8 @@ import {
 } from "@/lib/generation-pipeline";
 import { cn } from "@/lib/utils";
 import { VisibilityChip } from "@/components/visibility-chip";
+import { QuotaLimitDialog } from "@/components/quota-limit-dialog";
+import { useQuotaLimitDialog } from "@/hooks/use-quota-limit-dialog";
 
 /** Grille unifiée : uploads, rendus et catalogue dans le sélecteur d’images. */
 const IMAGE_PICKER_GRID =
@@ -1172,6 +1174,12 @@ export function RenderGenerator({
 }: RenderGeneratorProps) {
   const router = useRouter();
   const { data: session } = useSession();
+  const {
+    quotaDialogOpen,
+    quotaDialogContent,
+    closeQuotaDialog,
+    handleQuotaApiError,
+  } = useQuotaLimitDialog();
   const [isDragging, setIsDragging] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<UploadedImageItem[]>([]);
   const [prompt, setPrompt] = useState("");
@@ -1646,6 +1654,9 @@ export function RenderGenerator({
         const generateData = await generateRes.json().catch(() => ({}));
 
         if (!generateRes.ok) {
+          if (handleQuotaApiError(generateRes.status, generateData)) {
+            return;
+          }
           throw new Error(
             (generateData as { message?: string; error?: string }).message ||
               (generateData as { error?: string }).error ||
@@ -1685,6 +1696,7 @@ export function RenderGenerator({
       magnificScale,
       magnificResemblanceValue,
       magnificCreativityValue,
+      handleQuotaApiError,
     ]
   );
 
@@ -2799,6 +2811,12 @@ export function RenderGenerator({
           </div>
         </div>
       )}
+
+      <QuotaLimitDialog
+        open={quotaDialogOpen}
+        content={quotaDialogContent}
+        onClose={closeQuotaDialog}
+      />
     </Card>
   );
 }

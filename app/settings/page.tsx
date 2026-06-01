@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useState, useRef, Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,6 +28,14 @@ import { SubscriptionPlans } from "@/components/subscription-plans";
 import { QuotaCounterCards } from "@/components/quota-counter-cards";
 import type { BillingPayload } from "@/lib/billing/billing-types";
 import { formatQuotaCardsSubtitle } from "@/lib/billing/quota-subtitle";
+import {
+  consumePendingCheckoutPlan,
+  isCheckoutPlanKey,
+} from "@/lib/billing/pending-checkout";
+import {
+  shouldAutoCheckoutPlan,
+  startStripeCheckout,
+} from "@/lib/billing/stripe-checkout-client";
 
 function SettingsContent() {
   const router = useRouter();
@@ -47,6 +55,20 @@ function SettingsContent() {
   const [isConfirmCancelSubscriptionOpen, setIsConfirmCancelSubscriptionOpen] = useState(false);
   const [isCancelingSubscription, setIsCancelingSubscription] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const autoCheckoutStartedRef = useRef(false);
+
+  const fetchBilling = useCallback(async () => {
+    setBillingLoading(true);
+    try {
+      const res = await fetch("/api/user/billing");
+      const data = await res.json();
+      if (res.ok) setBilling(data);
+    } catch (e) {
+      console.error("billing fetch", e);
+    } finally {
+      setBillingLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!isPending && !session) {
@@ -59,7 +81,7 @@ function SettingsContent() {
       fetchStats();
       fetchBilling();
     }
-  }, [session]);
+  }, [session, fetchBilling]);
 
   // Après Checkout Stripe : vérifier la session (quickstart) puis rafraîchir les quotas ; le webhook peut arriver avec un léger délai.
   useEffect(() => {
@@ -89,20 +111,33 @@ function SettingsContent() {
     return () => {
       cancelled = true;
     };
-  }, [session, searchParams, router]);
+  }, [session, searchParams, router, fetchBilling]);
 
-  const fetchBilling = async () => {
-    setBillingLoading(true);
-    try {
-      const res = await fetch("/api/user/billing");
-      const data = await res.json();
-      if (res.ok) setBilling(data);
-    } catch (e) {
-      console.error("billing fetch", e);
-    } finally {
-      setBillingLoading(false);
+  // Landing → auth → ?plan=pro_monthly : lance Checkout Stripe automatiquement.
+  useEffect(() => {
+    if (!session || billingLoading || !billing?.stripeConfigured || billing.unlimited) return;
+    if (autoCheckoutStartedRef.current) return;
+
+    const fromUrl = searchParams.get("plan");
+    const plan = isCheckoutPlanKey(fromUrl) ? fromUrl : consumePendingCheckoutPlan();
+    if (!plan) return;
+
+    if (fromUrl) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("plan");
+      const next = url.pathname + (url.search || "") + url.hash;
+      router.replace(next, { scroll: false });
     }
-  };
+
+    const tier = billing.tier as "free" | "pro" | "enterprise";
+    if (!shouldAutoCheckoutPlan(plan, tier)) return;
+
+    autoCheckoutStartedRef.current = true;
+    void startStripeCheckout(plan).catch((e) => {
+      autoCheckoutStartedRef.current = false;
+      alert(e instanceof Error ? e.message : "Checkout error");
+    });
+  }, [session, billingLoading, billing, searchParams, router]);
 
   const handleCancelSubscriptionAtPeriodEnd = async () => {
     setIsCancelingSubscription(true);
