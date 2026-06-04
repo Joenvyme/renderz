@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getOrgContext, parseVisibility } from "@/lib/org-context";
+import {
+  getOrgContext,
+  parseVisibility,
+  canReadInActiveWorkspace,
+  canWriteInActiveWorkspace,
+} from "@/lib/org-context";
 
 export const dynamic = "force-dynamic";
 
@@ -42,11 +47,22 @@ export async function PATCH(
 
     const { data: existing, error: existingErr } = await supabase
       .from("catalog_items")
-      .select("id, user_id, organization_id, image_url")
+      .select("id, user_id, organization_id, image_url, visibility")
       .eq("id", itemId)
       .single();
 
-    if (existingErr || !existing || existing.user_id !== ctx.userId) {
+    const existingRow = existing as {
+      user_id: string;
+      organization_id: string | null;
+      visibility: "private" | "organization";
+      image_url: string | null;
+    } | null;
+
+    if (
+      existingErr ||
+      !existingRow ||
+      !canWriteInActiveWorkspace(ctx, existingRow)
+    ) {
       return NextResponse.json({ error: "Item introuvable" }, { status: 404 });
     }
 
@@ -93,8 +109,8 @@ export async function PATCH(
           : null;
       update.image_url = newUrl;
 
-      if (existing.image_url && existing.image_url !== newUrl) {
-        const path = extractStoragePath(existing.image_url, CATALOG_BUCKET);
+      if (existingRow.image_url && existingRow.image_url !== newUrl) {
+        const path = extractStoragePath(existingRow.image_url, CATALOG_BUCKET);
         if (path) {
           const { error: rmErr } = await supabase.storage
             .from(CATALOG_BUCKET)
@@ -118,12 +134,7 @@ export async function PATCH(
           organization_id: string | null;
           visibility: "private" | "organization";
         } | null;
-        const allowed =
-          !!f &&
-          (f.user_id === ctx.userId ||
-            (f.visibility === "organization" &&
-              f.organization_id !== null &&
-              ctx.orgIds.includes(f.organization_id)));
+        const allowed = !!f && canReadInActiveWorkspace(ctx, f);
         if (folderErr || !allowed) {
           return NextResponse.json(
             { error: "Dossier introuvable" },
@@ -136,7 +147,7 @@ export async function PATCH(
 
     if ("visibility" in body) {
       const next = parseVisibility(body.visibility, "private");
-      if (next === "organization" && !existing.organization_id) {
+      if (next === "organization" && !existingRow.organization_id) {
         return NextResponse.json(
           { error: "Item sans organisation rattachée." },
           { status: 400 }
@@ -149,7 +160,6 @@ export async function PATCH(
       .from("catalog_items")
       .update(update)
       .eq("id", itemId)
-      .eq("user_id", ctx.userId)
       .select("*")
       .single();
 
@@ -183,19 +193,25 @@ export async function DELETE(
 
     const { data: existing, error: existingErr } = await supabase
       .from("catalog_items")
-      .select("id, user_id, image_url")
+      .select("id, user_id, organization_id, image_url")
       .eq("id", itemId)
       .single();
 
-    if (existingErr || !existing || existing.user_id !== ctx.userId) {
+    const existingRow = existing as {
+      user_id: string;
+      organization_id: string | null;
+      image_url: string | null;
+    } | null;
+
+    if (
+      existingErr ||
+      !existingRow ||
+      !canWriteInActiveWorkspace(ctx, existingRow)
+    ) {
       return NextResponse.json({ error: "Item introuvable" }, { status: 404 });
     }
 
-    const { error } = await supabase
-      .from("catalog_items")
-      .delete()
-      .eq("id", itemId)
-      .eq("user_id", ctx.userId);
+    const { error } = await supabase.from("catalog_items").delete().eq("id", itemId);
 
     if (error) {
       console.error("catalog item DELETE:", error);
@@ -205,8 +221,8 @@ export async function DELETE(
       );
     }
 
-    if (existing.image_url) {
-      const path = extractStoragePath(existing.image_url, CATALOG_BUCKET);
+    if (existingRow.image_url) {
+      const path = extractStoragePath(existingRow.image_url, CATALOG_BUCKET);
       if (path) {
         const { error: rmErr } = await supabase.storage
           .from(CATALOG_BUCKET)

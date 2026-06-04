@@ -1,11 +1,8 @@
 "use client";
 
-import { Clapperboard, ImageIcon, Maximize2 } from "lucide-react";
-
-function pct(used: number, max: number) {
-  if (max <= 0) return 0;
-  return Math.min(100, Math.round((used / max) * 100));
-}
+import { Clapperboard, ImageIcon, Maximize2, Sparkles } from "lucide-react";
+import type { BillingPayload } from "@/lib/billing/billing-types";
+import { getQuotaMetrics, quotaUsagePercent } from "@/lib/billing/quota-display";
 
 function QuotaCard({
   title,
@@ -33,24 +30,24 @@ function QuotaCard({
         ? "from-violet-600 to-violet-500"
         : "from-neutral-800 to-neutral-600";
 
-  const p = pct(used, max);
+  const p = quotaUsagePercent(used, max);
 
   return (
     <div
-      className={`relative flex flex-col rounded-xl border bg-gradient-to-b p-4 sm:p-5 min-h-[132px] shadow-sm ${ring}`}
+      className={`relative flex min-h-[132px] flex-col rounded-[6px] border bg-gradient-to-b p-4 shadow-sm sm:p-5 ${ring}`}
     >
-      <div className="flex items-center gap-2 text-[10px] sm:text-xs font-mono uppercase tracking-wider text-muted-foreground">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-background/80 border border-border/60 shadow-sm">
+      <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground sm:text-xs">
+        <span className="flex h-8 w-8 items-center justify-center rounded-[4px] border border-border/60 bg-background/80 shadow-sm">
           <Icon className="h-4 w-4 text-foreground" strokeWidth={1.75} />
         </span>
         {title}
       </div>
-      <div className="mt-3 flex items-baseline gap-1 flex-wrap">
-        <span className="text-3xl sm:text-4xl font-bold tabular-nums tracking-tight">{used}</span>
-        <span className="text-lg text-muted-foreground font-mono tabular-nums">/ {max}</span>
+      <div className="mt-3 flex flex-wrap items-baseline gap-1">
+        <span className="text-3xl font-bold tabular-nums tracking-tight sm:text-4xl">{used}</span>
+        <span className="font-mono text-lg tabular-nums text-muted-foreground">/ {max}</span>
       </div>
       <div className="mt-auto pt-4">
-        <div className="h-2 rounded-full bg-muted/80 overflow-hidden">
+        <div className="h-2 overflow-hidden rounded-full bg-muted/80">
           <div
             className={`h-full rounded-full bg-gradient-to-r transition-[width] duration-300 ${bar}`}
             style={{ width: `${p}%` }}
@@ -61,43 +58,47 @@ function QuotaCard({
   );
 }
 
+const METRIC_ICONS = {
+  generations: Sparkles,
+  renders: ImageIcon,
+  upscales: Maximize2,
+  animations: Clapperboard,
+} as const;
+
 export function QuotaCounterCards({
-  variant,
   subtitle,
-  usage,
-  limits,
-  freeGenerationsMax,
+  billing,
 }: {
-  variant: "free" | "paid";
-  /** Ex. date de renouvellement Stripe ou période de quotas gratuite */
+  variant: "trial" | "paid";
   subtitle: string;
   usage: { renders: number; animations: number; upscales: number };
   limits?: { renders: number; animations: number; upscales: number } | null;
-  /** Plafond mensuel combiné HD + anim. (formule gratuite), ex. 5 */
   freeGenerationsMax?: number;
+  /** Source unique pour les compteurs (évite le double plafond Free HD / anim). */
+  billing: BillingPayload;
 }) {
-  const gMax = freeGenerationsMax ?? 5;
+  const metrics = getQuotaMetrics(billing);
 
   return (
     <div className="space-y-3">
       {subtitle ? (
-        <p className="text-[11px] font-mono text-foreground/85 leading-snug">{subtitle}</p>
+        <p className="text-[11px] font-mono leading-snug text-foreground/85">{subtitle}</p>
       ) : null}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        {variant === "paid" && limits ? (
-          <>
-            <QuotaCard title="Rendus HD" icon={ImageIcon} used={usage.renders} max={limits.renders} />
-            <QuotaCard title="Rendus 4K" icon={Maximize2} used={usage.upscales} max={limits.upscales} accent="amber" />
-            <QuotaCard title="Animations" icon={Clapperboard} used={usage.animations} max={limits.animations} accent="violet" />
-          </>
-        ) : (
-          <>
-            <QuotaCard title="Rendus HD" icon={ImageIcon} used={usage.renders} max={gMax} />
-            <QuotaCard title="Rendus 4K" icon={Maximize2} used={usage.upscales} max={1} accent="amber" />
-            <QuotaCard title="Animations" icon={Clapperboard} used={usage.animations} max={gMax} accent="violet" />
-          </>
-        )}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+        {metrics.map((m) => {
+          const Icon = METRIC_ICONS[m.id as keyof typeof METRIC_ICONS] ?? ImageIcon;
+          return (
+            <QuotaCard
+              key={m.id}
+              title={m.label}
+              icon={Icon}
+              used={m.used}
+              max={m.max}
+              accent={m.accent}
+            />
+          );
+        })}
       </div>
     </div>
   );

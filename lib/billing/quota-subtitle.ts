@@ -9,11 +9,11 @@ function formatUtcDateLabel(iso: string) {
   });
 }
 
-/** Ligne au-dessus des cartes de quotas (renouvellement Stripe ou période gratuite). */
+/** Ligne au-dessus des cartes de quotas (renouvellement Stripe ou période trial). */
 export function formatQuotaCardsSubtitle(b: BillingPayload): string {
   if (b.unlimited) return "";
-  if (b.tier === "free") {
-    return `Période de quotas · ${b.free.periodKey}`;
+  if (b.tier === "trial") {
+    return `Essai · ${b.trial.periodKey} (usage compté)`;
   }
   if (b.subscription?.currentPeriodEnd) {
     const label = formatUtcDateLabel(b.subscription.currentPeriodEnd);

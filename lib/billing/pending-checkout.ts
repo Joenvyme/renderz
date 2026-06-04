@@ -1,40 +1,54 @@
-import type { CheckoutPlanKey } from "@/lib/stripe/server";
+import type { CheckoutPlanKey } from "@/lib/billing/plans";
+import { checkoutPlanKeys, isCheckoutPlanKey } from "@/lib/billing/plans";
 
-const STORAGE_KEY = "renderz_pending_checkout_plan";
+const STORAGE_KEY = "renderz_pending_checkout";
 
-const CHECKOUT_PLANS: CheckoutPlanKey[] = [
-  "pro_monthly",
-  "pro_yearly",
-  "enterprise_monthly",
-  "enterprise_yearly",
-];
+export type PendingCheckout = {
+  plan: CheckoutPlanKey;
+  quantity?: number;
+};
 
-export function isCheckoutPlanKey(value: string | null | undefined): value is CheckoutPlanKey {
-  if (!value) return false;
-  return (CHECKOUT_PLANS as string[]).includes(value);
-}
+export { isCheckoutPlanKey };
 
-export function setPendingCheckoutPlan(plan: CheckoutPlanKey): void {
+export function setPendingCheckout(payload: PendingCheckout): void {
   if (typeof window === "undefined") return;
   try {
-    sessionStorage.setItem(STORAGE_KEY, plan);
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch {
     /* ignore */
   }
 }
 
-/** Lit et efface le plan en attente (une seule consommation). */
-export function consumePendingCheckoutPlan(): CheckoutPlanKey | null {
+export function setPendingCheckoutPlan(plan: CheckoutPlanKey, quantity?: number): void {
+  setPendingCheckout({ plan, quantity });
+}
+
+/** Lit et efface le checkout en attente (une seule consommation). */
+export function consumePendingCheckout(): PendingCheckout | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     sessionStorage.removeItem(STORAGE_KEY);
-    return isCheckoutPlanKey(raw) ? raw : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { plan?: string; quantity?: number };
+    if (!isCheckoutPlanKey(parsed.plan)) return null;
+    const quantity =
+      typeof parsed.quantity === "number" && parsed.quantity >= 1 ? parsed.quantity : undefined;
+    return { plan: parsed.plan, quantity };
   } catch {
     return null;
   }
 }
 
-export function settingsUrlForCheckoutPlan(plan: CheckoutPlanKey): string {
-  return `/settings?plan=${encodeURIComponent(plan)}#billing`;
+/** @deprecated Utiliser consumePendingCheckout */
+export function consumePendingCheckoutPlan(): CheckoutPlanKey | null {
+  return consumePendingCheckout()?.plan ?? null;
+}
+
+export function settingsUrlForCheckoutPlan(plan: CheckoutPlanKey, quantity?: number): string {
+  const params = new URLSearchParams({ plan });
+  if (quantity != null && quantity > 1) {
+    params.set("quantity", String(quantity));
+  }
+  return `/settings?${params.toString()}#billing`;
 }

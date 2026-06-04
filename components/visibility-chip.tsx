@@ -51,7 +51,7 @@ export function VisibilityChip({
   );
 
   const Icon = isShared ? Users : Lock;
-  const label = isShared ? "Partagé" : "Privé";
+  const label = isShared ? "Shared" : "Private";
   const labelClass = compact ? "hidden sm:inline" : "inline";
 
   if (!onToggle) {
@@ -71,11 +71,11 @@ export function VisibilityChip({
   const nextValue: Visibility = isShared ? "private" : "organization";
   const tooltip = disabled
     ? !canShare && !isShared
-      ? "Aucune organisation disponible — sélectionnez-en une dans le header"
-      : "Mise à jour en cours…"
+      ? "No organization available — select one in the header"
+      : "Updating…"
     : isShared
-      ? "Rendre privé"
-      : "Partager avec l'organisation";
+      ? "Make private"
+      : "Share with organization";
 
   return (
     <button

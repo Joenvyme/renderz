@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getOrgContext, parseVisibility } from "@/lib/org-context";
+import {
+  getOrgContext,
+  parseVisibility,
+  canReadInActiveWorkspace,
+  canWriteInActiveWorkspace,
+} from "@/lib/org-context";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -58,11 +63,7 @@ export async function GET(
       visibility: "private" | "organization";
     };
 
-    const allowed =
-      r.user_id === ctx.userId ||
-      (r.visibility === "organization" &&
-        r.organization_id !== null &&
-        ctx.orgIds.includes(r.organization_id));
+    const allowed = canReadInActiveWorkspace(ctx, r);
 
     if (!allowed) {
       return NextResponse.json(
@@ -123,9 +124,8 @@ export async function PATCH(
     const supabase = getSupabase();
     const { data: render, error: fetchError } = await supabase
       .from("renders")
-      .select("id, metadata, organization_id")
+      .select("id, metadata, organization_id, user_id, visibility")
       .eq("id", id)
-      .eq("user_id", ctx.userId)
       .single();
 
     if (fetchError || !render) {
@@ -135,14 +135,34 @@ export async function PATCH(
       );
     }
 
+    const renderRow = render as {
+      user_id: string;
+      organization_id: string | null;
+      visibility: "private" | "organization";
+    };
+    if (!canWriteInActiveWorkspace(ctx, renderRow)) {
+      return NextResponse.json(
+        { error: "Render not found or access denied" },
+        { status: 404 }
+      );
+    }
+
     if (hasProjectUpdate && body.project_id) {
       const { data: project, error: projectError } = await supabase
         .from("projects")
-        .select("id")
+        .select("id, user_id, organization_id, visibility")
         .eq("id", body.project_id)
-        .eq("user_id", ctx.userId)
         .single();
-      if (projectError || !project) {
+      const projectRow = project as {
+        user_id: string;
+        organization_id: string | null;
+        visibility: "private" | "organization";
+      } | null;
+      if (
+        projectError ||
+        !projectRow ||
+        !canReadInActiveWorkspace(ctx, projectRow)
+      ) {
         return NextResponse.json(
           { error: "Project not found" },
           { status: 404 }
@@ -229,10 +249,20 @@ export async function DELETE(
       .from("renders")
       .select("*")
       .eq("id", id)
-      .eq("user_id", ctx.userId)
       .single();
 
     if (fetchError || !render) {
+      return NextResponse.json(
+        { error: "Render not found or access denied" },
+        { status: 404 }
+      );
+    }
+
+    const renderRow = render as {
+      user_id: string;
+      organization_id: string | null;
+    };
+    if (!canWriteInActiveWorkspace(ctx, renderRow)) {
       return NextResponse.json(
         { error: "Render not found or access denied" },
         { status: 404 }

@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getOrgContext, parseVisibility } from "@/lib/org-context";
+import {
+  getOrgContext,
+  parseVisibility,
+  canReadInActiveWorkspace,
+  canWriteInActiveWorkspace,
+  type OrgContext,
+} from "@/lib/org-context";
 
 export const dynamic = "force-dynamic";
 
@@ -11,21 +17,42 @@ function getSupabase() {
   );
 }
 
-async function loadOwnedFolder(folderId: string, userId: string) {
+async function loadOwnedFolder(folderId: string, ctx: OrgContext) {
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from("catalog_folders")
-    .select("id, user_id, organization_id, parent_id")
+    .select("id, user_id, organization_id, parent_id, visibility")
     .eq("id", folderId)
     .single();
   if (error || !data) return null;
-  if (data.user_id !== userId) return null;
-  return data as {
+  const row = data as {
     id: string;
     user_id: string;
     organization_id: string | null;
     parent_id: string | null;
+    visibility: "private" | "organization";
   };
+  if (!canWriteInActiveWorkspace(ctx, row)) return null;
+  return row;
+}
+
+async function loadFolderInWorkspace(folderId: string, ctx: OrgContext) {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("catalog_folders")
+    .select("id, user_id, organization_id, parent_id, visibility")
+    .eq("id", folderId)
+    .single();
+  if (error || !data) return null;
+  const row = data as {
+    id: string;
+    user_id: string;
+    organization_id: string | null;
+    parent_id: string | null;
+    visibility: "private" | "organization";
+  };
+  if (!canReadInActiveWorkspace(ctx, row)) return null;
+  return row;
 }
 
 /** Empêche un cycle parent <-> enfant lors d'un déplacement. */
@@ -66,7 +93,7 @@ export async function PATCH(
     }
 
     const folderId = context.params.id;
-    const owned = await loadOwnedFolder(folderId, ctx.userId);
+    const owned = await loadOwnedFolder(folderId, ctx);
     if (!owned) {
       return NextResponse.json(
         { error: "Dossier introuvable" },
@@ -109,7 +136,7 @@ export async function PATCH(
             { status: 400 }
           );
         }
-        const parent = await loadOwnedFolder(parentId, ctx.userId);
+        const parent = await loadFolderInWorkspace(parentId, ctx);
         if (!parent) {
           return NextResponse.json(
             { error: "Dossier parent introuvable" },
@@ -142,7 +169,6 @@ export async function PATCH(
       .from("catalog_folders")
       .update(update)
       .eq("id", folderId)
-      .eq("user_id", ctx.userId)
       .select("*")
       .single();
 
@@ -171,7 +197,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
     }
     const folderId = context.params.id;
-    const owned = await loadOwnedFolder(folderId, ctx.userId);
+    const owned = await loadOwnedFolder(folderId, ctx);
     if (!owned) {
       return NextResponse.json(
         { error: "Dossier introuvable" },

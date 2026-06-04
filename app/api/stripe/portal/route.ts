@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import { getOrCreateBillingAccountForUser } from "@/lib/billing/service";
+import { ensureBillingPortalConfiguration } from "@/lib/stripe/billing-portal";
 import { getStripe, isStripeConfigured } from "@/lib/stripe/server";
 import { jsonFromStripeCaughtError } from "@/lib/stripe/http-errors";
 
@@ -39,9 +40,12 @@ export async function POST() {
     }
 
     const stripe = getStripe();
+    const configurationId = await ensureBillingPortalConfiguration(stripe);
+
     const portal = await stripe.billingPortal.sessions.create({
       customer: billingAccount.stripe_customer_id,
-      return_url: `${APP_URL.replace(/\/$/, "")}/settings`,
+      configuration: configurationId,
+      return_url: `${APP_URL.replace(/\/$/, "")}/settings#billing`,
     });
 
     return NextResponse.json({ url: portal.url });
@@ -49,6 +53,7 @@ export async function POST() {
     console.error("stripe portal:", e);
     const mapped = jsonFromStripeCaughtError(e);
     if (mapped) return mapped;
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
+    const message = e instanceof Error ? e.message : "Erreur serveur";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

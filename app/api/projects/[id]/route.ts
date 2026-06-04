@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getOrgContext, parseVisibility } from "@/lib/org-context";
+import {
+  getOrgContext,
+  parseVisibility,
+  canReadInActiveWorkspace,
+  canWriteInActiveWorkspace,
+} from "@/lib/org-context";
 
 export const dynamic = "force-dynamic";
 
@@ -38,11 +43,7 @@ export async function GET(
       organization_id: string | null;
       visibility: "private" | "organization";
     };
-    const allowed =
-      p.user_id === ctx.userId ||
-      (p.visibility === "organization" &&
-        p.organization_id !== null &&
-        ctx.orgIds.includes(p.organization_id));
+    const allowed = canReadInActiveWorkspace(ctx, p);
 
     if (!allowed) {
       return NextResponse.json({ error: "Projet non trouvé" }, { status: 404 });
@@ -78,11 +79,15 @@ export async function PATCH(
     // S'assure que le projet appartient au user.
     const { data: existing, error: existingErr } = await supabase
       .from("projects")
-      .select("id, organization_id")
+      .select("id, organization_id, user_id, visibility")
       .eq("id", params.id)
-      .eq("user_id", ctx.userId)
       .single();
-    if (existingErr || !existing) {
+    const existingRow = existing as {
+      user_id: string;
+      organization_id: string | null;
+      visibility: "private" | "organization";
+    } | null;
+    if (existingErr || !existingRow || !canWriteInActiveWorkspace(ctx, existingRow)) {
       return NextResponse.json({ error: "Projet non trouvé" }, { status: 404 });
     }
 
@@ -95,7 +100,7 @@ export async function PATCH(
     }
     if ("visibility" in body) {
       const next = parseVisibility(visibilityRaw, "private");
-      if (next === "organization" && !existing.organization_id) {
+      if (next === "organization" && !existingRow.organization_id) {
         return NextResponse.json(
           { error: "Projet sans organisation rattachée." },
           { status: 400 }
@@ -139,11 +144,23 @@ export async function DELETE(
     }
 
     const supabase = getSupabase();
-    const { error } = await supabase
+    const { data: existing, error: existingErr } = await supabase
       .from("projects")
-      .delete()
+      .select("id, user_id, organization_id")
       .eq("id", params.id)
-      .eq("user_id", ctx.userId);
+      .single();
+    if (
+      existingErr ||
+      !existing ||
+      !canWriteInActiveWorkspace(
+        ctx,
+        existing as { user_id: string; organization_id: string | null }
+      )
+    ) {
+      return NextResponse.json({ error: "Projet non trouvé" }, { status: 404 });
+    }
+
+    const { error } = await supabase.from("projects").delete().eq("id", params.id);
 
     if (error) {
       console.error("Error deleting project:", error);

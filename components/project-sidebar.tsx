@@ -71,6 +71,8 @@ interface ProjectSidebarProps {
   isLoading: boolean;
   /** Drop one or more renders from the gallery onto Unassigned or a project folder */
   onDropRender?: (renderIds: string[], projectId: string | null) => Promise<void>;
+  /** Rendus terminés sans dossier (API /api/projects). */
+  unassignedCount?: number;
   catalogActive?: boolean;
   onOpenCatalog?: () => void;
   rendersActive?: boolean;
@@ -97,6 +99,7 @@ export function ProjectSidebar({
   onRenameProject,
   isLoading,
   onDropRender,
+  unassignedCount = 0,
   catalogActive = false,
   onOpenCatalog,
   rendersActive = false,
@@ -311,6 +314,12 @@ export function ProjectSidebar({
     setRenameDraft("");
   };
 
+  const countBadgeClass = (active: boolean) =>
+    cn(
+      "ml-auto shrink-0 min-w-[1.25rem] rounded-[4px] px-1.5 py-0.5 text-center font-mono text-[10px] tabular-nums leading-none",
+      active ? "bg-white/20 text-white" : "bg-muted/50 text-muted-foreground"
+    );
+
   const commitRename = async (projectId: string) => {
     const trimmed = renameDraft.trim();
     if (!trimmed || renamingSubmitting) return;
@@ -374,6 +383,14 @@ export function ProjectSidebar({
             >
               <Inbox className="h-[15px] w-[15px] shrink-0 opacity-90" strokeWidth={2} />
               <span className="min-w-0 flex-1 truncate">Unfiled</span>
+              {unassignedCount > 0 ? (
+                <span
+                  className={countBadgeClass(selectedProjectId === "unassigned")}
+                  aria-label={`${unassignedCount} renders`}
+                >
+                  {unassignedCount}
+                </span>
+              ) : null}
             </button>
           </div>
         )}
@@ -503,6 +520,17 @@ export function ProjectSidebar({
                       strokeWidth={2}
                     />
                     <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                    {project.render_count > 0 ? (
+                      <span
+                        className={cn(
+                          countBadgeClass(selectedProjectId === project.id),
+                          "transition-opacity group-hover:pointer-events-none group-hover:opacity-0"
+                        )}
+                        aria-label={`${project.render_count} renders`}
+                      >
+                        {project.render_count}
+                      </span>
+                    ) : null}
                   </button>
 
                   <button
@@ -514,13 +542,13 @@ export function ProjectSidebar({
                       );
                     }}
                     data-project-menu-trigger
-                    className={`
-                      absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[4px] transition-opacity
-                      ${selectedProjectId === project.id
-                        ? "text-white/90 opacity-100 hover:bg-white/10"
-                        : "text-muted-foreground opacity-0 hover:bg-muted/60 group-hover:opacity-100"
-                      }
-                    `}
+                    className={cn(
+                      "absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[4px] opacity-0 transition-opacity group-hover:opacity-100",
+                      contextMenuId === project.id && "opacity-100",
+                      selectedProjectId === project.id
+                        ? "text-white/90 hover:bg-white/10"
+                        : "text-muted-foreground hover:bg-muted/60"
+                    )}
                     aria-label="Folder actions"
                   >
                     <MoreHorizontal className="h-4 w-4" strokeWidth={2} />

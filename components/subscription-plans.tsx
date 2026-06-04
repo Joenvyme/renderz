@@ -4,9 +4,16 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles } from "lucide-react";
 import type { BillingPayload } from "@/lib/billing/billing-types";
+import type { BillingTier } from "@/lib/billing/constants";
 import { startStripeCheckout } from "@/lib/billing/stripe-checkout-client";
-import type { CheckoutPlanKey } from "@/lib/stripe/server";
-import { PricingPlansGrid, type PricingInterval } from "@/components/pricing-plans-grid";
+import type { CheckoutPlanKey } from "@/lib/billing/plans";
+import { checkoutKeyForPlan } from "@/lib/billing/plans";
+import type { PlanId } from "@/lib/billing/plans";
+import {
+  PricingPlansGrid,
+  type PricingInterval,
+} from "@/components/pricing-plans-grid";
+import { STUDIO_DEFAULT_SEATS } from "@/lib/billing/plans";
 
 export function SubscriptionPlans({
   billing,
@@ -16,13 +23,14 @@ export function SubscriptionPlans({
   loading: boolean;
 }) {
   const [interval, setInterval] = useState<PricingInterval>("monthly");
+  const [studioSeats, setStudioSeats] = useState(STUDIO_DEFAULT_SEATS);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
 
-  const startCheckout = async (plan: CheckoutPlanKey) => {
+  const startCheckout = async (plan: CheckoutPlanKey, quantity?: number) => {
     setCheckoutLoading(plan);
     try {
-      await startStripeCheckout(plan);
+      await startStripeCheckout(plan, { quantity });
     } catch (e) {
       alert(e instanceof Error ? e.message : "Checkout error");
     } finally {
@@ -59,8 +67,8 @@ export function SubscriptionPlans({
   if (!billing.stripeConfigured) {
     return (
       <p className="rounded-[2px] border border-amber-200/80 bg-amber-50 px-3 py-2 font-mono text-xs text-amber-800">
-        Stripe n’est pas configuré côté serveur — ajoutez STRIPE_SECRET_KEY et les STRIPE_PRICE_* pour activer les
-        paiements.
+        Stripe n’est pas configuré côté serveur — ajoutez STRIPE_SECRET_KEY et les STRIPE_PRICE_SOLO_* /
+        STRIPE_PRICE_STUDIO_* pour activer les paiements.
       </p>
     );
   }
@@ -73,12 +81,23 @@ export function SubscriptionPlans({
     );
   }
 
-  const tier = billing.tier as "free" | "pro" | "enterprise";
-  const proPlanKey = interval === "monthly" ? "pro_monthly" : "pro_yearly";
-  const entPlanKey = interval === "monthly" ? "enterprise_monthly" : "enterprise_yearly";
+  const tier = billing.tier as BillingTier;
+  const activePlanId: PlanId | null =
+    tier === "trial"
+      ? "trial"
+      : tier === "solo"
+        ? "solo"
+        : tier === "studio"
+          ? "studio"
+          : tier === "agency"
+            ? "agency"
+            : null;
 
-  const freeFooter =
-    tier === "free" ? (
+  const soloPlanKey = checkoutKeyForPlan("solo", interval);
+  const studioPlanKey = checkoutKeyForPlan("studio", interval);
+
+  const trialFooter =
+    tier === "trial" ? (
       <div className="w-full rounded-[2px] border-2 border-black/20 py-3 text-center font-mono text-xs tracking-wider text-muted-foreground">
         Votre plan actuel
       </div>
@@ -88,8 +107,8 @@ export function SubscriptionPlans({
       </div>
     );
 
-  const proFooter =
-    tier === "pro" ? (
+  const soloFooter =
+    tier === "solo" ? (
       <Button
         className="h-11 w-full rounded-[2px] font-mono text-xs tracking-wider"
         disabled={portalLoading}
@@ -97,29 +116,29 @@ export function SubscriptionPlans({
       >
         {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Gérer facturation & abonnement"}
       </Button>
-    ) : tier === "free" ? (
+    ) : tier === "trial" && soloPlanKey ? (
       <Button
         className="h-11 w-full rounded-[4px] bg-black font-mono text-xs tracking-wider text-white hover:bg-black/90"
         disabled={!!checkoutLoading}
-        onClick={() => startCheckout(proPlanKey)}
+        onClick={() => startCheckout(soloPlanKey)}
       >
-        {checkoutLoading === proPlanKey ? (
+        {checkoutLoading === soloPlanKey ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
           <>
             <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-            Passer à Pro
+            Passer à Solo
           </>
         )}
       </Button>
     ) : (
       <div className="w-full rounded-[2px] border border-border py-3 text-center font-mono text-xs text-muted-foreground">
-        Vous êtes sur Enterprise
+        {tier === "studio" ? "Vous êtes sur Studio" : "—"}
       </div>
     );
 
-  const enterpriseFooter =
-    tier === "enterprise" ? (
+  const studioFooter =
+    tier === "studio" ? (
       <Button
         variant="outline"
         className="h-11 w-full rounded-[2px] border-2 border-black font-mono text-xs tracking-wider"
@@ -128,34 +147,53 @@ export function SubscriptionPlans({
       >
         {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Gérer facturation & abonnement"}
       </Button>
-    ) : (
+    ) : studioPlanKey ? (
       <Button
         variant="outline"
         className="h-11 w-full rounded-[2px] border-2 border-black font-mono text-xs tracking-wider hover:bg-black hover:text-white"
         disabled={!!checkoutLoading}
-        onClick={() => startCheckout(entPlanKey)}
+        onClick={() => startCheckout(studioPlanKey, studioSeats)}
       >
-        {checkoutLoading === entPlanKey ? (
+        {checkoutLoading === studioPlanKey ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
-          "Passer à Enterprise"
+          "Passer à Studio"
         )}
       </Button>
+    ) : (
+      <div className="w-full rounded-[2px] border border-border py-3 text-center font-mono text-xs text-muted-foreground">
+        —
+      </div>
     );
+
+  const agencyFooter = (
+    <Button
+      variant="outline"
+      className="h-11 w-full rounded-[2px] border-2 border-black font-mono text-xs tracking-wider hover:bg-black hover:text-white"
+      onClick={() => {
+        window.location.href = "mailto:hello@renderz.ch?subject=Agency%20plan";
+      }}
+    >
+      Contact us
+    </Button>
+  );
 
   return (
     <div className="w-full">
       <PricingPlansGrid
         interval={interval}
         onIntervalChange={setInterval}
-        subscriberTier={tier}
-        freeFooter={freeFooter}
-        proFooter={proFooter}
-        enterpriseFooter={enterpriseFooter}
+        activePlanId={activePlanId}
+        studioSeats={studioSeats}
+        onStudioSeatsChange={setStudioSeats}
+        trialFooter={trialFooter}
+        soloFooter={soloFooter}
+        studioFooter={studioFooter}
+        agencyFooter={agencyFooter}
       />
-      {(tier === "pro" || tier === "enterprise") && (
+      {(tier === "solo" || tier === "studio") && (
         <p className="mt-6 text-center font-mono text-[10px] text-muted-foreground">
-          Paiement sécurisé par Stripe — après un achat, redirection vers la page des paramètres pour finaliser.
+          Paiement sécurisé par Stripe — essai 7 jours, carte demandée seulement si nécessaire.
         </p>
       )}
     </div>

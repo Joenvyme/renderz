@@ -14,21 +14,21 @@ export interface Database {
           id: string
           email: string
           created_at: string
-          subscription_tier: 'free' | 'pro' | 'enterprise'
+          subscription_tier: 'trial' | 'solo' | 'studio' | 'agency'
           credits_remaining: number
         }
         Insert: {
           id: string
           email: string
           created_at?: string
-          subscription_tier?: 'free' | 'pro' | 'enterprise'
+          subscription_tier?: 'trial' | 'solo' | 'studio' | 'agency'
           credits_remaining?: number
         }
         Update: {
           id?: string
           email?: string
           created_at?: string
-          subscription_tier?: 'free' | 'pro' | 'enterprise'
+          subscription_tier?: 'trial' | 'solo' | 'studio' | 'agency'
           credits_remaining?: number
         }
       }

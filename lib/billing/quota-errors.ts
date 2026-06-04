@@ -1,5 +1,7 @@
 /** Codes renvoyés par les routes generate / video / upscale (403). */
 export const QUOTA_ERROR_CODES = [
+  "TRIAL_GENERATIONS_EXHAUSTED",
+  "TRIAL_UPSCALE_NOT_INCLUDED",
   "FREE_GENERATIONS_EXHAUSTED",
   "FREE_UPSCALE_MONTHLY",
   "RENDERS_LIMIT",
@@ -19,29 +21,30 @@ export type QuotaLimitPresentation = {
   description: string;
   upgradeLabel: string;
   upgradeHref: string;
-  /** Message API optionnel (détail technique). */
   detail?: string;
 };
 
 export function presentationForQuotaCode(code: QuotaErrorCode): QuotaLimitPresentation {
   switch (code) {
+    case "TRIAL_GENERATIONS_EXHAUSTED":
     case "FREE_GENERATIONS_EXHAUSTED":
       return {
         code,
-        title: "Monthly free limit reached",
+        title: "Trial limit reached",
         description:
-          "You’ve used all 5 free creations this month (images + animations). Upgrade to Pro for 100 renders and 100 animations per month, or wait until next month (UTC).",
-        upgradeLabel: "Upgrade to Pro",
-        upgradeHref: "/settings?plan=pro_monthly#billing",
+          "You’ve used all creations included in your 7-day trial (~50, watermarked). Subscribe to Solo for 200 renders/month without watermark.",
+        upgradeLabel: "Upgrade to Solo",
+        upgradeHref: "/settings?plan=solo_monthly#billing",
       };
+    case "TRIAL_UPSCALE_NOT_INCLUDED":
     case "FREE_UPSCALE_MONTHLY":
       return {
         code,
-        title: "Free 4K upscale used",
+        title: "4K upscale not included in trial",
         description:
-          "Your free plan includes 1 Magnific 4K upscale per month. Upgrade to Pro for 25 upscales per month, or try again next month (UTC).",
-        upgradeLabel: "Upgrade to Pro",
-        upgradeHref: "/settings?plan=pro_monthly#billing",
+          "4K upscales are included on Solo (20/month) and Studio. Upgrade to continue upscaling.",
+        upgradeLabel: "Upgrade to Solo",
+        upgradeHref: "/settings?plan=solo_monthly#billing",
       };
     case "RENDERS_LIMIT":
       return {

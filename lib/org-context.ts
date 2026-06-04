@@ -5,14 +5,14 @@ import { headers as nextHeaders } from "next/headers";
 /**
  * Contexte d'organisation pour scoper les requêtes serveur :
  * - `userId`        : utilisateur courant
- * - `activeOrgId`   : organisation active de sa session (org perso par défaut)
- * - `orgIds`        : toutes les organisations dont l'utilisateur est membre (pour la LECTURE)
- * - `roleInActive`  : son rôle dans l'organisation active (`owner` / `admin` / `member`)
+ * - `activeOrgId`   : espace de travail actif (session Better Auth)
+ * - `orgIds`        : toutes les organisations dont l'utilisateur est membre
+ * - `roleInActive`  : rôle dans l'espace actif
  *
- * Règles de scope :
- * - LECTURE  : `user_id = userId` OR (`organization_id IN orgIds` AND `visibility = 'organization'`)
- * - CRÉATION : `user_id = userId`, `organization_id = activeOrgId`, `visibility = 'private'` (défaut)
- * - WRITE   : seul le créateur peut modifier, sauf si l'item est partagé et que le user est admin/owner de l'organisation
+ * Règles de scope (isolation par espace de travail) :
+ * - LECTURE  : uniquement les lignes de `activeOrgId` (legacy sans org → org perso uniquement)
+ * - CRÉATION : `organization_id = activeOrgId`
+ * - WRITE    : créateur + ressource dans l'espace actif
  */
 export interface OrgContext {
   userId: string;
@@ -20,6 +20,12 @@ export interface OrgContext {
   orgIds: string[];
   roleInActive: "owner" | "admin" | "member" | null;
 }
+
+export type ScopedResource = {
+  user_id: string;
+  organization_id: string | null;
+  visibility?: "private" | "organization";
+};
 
 let _client: ReturnType<typeof createClient> | null = null;
 function svc() {
@@ -29,6 +35,14 @@ function svc() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
   return _client;
+}
+
+export function personalOrganizationId(userId: string): string {
+  return `org_${userId}`;
+}
+
+function safeId(id: string): string | null {
+  return /^[A-Za-z0-9_-]+$/.test(id) ? id : null;
 }
 
 /**
@@ -43,7 +57,6 @@ export async function getOrgContext(): Promise<
 
   const userId = session.user.id;
 
-  // Récupère toutes les memberships de l'utilisateur.
   const supabase = svc();
   const { data: memberships, error } = await supabase
     .from("member")
@@ -60,8 +73,6 @@ export async function getOrgContext(): Promise<
         .filter(Boolean) as string[])
     : [];
 
-  // L'organisation active vient de la session Better Auth (`activeOrganizationId`).
-  // Si jamais elle manque (session ancienne, plugin pas encore propagé), on retombe sur la première membership.
   const sessionAny = session.session as unknown as {
     activeOrganizationId?: string | null;
   };
@@ -71,8 +82,7 @@ export async function getOrgContext(): Promise<
       : null;
 
   if (!activeOrgId && orgIds.length > 0) {
-    // Préférence : org perso (`org_<userId>`) si dispo.
-    const preferred = `org_${userId}`;
+    const preferred = personalOrganizationId(userId);
     activeOrgId = orgIds.includes(preferred) ? preferred : orgIds[0];
   }
 
@@ -98,30 +108,90 @@ export async function getOrgContext(): Promise<
   };
 }
 
+/** Ressource rattachée à l'espace de travail actif (legacy null → org perso du créateur). */
+export function isInActiveWorkspace(ctx: OrgContext, row: ScopedResource): boolean {
+  if (!ctx.activeOrgId) return false;
+  const active = safeId(ctx.activeOrgId);
+  const user = safeId(ctx.userId);
+  if (!active || !user) return false;
+
+  if (row.organization_id === null) {
+    return row.user_id === user && active === personalOrganizationId(user);
+  }
+  return row.organization_id === active;
+}
+
+/** Lecture dans l'espace actif : mes items + items partagés (visibility organization) du même espace. */
+export function canReadInActiveWorkspace(
+  ctx: OrgContext,
+  row: ScopedResource & { visibility: "private" | "organization" }
+): boolean {
+  if (!isInActiveWorkspace(ctx, row)) return false;
+  if (row.user_id === ctx.userId) return true;
+  return row.visibility === "organization";
+}
+
+/** Écriture : créateur uniquement, ressource dans l'espace actif. */
+export function canWriteInActiveWorkspace(ctx: OrgContext, row: ScopedResource): boolean {
+  return row.user_id === ctx.userId && isInActiveWorkspace(ctx, row);
+}
+
 /**
- * Helper : construit un filtre Supabase `OR` qui matche
- *   `user_id = me` OR (`organization_id IN orgs` AND `visibility = 'organization'`)
- *
- * À passer à `query.or(scope)`.
+ * Filtre Supabase `.or(...)` : contenu visible dans l'espace de travail actif.
  */
-export function buildReadScopeFilter(ctx: OrgContext): string {
-  const safeOrgs = ctx.orgIds.filter((id) => /^[A-Za-z0-9_-]+$/.test(id));
-  const orgsList = safeOrgs.length > 0 ? safeOrgs.join(",") : "";
+export function buildWorkspaceReadFilter(ctx: OrgContext): string {
+  if (!ctx.activeOrgId) return "organization_id.eq.__none__";
 
-  // Échappement : user_id Better Auth est `text`, peut contenir des caractères.
-  // On vérifie qu'il est aussi safe ; sinon, on n'expose pas la branche org.
-  const userIdSafe = /^[A-Za-z0-9_-]+$/.test(ctx.userId) ? ctx.userId : null;
+  const org = safeId(ctx.activeOrgId);
+  const user = safeId(ctx.userId);
+  if (!org || !user) return "organization_id.eq.__none__";
 
-  if (!userIdSafe) {
-    // Cas extrême : ne devrait pas arriver avec Better Auth ; sécurité défensive.
-    return `user_id.eq.${ctx.userId}`;
+  const inWorkspace = `and(organization_id.eq.${org},or(user_id.eq.${user},visibility.eq.organization))`;
+
+  if (org === personalOrganizationId(user)) {
+    const legacyMine = `and(organization_id.is.null,user_id.eq.${user})`;
+    return `${inWorkspace},${legacyMine}`;
   }
 
-  const userBranch = `user_id.eq.${userIdSafe}`;
-  if (!orgsList) return userBranch;
+  return inWorkspace;
+}
 
-  const orgBranch = `and(organization_id.in.(${orgsList}),visibility.eq.organization)`;
-  return `${userBranch},${orgBranch}`;
+/** @deprecated Alias — préférer buildWorkspaceReadFilter */
+export function buildReadScopeFilter(ctx: OrgContext): string {
+  return buildWorkspaceReadFilter(ctx);
+}
+
+/**
+ * Filtre pour listes « visibility = private » : privés de l'utilisateur dans l'espace actif.
+ */
+export function buildWorkspacePrivateFilter(ctx: OrgContext): string {
+  if (!ctx.activeOrgId) return "organization_id.eq.__none__";
+
+  const org = safeId(ctx.activeOrgId);
+  const user = safeId(ctx.userId);
+  if (!org || !user) return "organization_id.eq.__none__";
+
+  if (org === personalOrganizationId(user)) {
+    return `and(user_id.eq.${user},visibility.eq.private,or(organization_id.eq.${org},organization_id.is.null))`;
+  }
+
+  return `and(user_id.eq.${user},visibility.eq.private,organization_id.eq.${org})`;
+}
+
+export function requireActiveWorkspace(
+  ctx: OrgContext
+): { ok: true; activeOrgId: string } | { ok: false; error: string } {
+  if (!ctx.activeOrgId) {
+    return { ok: false, error: "Aucun espace de travail actif — sélectionnez-en un dans le header." };
+  }
+  const active = safeId(ctx.activeOrgId);
+  if (!active) {
+    return { ok: false, error: "Espace de travail invalide." };
+  }
+  if (!ctx.orgIds.includes(active)) {
+    return { ok: false, error: "Vous n'êtes pas membre de cet espace de travail." };
+  }
+  return { ok: true, activeOrgId: active };
 }
 
 /**

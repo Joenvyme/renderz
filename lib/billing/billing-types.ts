@@ -12,7 +12,7 @@ export type BillingPayload = {
   period: { key: string };
   usage: { renders: number; animations: number; upscales: number };
   limits: { renders: number; animations: number; upscales: number } | null;
-  free: {
+  trial: {
     generationsUsed: number;
     generationsMax: number;
     periodKey: string;

@@ -29,7 +29,7 @@ import { QuotaCounterCards } from "@/components/quota-counter-cards";
 import type { BillingPayload } from "@/lib/billing/billing-types";
 import { formatQuotaCardsSubtitle } from "@/lib/billing/quota-subtitle";
 import {
-  consumePendingCheckoutPlan,
+  consumePendingCheckout,
   isCheckoutPlanKey,
 } from "@/lib/billing/pending-checkout";
 import {
@@ -54,8 +54,45 @@ function SettingsContent() {
   const [isConfirmDeleteAccountOpen, setIsConfirmDeleteAccountOpen] = useState(false);
   const [isConfirmCancelSubscriptionOpen, setIsConfirmCancelSubscriptionOpen] = useState(false);
   const [isCancelingSubscription, setIsCancelingSubscription] = useState(false);
+  const [stripeCheckLoading, setStripeCheckLoading] = useState(false);
+  const [stripeCheckResult, setStripeCheckResult] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const autoCheckoutStartedRef = useRef(false);
+
+  const runStripeConfigCheck = async () => {
+    setStripeCheckLoading(true);
+    setStripeCheckResult(null);
+    try {
+      const res = await fetch("/api/stripe/config-check");
+      const data = await res.json();
+      if (!res.ok) {
+        setStripeCheckResult(data.error ?? "Échec du diagnostic");
+        return;
+      }
+      const lines: string[] = [];
+      if (data.keyHint) lines.push(`Clé : ${data.keyHint}`);
+      if (data.validation?.ok) lines.push(`Format : OK (${data.validation.mode})`);
+      if (data.stripeAuth?.ok) {
+        lines.push(`API Stripe : OK (livemode=${data.stripeAuth.livemode})`);
+      } else if (data.stripeAuth?.error) {
+        lines.push(`API Stripe : ${data.stripeAuth.error}`);
+      }
+      if (data.modeMismatch) lines.push(String(data.modeMismatch));
+      if (data.prices) {
+        for (const [plan, p] of Object.entries(data.prices as Record<string, { resolveOk: boolean; detail?: string; envKey: string }>)) {
+          lines.push(`${plan} (${p.envKey}) : ${p.resolveOk ? "OK" : "KO"}${p.detail ? ` — ${p.detail}` : ""}`);
+        }
+      }
+      if (data.vercelNote) lines.push(String(data.vercelNote));
+      setStripeCheckResult(
+        data.ok ? `✓ ${lines.join("\n")}` : `✗ ${lines.join("\n")}`
+      );
+    } catch (e) {
+      setStripeCheckResult(e instanceof Error ? e.message : "Erreur réseau");
+    } finally {
+      setStripeCheckLoading(false);
+    }
+  };
 
   const fetchBilling = useCallback(async () => {
     setBillingLoading(true);
@@ -113,27 +150,34 @@ function SettingsContent() {
     };
   }, [session, searchParams, router, fetchBilling]);
 
-  // Landing → auth → ?plan=pro_monthly : lance Checkout Stripe automatiquement.
+  // Landing → auth → ?plan=solo_monthly : lance Checkout Stripe automatiquement.
   useEffect(() => {
     if (!session || billingLoading || !billing?.stripeConfigured || billing.unlimited) return;
     if (autoCheckoutStartedRef.current) return;
 
     const fromUrl = searchParams.get("plan");
-    const plan = isCheckoutPlanKey(fromUrl) ? fromUrl : consumePendingCheckoutPlan();
+    const qtyParam = searchParams.get("quantity");
+    const pending = consumePendingCheckout();
+    const plan = isCheckoutPlanKey(fromUrl) ? fromUrl : pending?.plan;
     if (!plan) return;
 
-    if (fromUrl) {
+    const quantity =
+      pending?.quantity ??
+      (qtyParam ? parseInt(qtyParam, 10) : undefined);
+
+    if (fromUrl || qtyParam) {
       const url = new URL(window.location.href);
       url.searchParams.delete("plan");
+      url.searchParams.delete("quantity");
       const next = url.pathname + (url.search || "") + url.hash;
       router.replace(next, { scroll: false });
     }
 
-    const tier = billing.tier as "free" | "pro" | "enterprise";
+    const tier = billing.tier as import("@/lib/billing/constants").BillingTier;
     if (!shouldAutoCheckoutPlan(plan, tier)) return;
 
     autoCheckoutStartedRef.current = true;
-    void startStripeCheckout(plan).catch((e) => {
+    void startStripeCheckout(plan, { quantity }).catch((e) => {
       autoCheckoutStartedRef.current = false;
       alert(e instanceof Error ? e.message : "Checkout error");
     });
@@ -156,12 +200,13 @@ function SettingsContent() {
 
   const fetchStats = async () => {
     try {
-      const res = await fetch("/api/user/renders");
+      const res = await fetch("/api/user/render-stats");
       const data = await res.json();
-      if (data.renders) {
-        const standard = data.renders.filter((r: any) => r.status === 'completed').length;
-        const upscaled = data.renders.filter((r: any) => r.upscaled_image_url && r.upscaled_image_url !== r.generated_image_url).length;
-        setRenderStats({ standard, upscaled });
+      if (res.ok) {
+        setRenderStats({
+          standard: data.standard ?? 0,
+          upscaled: data.upscaled ?? 0,
+        });
       }
     } catch (error) {
       console.error("Error fetching stats:", error);
@@ -413,9 +458,33 @@ function SettingsContent() {
               <CreditCard className="w-5 h-5 shrink-0" />
               Abonnement & quotas
             </h2>
-            <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+            <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
               Formules Stripe et consommation du mois (UTC).
             </p>
+            <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-start">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-[4px] border-2 border-black font-mono text-[10px] uppercase tracking-wider"
+                disabled={stripeCheckLoading}
+                onClick={() => void runStripeConfigCheck()}
+              >
+                {stripeCheckLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    Test Stripe…
+                  </>
+                ) : (
+                  "Diagnostiquer Stripe (serveur)"
+                )}
+              </Button>
+              {stripeCheckResult ? (
+                <pre className="max-w-full flex-1 whitespace-pre-wrap rounded-[4px] border border-border/80 bg-muted/20 p-3 font-mono text-[10px] leading-snug text-foreground sm:text-[11px]">
+                  {stripeCheckResult}
+                </pre>
+              ) : null}
+            </div>
             {searchParams.get("checkout") === "success" && (
               <p className="text-sm font-mono text-green-600 mb-3">
                 Paiement reçu — vos quotas seront mis à jour sous peu.
@@ -440,21 +509,16 @@ function SettingsContent() {
                 </div>
                 {billing.unlimited ? (
                   <p className="text-sm font-mono text-muted-foreground">Aucune limite de quota (compte interne).</p>
-                ) : billing.tier === "free" ? (
+                ) : (
                   <QuotaCounterCards
-                    variant="free"
-                    subtitle={formatQuotaCardsSubtitle(billing)}
-                    usage={billing.usage}
-                    freeGenerationsMax={billing.free.generationsMax}
-                  />
-                ) : billing.limits ? (
-                  <QuotaCounterCards
-                    variant="paid"
+                    variant={billing.tier === "trial" ? "trial" : "paid"}
                     subtitle={formatQuotaCardsSubtitle(billing)}
                     usage={billing.usage}
                     limits={billing.limits}
+                    freeGenerationsMax={billing.trial.generationsMax}
+                    billing={billing}
                   />
-                ) : null}
+                )}
 
                 {!billing.unlimited && (
                   <div className="pt-4 border-t border-border/60 mt-4">
@@ -496,7 +560,7 @@ function SettingsContent() {
             {billing &&
               billing.stripeConfigured &&
               !billing.unlimited &&
-              (billing.tier === "pro" || billing.tier === "enterprise") &&
+              (billing.tier === "solo" || billing.tier === "studio") &&
               billing.subscription?.cancelAtPeriodEnd && (
                 <p className="text-xs font-mono text-muted-foreground mb-3 max-w-2xl leading-relaxed">
                   Résiliation déjà demandée : le renouvellement automatique est désactivé. Vous conservez l’accès jusqu’à
@@ -507,7 +571,7 @@ function SettingsContent() {
               {billing &&
                 billing.stripeConfigured &&
                 !billing.unlimited &&
-                (billing.tier === "pro" || billing.tier === "enterprise") &&
+                (billing.tier === "solo" || billing.tier === "studio") &&
                 billing.subscription &&
                 !billing.subscription.cancelAtPeriodEnd && (
                   <Button

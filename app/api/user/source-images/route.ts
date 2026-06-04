@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getOrgContext, buildReadScopeFilter, parseVisibility } from "@/lib/org-context";
+import {
+  getOrgContext,
+  buildWorkspaceReadFilter,
+  parseVisibility,
+  canReadInActiveWorkspace,
+  canWriteInActiveWorkspace,
+  requireActiveWorkspace,
+} from "@/lib/org-context";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +22,7 @@ export interface SourceImageEntry {
 const ORIGINAL_BUCKET = "original-images";
 
 /**
- * Liste les images d'entrée disponibles :
- *  - celles que l'utilisateur a téléversées (toutes orgs confondues), +
- *  - celles partagées dans ses organisations.
- * Sert à la galerie « réutiliser une image » sous la barre de prompt.
+ * Liste les images d'entrée de l'espace de travail actif (galerie « réutiliser une image »).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -43,7 +47,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase
       .from("source_images")
       .select("id, user_id, url, visibility, created_at")
-      .or(buildReadScopeFilter(ctx))
+      .or(buildWorkspaceReadFilter(ctx))
       .order("created_at", { ascending: false })
       .range(offset, offset + limit);
 

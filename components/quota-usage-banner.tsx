@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { AlertCircle, X } from "lucide-react";
 import type { BillingPayload } from "@/lib/billing/billing-types";
-import { FREE_GENERATIONS_PER_MONTH } from "@/lib/billing/constants";
+import { TRIAL_GENERATIONS_TOTAL } from "@/lib/billing/constants";
 
 type QuotaUsageBannerProps = {
   billing: BillingPayload | null;
@@ -12,35 +12,24 @@ type QuotaUsageBannerProps = {
 };
 
 /**
- * Bandeau discret quand le palier Free approche ou atteint les limites du mois.
+ * Bandeau discret quand le palier Trial approche ou atteint les limites.
  */
 export function QuotaUsageBanner({ billing, dismissed, onDismiss }: QuotaUsageBannerProps) {
-  if (dismissed || !billing || billing.unlimited || billing.tier !== "free") return null;
+  if (dismissed || !billing || billing.unlimited || billing.tier !== "trial") return null;
 
-  const used = billing.usage.renders + billing.usage.animations;
-  const max = billing.free.generationsMax ?? FREE_GENERATIONS_PER_MONTH;
-  const upscalesUsed = billing.usage.upscales;
-  const upscalesMax = 1;
+  const used = billing.trial.generationsUsed;
+  const max = billing.trial.generationsMax ?? TRIAL_GENERATIONS_TOTAL;
 
   const generationsExhausted = used >= max;
-  const generationsNear = used >= max - 1 && used < max;
-  const upscaleExhausted = upscalesUsed >= upscalesMax;
+  const generationsNear = used >= max - 5 && used < max;
 
-  if (!generationsExhausted && !generationsNear && !upscaleExhausted) return null;
+  if (!generationsExhausted && !generationsNear) return null;
 
-  const isUrgent = generationsExhausted || upscaleExhausted;
+  const isUrgent = generationsExhausted;
 
-  let message: string;
-  if (generationsExhausted && upscaleExhausted) {
-    message =
-      "You’ve used all free creations and your 4K upscale for this month. Upgrade to Pro to keep going.";
-  } else if (generationsExhausted) {
-    message = `You’ve used all ${max} free creations this month. Upgrade to Pro for 100 renders + 100 animations per month.`;
-  } else if (upscaleExhausted) {
-    message = "You’ve used your free 4K upscale this month. Upgrade to Pro for 25 upscales per month.";
-  } else {
-    message = `You have ${max - used} free creation left this month. Upgrade anytime for higher limits.`;
-  }
+  const message = generationsExhausted
+    ? `You’ve used all ~${max} trial creations. Subscribe to Solo for 200 renders/month without watermark.`
+    : `You have ${max - used} trial creations left. Subscribe anytime for higher limits.`;
 
   return (
     <div
@@ -55,10 +44,10 @@ export function QuotaUsageBanner({ billing, dismissed, onDismiss }: QuotaUsageBa
       <div className="min-w-0 flex-1 pr-6">
         <p className="text-xs font-medium leading-snug sm:text-sm">{message}</p>
         <Link
-          href="/settings?plan=pro_monthly#billing"
+          href="/settings?plan=solo_monthly#billing"
           className="mt-1.5 inline-block font-mono text-[10px] uppercase tracking-wider underline underline-offset-2 hover:no-underline sm:text-[11px]"
         >
-          View Pro plans
+          View Solo plans
         </Link>
       </div>
       <button

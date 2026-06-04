@@ -1559,9 +1559,12 @@ export function RenderGenerator({
             localStorage.setItem(K.MAGNIFIC_CREATIVITY_VALUE, String(creToSend));
             localStorage.removeItem(K.MAGNIFIC_STYLE_VALUE);
             localStorage.removeItem(K.MAGNIFIC_CREATIVITY);
+            localStorage.setItem(K.PENDING_GENERATE, "1");
           } catch (e) {
             console.error(e);
           }
+          setShowCompactOptions(false);
+          setShowImagePicker(false);
           onUnauthenticated?.();
           return;
         }
@@ -1582,6 +1585,7 @@ export function RenderGenerator({
         localStorage.removeItem(K.MAGNIFIC_RESEMBLANCE_VALUE);
         localStorage.removeItem(K.MAGNIFIC_CREATIVITY_VALUE);
         localStorage.removeItem(K.MAGNIFIC_CREATIVITY);
+        localStorage.removeItem(K.PENDING_GENERATE);
       }
 
       const imageSizeToUse = imageSizeOverride ?? imageSize;
@@ -1780,7 +1784,7 @@ export function RenderGenerator({
     const mcre = localStorage.getItem(K.MAGNIFIC_CREATIVITY_VALUE);
     const mcr = localStorage.getItem(K.MAGNIFIC_CREATIVITY);
 
-    if (!rawImg || !pr || landingResumeLockRef.current) return;
+    if (!rawImg || landingResumeLockRef.current) return;
 
     let parsed: UploadedImageItem[] = [];
     try {
@@ -1790,7 +1794,10 @@ export function RenderGenerator({
     }
     if (parsed.length === 0) return;
 
+    const promptResume = pr ?? "";
+
     landingResumeLockRef.current = true;
+    localStorage.removeItem(K.PENDING_GENERATE);
     localStorage.removeItem(K.IMAGES);
     localStorage.removeItem(K.PROMPT);
     localStorage.removeItem(K.ASPECT_RATIO);
@@ -1830,7 +1837,7 @@ export function RenderGenerator({
     }
 
     setUploadedImages(parsed);
-    setPrompt(pr);
+    setPrompt(promptResume);
     setAspectRatio(aspectUse);
     setImageSize(sizeUse);
     setSourceKind(pipelineResume === "magnific" ? "render_3d" : "plan_photo");
@@ -1839,7 +1846,7 @@ export function RenderGenerator({
     setMagnificCreativityValue(creResume);
 
     const t = window.setTimeout(() => {
-      void runGenerateWithPayload(parsed, pr, aspectUse, sizeUse, {
+      void runGenerateWithPayload(parsed, promptResume, aspectUse, sizeUse, {
         pipeline: pipelineResume,
         magnificScale: scaleResume,
         magnificResemblanceValue: resResume,
@@ -2165,11 +2172,10 @@ export function RenderGenerator({
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          {uploadedImages.length > 0 && (
+          {uploadedImages.length > 0 && !landingMode && (
             <div
               className={cn(
-                "relative z-0 mb-1.5 flex min-h-0 flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 pt-0.5 [scrollbar-width:thin] sm:gap-3",
-                landingMode && "max-sm:mb-1 max-sm:gap-1.5"
+                "relative z-0 mb-1.5 flex min-h-0 flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 pt-0.5 [scrollbar-width:thin] sm:gap-3"
               )}
             >
             {uploadedImages.map((img, index) => {
@@ -2226,6 +2232,39 @@ export function RenderGenerator({
             compactBarClassName
           )}
         >
+          {landingMode && uploadedImages.length > 0 && (
+            <div
+              className="flex max-w-[9.5rem] shrink-0 flex-nowrap items-center gap-1 overflow-x-auto [scrollbar-width:thin] sm:max-w-[11rem] sm:gap-1.5"
+              aria-label="Uploaded images"
+            >
+              {uploadedImages.map((img, index) => {
+                const n = index + 1;
+                return (
+                  <div
+                    key={img.id}
+                    className="group relative h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-border/80 bg-muted/15 sm:h-9 sm:w-9"
+                  >
+                    <span className="absolute left-0.5 top-0.5 z-[1] flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-400 px-0.5 font-mono text-[8px] font-bold text-emerald-950 ring-1 ring-emerald-600/15">
+                      {n}
+                    </span>
+                    <img
+                      src={img.dataUrl}
+                      alt={`Image ${n}`}
+                      className="h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(img.id)}
+                      className="absolute right-0.5 top-0.5 z-[2] flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-white opacity-0 transition-opacity hover:bg-red-600 group-hover:opacity-100 focus-visible:opacity-100"
+                      aria-label={`Remove image ${n}`}
+                    >
+                      <X className="h-2.5 w-2.5" strokeWidth={2.5} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {uploadedImages.length < MAX_INPUT_IMAGES && (
             enableImageGallery ? (
               <button

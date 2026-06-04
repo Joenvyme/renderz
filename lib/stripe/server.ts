@@ -1,48 +1,62 @@
 import Stripe from "stripe";
 import type { BillingTier } from "@/lib/billing/constants";
+import {
+  checkoutPlanKeys,
+  isCheckoutPlanKey,
+  stripeEnvKeyForCheckout,
+  tierFromCheckoutPlanKey as tierFromPlanKey,
+  type CheckoutPlanKey,
+} from "@/lib/billing/plans";
+import {
+  normalizeStripeSecretKey,
+  validateStripeSecretKey,
+  type StripeKeyValidation,
+} from "@/lib/stripe/validate-key";
+
+export type { CheckoutPlanKey } from "@/lib/billing/plans";
+export { checkoutPlanKeys, isCheckoutPlanKey };
 
 let stripeSingleton: Stripe | null = null;
+let stripeSingletonKey: string | null = null;
+
+export { validateStripeSecretKey, type StripeKeyValidation };
+
+export function getStripeSecretKey(): string | null {
+  return normalizeStripeSecretKey(process.env.STRIPE_SECRET_KEY);
+}
 
 export function getStripe(): Stripe {
-  if (!process.env.STRIPE_SECRET_KEY) {
-    throw new Error("STRIPE_SECRET_KEY is not set");
+  const validated = validateStripeSecretKey(process.env.STRIPE_SECRET_KEY);
+  if (!validated.ok) {
+    throw new Error(validated.error);
   }
-  if (!stripeSingleton) {
-    stripeSingleton = new Stripe(process.env.STRIPE_SECRET_KEY, {
-      typescript: true,
-    });
+  if (!stripeSingleton || stripeSingletonKey !== validated.key) {
+    stripeSingleton = new Stripe(validated.key, { typescript: true });
+    stripeSingletonKey = validated.key;
   }
   return stripeSingleton;
 }
 
 export function isStripeConfigured(): boolean {
-  return Boolean(process.env.STRIPE_SECRET_KEY?.trim());
+  const key = getStripeSecretKey();
+  if (!key) return false;
+  return validateStripeSecretKey(key).ok;
 }
 
-export type CheckoutPlanKey =
-  | "pro_monthly"
-  | "pro_yearly"
-  | "enterprise_monthly"
-  | "enterprise_yearly";
-
-/** Nom de variable d’environnement pour chaque plan (à documenter / copier dans .env.local). */
+/** Nom de variable d’environnement pour chaque plan (serveur uniquement). */
 export const PLAN_ENV_KEYS: Record<CheckoutPlanKey, string> = {
-  pro_monthly: "STRIPE_PRICE_PRO_MONTHLY",
-  pro_yearly: "STRIPE_PRICE_PRO_YEARLY",
-  enterprise_monthly: "STRIPE_PRICE_ENTERPRISE_MONTHLY",
-  enterprise_yearly: "STRIPE_PRICE_ENTERPRISE_YEARLY",
+  solo_monthly: "STRIPE_PRICE_SOLO_MONTHLY",
+  solo_yearly: "STRIPE_PRICE_SOLO_YEARLY",
+  studio_monthly: "STRIPE_PRICE_STUDIO_MONTHLY",
+  studio_yearly: "STRIPE_PRICE_STUDIO_YEARLY",
 };
 
 export function getStripePriceIdForPlan(plan: CheckoutPlanKey): string | null {
-  const envKey = PLAN_ENV_KEYS[plan];
+  const envKey = stripeEnvKeyForCheckout(plan);
   const v = process.env[envKey];
   return v?.trim() || null;
 }
 
-/**
- * Résout le Price ID pour Checkout : soit une variable `price_xxx` directe,
- * soit une lookup key (comme dans le [quickstart Stripe](https://docs.stripe.com/billing/quickstart)).
- */
 export type ResolvePriceFailure =
   | { ok: true; priceId: string }
   | { ok: false; reason: "missing_env"; envKey: string }
@@ -52,7 +66,7 @@ export async function resolveStripePriceIdForPlanDetailed(
   stripe: Stripe,
   plan: CheckoutPlanKey
 ): Promise<ResolvePriceFailure> {
-  const envKey = PLAN_ENV_KEYS[plan];
+  const envKey = stripeEnvKeyForCheckout(plan);
   const raw = getStripePriceIdForPlan(plan);
   if (!raw) {
     return { ok: false, reason: "missing_env", envKey };
@@ -81,45 +95,40 @@ export async function resolveStripePriceIdForPlan(
   return r.ok ? r.priceId : null;
 }
 
-/** Palier à partir des métadonnées Checkout (`checkoutPlan`), fiable même avec lookup keys. */
 export function tierFromCheckoutPlanKey(plan: string | undefined | null): BillingTier | null {
-  if (!plan) return null;
-  if (plan === "pro_monthly" || plan === "pro_yearly") return "pro";
-  if (plan === "enterprise_monthly" || plan === "enterprise_yearly") return "enterprise";
-  return null;
+  if (!isCheckoutPlanKey(plan)) return null;
+  return tierFromPlanKey(plan);
 }
 
-/** Déduit le palier à partir d’un Price Stripe (abonnement). */
 export function tierFromStripePriceId(priceId: string | undefined | null): BillingTier | null {
   if (!priceId) return null;
-  const pro = [process.env.STRIPE_PRICE_PRO_MONTHLY, process.env.STRIPE_PRICE_PRO_YEARLY].filter(
-    Boolean
-  ) as string[];
-  const ent = [process.env.STRIPE_PRICE_ENTERPRISE_MONTHLY, process.env.STRIPE_PRICE_ENTERPRISE_YEARLY].filter(
-    Boolean
-  ) as string[];
-  const proIds = pro.filter((p) => p.startsWith("price_"));
-  const entIds = ent.filter((p) => p.startsWith("price_"));
-  if (proIds.includes(priceId)) return "pro";
-  if (entIds.includes(priceId)) return "enterprise";
+  for (const plan of checkoutPlanKeys()) {
+    const raw = process.env[stripeEnvKeyForCheckout(plan)]?.trim();
+    if (raw?.startsWith("price_") && raw === priceId) {
+      return tierFromPlanKey(plan);
+    }
+  }
   return null;
 }
 
 const PLAN_TO_TIER: Record<CheckoutPlanKey, BillingTier> = {
-  pro_monthly: "pro",
-  pro_yearly: "pro",
-  enterprise_monthly: "enterprise",
-  enterprise_yearly: "enterprise",
+  solo_monthly: "solo",
+  solo_yearly: "solo",
+  studio_monthly: "studio",
+  studio_yearly: "studio",
 };
 
-/** Si les env. contiennent des lookup keys, retrouver le palier via la lookup key du Price. */
 export function tierFromEnvLookupKey(lookupKey: string | null | undefined): BillingTier | null {
   if (!lookupKey) return null;
-  for (const plan of Object.keys(PLAN_ENV_KEYS) as CheckoutPlanKey[]) {
-    const raw = process.env[PLAN_ENV_KEYS[plan]]?.trim();
+  for (const plan of checkoutPlanKeys()) {
+    const raw = process.env[stripeEnvKeyForCheckout(plan)]?.trim();
     if (raw && !raw.startsWith("price_") && raw === lookupKey) {
       return PLAN_TO_TIER[plan];
     }
   }
   return null;
+}
+
+export function isStudioCheckoutPlan(plan: CheckoutPlanKey): boolean {
+  return plan.startsWith("studio_");
 }

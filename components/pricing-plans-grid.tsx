@@ -1,274 +1,482 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { Check, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Check, Minus, Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   ANNUAL_DISCOUNT_LABEL,
-  ENT_MONTHLY,
-  ENT_YEARLY,
-  PRO_MONTHLY,
-  PRO_YEARLY,
+  PLANS,
+  STUDIO_DEFAULT_SEATS,
+  STUDIO_MIN_SEATS,
   formatChf,
+  getPlan,
+  planHeadlineAmount,
+  studioHeadlineAmount,
+  type PlanDefinition,
+  type PlanId,
   type PricingInterval,
-} from "@/lib/billing/pricing-display";
+} from "@/lib/billing/plans";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export type { PricingInterval };
 
-type SubscriberTier = "free" | "pro" | "enterprise";
+type PricingTheme = "light" | "dark";
 
-function ProPriceHead({ interval }: { interval: PricingInterval }) {
-  if (interval === "monthly") {
-    return (
-      <div className="flex flex-wrap items-baseline gap-1">
-        <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">{formatChf(PRO_MONTHLY)}</span>
-        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / month</span>
-      </div>
-    );
-  }
+type PricingIntervalTabsProps = {
+  interval: PricingInterval;
+  onIntervalChange: (v: PricingInterval) => void;
+  theme?: PricingTheme;
+  className?: string;
+};
+
+export function PricingIntervalTabs({
+  interval,
+  onIntervalChange,
+  theme = "light",
+  className,
+}: PricingIntervalTabsProps) {
+  const isDark = theme === "dark";
+
   return (
-    <div className="space-y-1">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">{formatChf(PRO_YEARLY)}</span>
-        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / year</span>
-        <span className="rounded-[2px] border border-emerald-200/80 bg-emerald-100 px-2 py-0.5 font-mono text-[10px] uppercase text-emerald-900">
-          {ANNUAL_DISCOUNT_LABEL}
-        </span>
-      </div>
-      <p className="font-mono text-xs text-muted-foreground">
-        That's {formatChf(PRO_YEARLY / 12)} CHF / month, billed once a year
-      </p>
-    </div>
-  );
-}
-
-function EntPriceHead({ interval }: { interval: PricingInterval }) {
-  if (interval === "monthly") {
-    return (
-      <div className="flex flex-wrap items-baseline gap-1">
-        <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">{formatChf(ENT_MONTHLY)}</span>
-        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / month</span>
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-1">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">{formatChf(ENT_YEARLY)}</span>
-        <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF / year</span>
-        <span className="rounded-[2px] border border-emerald-200/80 bg-emerald-100 px-2 py-0.5 font-mono text-[10px] uppercase text-emerald-900">
-          {ANNUAL_DISCOUNT_LABEL}
-        </span>
-      </div>
-      <p className="font-mono text-xs text-muted-foreground">
-        That's {formatChf(ENT_YEARLY / 12)} CHF / month, billed once a year
-      </p>
-    </div>
-  );
-}
-
-function shellFreeEnt(active: boolean, base: string) {
-  return cn(
-    base,
-    active ? "border-2 border-black ring-1 ring-black/5" : "border border-border/50"
+    <Tabs
+      value={interval}
+      onValueChange={(v) => onIntervalChange(v as PricingInterval)}
+      className={cn(isDark ? "w-fit" : "w-full max-w-md sm:w-fit", className)}
+      aria-label="Billing period"
+    >
+      <TabsList
+        className={cn(
+          "grid h-11 grid-cols-2 gap-0 p-0",
+          isDark
+            ? "w-fit overflow-hidden rounded-[4px] border border-white/20 bg-transparent"
+            : "w-full gap-1 p-1 sm:w-max"
+        )}
+      >
+        <TabsTrigger
+          value="monthly"
+          className={cn(
+            "h-full min-h-0 touch-manipulation rounded-none px-4 py-0 font-mono text-[11px] uppercase tracking-[0.08em] sm:px-6",
+            isDark &&
+              "data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:bg-transparent data-[state=inactive]:text-white/60"
+          )}
+        >
+          Monthly
+        </TabsTrigger>
+        <TabsTrigger
+          value="yearly"
+          className={cn(
+            "h-full min-h-0 touch-manipulation gap-1.5 rounded-none px-3 py-0 font-mono text-[11px] uppercase tracking-[0.08em] sm:gap-2 sm:px-6",
+            isDark &&
+              "data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:bg-transparent data-[state=inactive]:text-white/60"
+          )}
+        >
+          <span>Yearly</span>
+          <span
+            className={cn(
+              "rounded-[2px] border px-1.5 py-0.5 font-mono text-[10px] font-normal normal-case tracking-normal",
+              isDark
+                ? interval === "yearly"
+                  ? "border-black/20 bg-black/10 text-black"
+                  : "border-white/25 bg-transparent text-white/70"
+                : interval === "yearly"
+                  ? "border-white/35 bg-white/20 text-white"
+                  : "border-emerald-200/80 bg-emerald-100 text-emerald-900"
+            )}
+          >
+            {ANNUAL_DISCOUNT_LABEL}
+          </span>
+        </TabsTrigger>
+      </TabsList>
+    </Tabs>
   );
 }
 
 export type PricingPlansGridProps = {
   interval: PricingInterval;
   onIntervalChange: (v: PricingInterval) => void;
-  freeFooter: ReactNode;
-  proFooter: ReactNode;
-  enterpriseFooter: ReactNode;
-  /** Abonné connecté (paramètres) : carte du palier actuel mise en avant. Omit pour la landing. */
-  subscriberTier?: SubscriberTier | null;
+  trialFooter: ReactNode;
+  soloFooter: ReactNode;
+  studioFooter: ReactNode;
+  agencyFooter: ReactNode;
+  /** Espace actif abonné (mapping legacy à brancher côté settings). */
+  activePlanId?: PlanId | null;
+  studioSeats?: number;
+  onStudioSeatsChange?: (seats: number) => void;
   className?: string;
+  theme?: PricingTheme;
+  showIntervalToggle?: boolean;
 };
 
-/**
- * Grille 3 colonnes + onglets Mensuel / Annuel — même UI que la landing (shadcn Tabs, Badge, Separator).
- */
+function FeatureList({
+  items,
+  dark,
+  onLightSurface,
+}: {
+  items: string[];
+  dark?: boolean;
+  onLightSurface?: boolean;
+}) {
+  const textClass = dark
+    ? onLightSurface
+      ? "text-foreground"
+      : "text-white/90"
+    : "text-foreground";
+  const iconClass = dark && !onLightSurface ? "text-white" : "text-black";
+
+  return (
+    <ul className="flex flex-1 flex-col gap-3.5 sm:space-y-4 sm:gap-0">
+      {items.map((item) => (
+        <li
+          key={item}
+          className={cn(
+            "flex items-start gap-2.5 text-sm leading-snug md:leading-snug",
+            dark ? "leading-[1.45]" : "text-muted-foreground"
+          )}
+        >
+          <Check className={cn("mt-0.5 size-4 shrink-0", iconClass)} aria-hidden />
+          <span className={textClass}>{item}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function PlanPriceBlock({
+  plan,
+  interval,
+  dark,
+  onLightSurface,
+  studioSeats,
+}: {
+  plan: PlanDefinition;
+  interval: PricingInterval;
+  dark?: boolean;
+  onLightSurface?: boolean;
+  studioSeats: number;
+}) {
+  const suffixMuted = dark
+    ? onLightSurface
+      ? "text-black/50"
+      : "text-white/55"
+    : "text-muted-foreground";
+  const subMuted = dark
+    ? onLightSurface
+      ? "text-black/50"
+      : "text-white/50"
+    : "text-muted-foreground";
+
+  if (plan.id === "agency") {
+    return (
+      <div className="min-h-[4.5rem] sm:min-h-[5.5rem]">
+        <span className="font-mono text-[clamp(2rem,5vw,3.25rem)] font-bold tracking-[-0.03em]">
+          Custom
+        </span>
+        <p className={cn("mt-2 text-sm", subMuted)}>Tailored for 10+ seats</p>
+      </div>
+    );
+  }
+
+  if (plan.id === "studio") {
+    const studio = studioHeadlineAmount(interval, studioSeats);
+    return (
+      <div className="min-h-[4.5rem] space-y-2 sm:min-h-[5.5rem]">
+        <div className="flex flex-wrap items-baseline">
+          <span
+            className={cn(
+              "font-mono font-bold tabular-nums tracking-[-0.03em]",
+              dark
+                ? "text-[clamp(1.75rem,4.5vw,2.75rem)]"
+                : "text-2xl sm:text-3xl lg:text-4xl"
+            )}
+          >
+            {studio.headline}
+          </span>
+        </div>
+        <p className={cn("font-mono text-[10px] uppercase tracking-[0.06em] sm:text-xs", subMuted)}>
+          {studio.sub}
+        </p>
+      </div>
+    );
+  }
+
+  const head = planHeadlineAmount(plan, interval);
+  return (
+    <div className="min-h-[4.5rem] space-y-1 sm:min-h-[5.5rem]">
+      <div className="flex flex-wrap items-baseline gap-1">
+        <span
+          className={cn(
+            "font-mono font-bold tabular-nums tracking-[-0.03em]",
+            dark
+              ? "text-[clamp(2.5rem,6vw,3.625rem)]"
+              : "text-3xl sm:text-4xl lg:text-5xl"
+          )}
+        >
+          {plan.id === "trial" ? "0" : formatChf(head.main)}
+        </span>
+        <span className={cn("text-base sm:text-[15px]", suffixMuted)}>{head.suffix}</span>
+        {interval === "yearly" && plan.id !== "trial" && (
+          <span className="rounded-[2px] border border-emerald-200/80 bg-emerald-100 px-2 py-0.5 font-mono text-[10px] uppercase text-emerald-900">
+            {ANNUAL_DISCOUNT_LABEL}
+          </span>
+        )}
+      </div>
+      {head.sub ? (
+        <p className={cn("font-mono text-[10px] uppercase tracking-[0.06em] sm:text-xs", subMuted)}>
+          {head.sub}
+        </p>
+      ) : plan.id === "trial" ? (
+        <p className={cn("font-mono text-[10px] uppercase tracking-[0.06em]", subMuted)}>
+          {head.sub ?? `${getPlan("trial").trialDays}-day trial · watermarked`}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function StudioSeatSelector({
+  seats,
+  onChange,
+  dark,
+  onLightSurface,
+}: {
+  seats: number;
+  onChange: (n: number) => void;
+  dark?: boolean;
+  onLightSurface?: boolean;
+}) {
+  const dec = () => onChange(Math.max(STUDIO_MIN_SEATS, seats - 1));
+  const inc = () => onChange(seats + 1);
+
+  return (
+    <div
+      className={cn(
+        "mt-4 flex items-center justify-between gap-3 rounded-[4px] border px-3 py-2",
+        dark
+          ? onLightSurface
+            ? "border-black/15 bg-black/[0.03]"
+            : "border-white/20 bg-white/5"
+          : "border-border/80 bg-muted/20"
+      )}
+    >
+      <span className="font-mono text-[10px] uppercase tracking-wider">Seats</span>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 rounded-[4px]"
+          onClick={dec}
+          disabled={seats <= STUDIO_MIN_SEATS}
+          aria-label="Remove seat"
+        >
+          <Minus className="h-3.5 w-3.5" />
+        </Button>
+        <span className="min-w-[2ch] text-center font-mono text-sm font-semibold tabular-nums">
+          {seats}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 rounded-[4px]"
+          onClick={inc}
+          aria-label="Add seat"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function PlanCardShell({
+  plan,
+  active,
+  dark,
+  onLightSurface,
+  children,
+}: {
+  plan: PlanDefinition;
+  active: boolean;
+  dark?: boolean;
+  onLightSurface?: boolean;
+  children: ReactNode;
+}) {
+  if (dark) {
+    if (onLightSurface) {
+      return (
+        <div className="relative flex flex-col rounded-lg bg-white p-[34px_30px] text-black">
+          {children}
+        </div>
+      );
+    }
+    return (
+      <div
+        className={cn(
+          "relative flex flex-col rounded-lg border p-[34px_30px] text-white",
+          plan.highlighted ? "border-white/40 ring-1 ring-white/20" : "border-white/14"
+        )}
+      >
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "relative flex w-full min-w-0 flex-1 flex-col rounded-[6px] p-4 text-left shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:p-6 md:p-8",
+        plan.highlighted
+          ? "border-2 border-black bg-white/80 ring-1 ring-black/10"
+          : active
+            ? "border-2 border-black bg-white/50 ring-1 ring-black/5"
+            : "border border-border/50 bg-white/50",
+        active && !plan.highlighted && "ring-2 ring-black/15"
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Grille Trial / Solo / Studio (highlight) / Agency. */
 export function PricingPlansGrid({
   interval,
   onIntervalChange,
-  freeFooter,
-  proFooter,
-  enterpriseFooter,
-  subscriberTier = null,
+  trialFooter,
+  soloFooter,
+  studioFooter,
+  agencyFooter,
+  activePlanId = null,
+  studioSeats: studioSeatsProp,
+  onStudioSeatsChange,
   className,
+  theme = "light",
+  showIntervalToggle = true,
 }: PricingPlansGridProps) {
-  const emphasizeFree = subscriberTier === "free";
-  const emphasizeEnterprise = subscriberTier === "enterprise";
+  const isDark = theme === "dark";
+  const [studioSeatsInternal, setStudioSeatsInternal] = useState(STUDIO_DEFAULT_SEATS);
+  const studioSeats = studioSeatsProp ?? studioSeatsInternal;
+  const setStudioSeats = onStudioSeatsChange ?? setStudioSeatsInternal;
+
+  const renderCard = (plan: PlanDefinition, footer: ReactNode) => {
+    const onLightSurface = isDark && plan.highlighted;
+    const labelClass = isDark
+      ? onLightSurface
+        ? "text-black"
+        : "text-white/70"
+      : undefined;
+
+    return (
+      <PlanCardShell
+        key={plan.id}
+        plan={plan}
+        active={activePlanId === plan.id}
+        dark={isDark}
+        onLightSurface={onLightSurface}
+      >
+        {!isDark && plan.highlighted && (
+          <div className="absolute -top-3 left-1/2 z-10 -translate-x-1/2">
+            <span className="rounded-[4px] bg-black px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-white">
+              Most popular
+            </span>
+          </div>
+        )}
+
+        <span
+          className={cn(
+            "font-mono text-[11px] uppercase tracking-[0.18em]",
+            isDark && !onLightSurface && "text-white/70",
+            plan.highlighted && isDark && !onLightSurface && "text-white",
+            !isDark && "mb-3"
+          )}
+        >
+          {plan.name}
+          {plan.highlighted && isDark ? " · Popular" : ""}
+        </span>
+
+        {!isDark && (
+          <Badge variant="outline" className="mb-3 w-fit font-mono text-[10px] uppercase tracking-widest">
+            {plan.name}
+          </Badge>
+        )}
+
+        <p
+          className={cn(
+            "text-sm",
+            isDark ? (onLightSurface ? "text-black/55" : "text-white/55") : "mb-6 text-muted-foreground",
+            !isDark && plan.highlighted && "mt-2"
+          )}
+        >
+          {plan.tagline}
+        </p>
+
+        <PlanPriceBlock
+          plan={plan}
+          interval={interval}
+          dark={isDark}
+          onLightSurface={onLightSurface}
+          studioSeats={studioSeats}
+        />
+
+        {plan.id === "studio" && (
+          <StudioSeatSelector
+            seats={studioSeats}
+            onChange={setStudioSeats}
+            dark={isDark}
+            onLightSurface={onLightSurface}
+          />
+        )}
+
+        {!isDark && <Separator className="my-6" />}
+
+        <div className={cn("flex flex-1 flex-col", isDark && "mt-7")}>
+          <FeatureList
+            items={plan.features}
+            dark={isDark}
+            onLightSurface={onLightSurface}
+          />
+          <div className="mt-8">{footer}</div>
+        </div>
+      </PlanCardShell>
+    );
+  };
+
+  const footers: Record<PlanId, ReactNode> = {
+    trial: trialFooter,
+    solo: soloFooter,
+    studio: studioFooter,
+    agency: agencyFooter,
+  };
+
+  if (isDark) {
+    return (
+      <div className={cn("w-full min-w-0", className)}>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-4">
+          {PLANS.map((plan) => renderCard(plan, footers[plan.id]))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("w-full min-w-0", className)}>
-      <div className="mb-6 flex justify-center px-1 sm:mb-10">
-        <Tabs
-          value={interval}
-          onValueChange={(v) => onIntervalChange(v as PricingInterval)}
-          className="w-full max-w-md sm:w-fit"
-          aria-label="Billing period"
-        >
-          <TabsList className="grid h-11 w-full grid-cols-2 gap-1 p-1 sm:w-max">
-            <TabsTrigger value="monthly" className="h-full min-h-0 touch-manipulation px-4 py-0 sm:px-6">
-              Monthly
-            </TabsTrigger>
-            <TabsTrigger value="yearly" className="h-full min-h-0 touch-manipulation gap-1.5 px-3 py-0 sm:gap-2 sm:px-6">
-              <span>Yearly</span>
-              <span
-                className={cn(
-                  "rounded-[2px] border px-1.5 py-0.5 font-mono text-[10px] font-normal normal-case tracking-normal",
-                  interval === "yearly"
-                    ? "border-white/35 bg-white/20 text-white"
-                    : "border-emerald-200/80 bg-emerald-100 text-emerald-900"
-                )}
-              >
-                {ANNUAL_DISCOUNT_LABEL}
-              </span>
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-
-      <div className="flex w-full flex-col items-stretch gap-6 md:flex-row md:items-stretch">
-        {/* Free */}
-        <div
-          className={cn(
-            shellFreeEnt(
-              emphasizeFree,
-              "flex w-full min-w-0 flex-1 flex-col rounded-[6px] bg-white/50 p-4 text-left shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:p-6 md:p-8"
-            )
-          )}
-        >
-          <Badge variant="outline" className="mb-3 w-fit font-mono text-[10px] uppercase tracking-widest">
-            Free
-          </Badge>
-          <p className="mb-6 text-sm text-muted-foreground">Free trial — no card</p>
-          <div className="min-h-[5.5rem]">
-            <div className="flex flex-wrap items-baseline gap-1">
-              <span className="font-mono text-3xl font-bold tabular-nums sm:text-4xl lg:text-5xl">0</span>
-              <span className="text-base font-medium text-muted-foreground sm:text-lg">CHF</span>
-            </div>
-          </div>
-          <p className="pointer-events-none select-none text-sm text-transparent" aria-hidden>
-            &nbsp;
-          </p>
-          <Separator className="my-6" />
-          <div className="flex flex-1 flex-col">
-            <ul className="space-y-4 text-sm leading-snug text-muted-foreground md:leading-snug">
-              <li className="flex items-start gap-2.5">
-                <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">
-                  5 creations per month (1 image or 1 animation = 1 creation; resets every calendar month UTC)
-                </span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">1 4K upscale (Magnific) per month (same UTC period)</span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">1 project folder</span>
-              </li>
-              <li className="flex items-start gap-2.5 text-muted-foreground">
-                <X className="mt-0.5 size-4 shrink-0" aria-hidden />
-                <span>Pro / team quotas</span>
-              </li>
-            </ul>
-            <div className="mt-8">{freeFooter}</div>
-          </div>
+      {showIntervalToggle && (
+        <div className="mb-6 flex justify-center px-1 sm:mb-10">
+          <PricingIntervalTabs
+            interval={interval}
+            onIntervalChange={onIntervalChange}
+            theme="light"
+          />
         </div>
+      )}
 
-        {/* Pro */}
-        <div
-          className={cn(
-            "relative flex w-full min-w-0 flex-1 flex-col rounded-[6px] border-2 border-black bg-white/80 p-4 text-left shadow-[0_8px_32px_rgba(0,0,0,0.08)] backdrop-blur-xl ring-1 ring-black/10 sm:p-6 md:p-8",
-            subscriberTier === "pro" && "ring-2 ring-black/15"
-          )}
-        >
-          <div className="absolute -top-3 left-1/2 z-10 -translate-x-1/2">
-            <span className="rounded-[4px] bg-black px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-white">
-              Popular
-            </span>
-          </div>
-          <Badge variant="outline" className="mb-3 mt-2 w-fit font-mono text-[10px] uppercase tracking-widest">
-            Pro
-          </Badge>
-          <p className="mb-6 text-sm text-muted-foreground">Creators & freelancers</p>
-          <div className="min-h-[5.5rem]">
-            <ProPriceHead interval={interval} />
-          </div>
-          <p className={cn("text-sm text-muted-foreground", interval === "yearly" ? "invisible" : "")}>
-            {interval === "monthly" ? "Billed monthly" : "\u00a0"}
-          </p>
-          <Separator className="my-6" />
-          <div className="flex flex-1 flex-col">
-            <ul className="space-y-4 text-sm leading-snug text-muted-foreground md:leading-snug">
-              <li className="flex items-start gap-2.5">
-                <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">100 renders / month</span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">100 animations / month</span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">25 upscales / month</span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">Unlimited projects</span>
-              </li>
-            </ul>
-            <div className="mt-8">{proFooter}</div>
-          </div>
-        </div>
-
-        {/* Enterprise */}
-        <div
-          className={cn(
-            shellFreeEnt(
-              emphasizeEnterprise,
-              "flex w-full min-w-0 flex-1 flex-col rounded-[6px] bg-white/50 p-4 text-left shadow-[0_8px_32px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:p-6 md:p-8"
-            )
-          )}
-        >
-          <Badge variant="outline" className="mb-3 w-fit font-mono text-[10px] uppercase tracking-widest">
-            Enterprise
-          </Badge>
-          <p className="mb-6 text-sm text-muted-foreground">Teams & agencies</p>
-          <div className="min-h-[5.5rem]">
-            <EntPriceHead interval={interval} />
-          </div>
-          <p className={cn("text-sm text-muted-foreground", interval === "yearly" ? "invisible" : "")}>
-            {interval === "monthly" ? "Billed monthly" : "\u00a0"}
-          </p>
-          <Separator className="my-6" />
-          <div className="flex flex-1 flex-col">
-            <ul className="space-y-4 text-sm leading-snug text-muted-foreground md:leading-snug">
-              <li className="flex items-start gap-2.5">
-                <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">Unlimited members (invitations)</span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">
-                  Shared pool: 1000 renders, 250 animations, 100 upscales / month
-                </span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <Check className="mt-0.5 size-4 shrink-0 text-black" aria-hidden />
-                <span className="text-foreground">Furniture catalog & priority</span>
-              </li>
-            </ul>
-            <div className="mt-8">{enterpriseFooter}</div>
-          </div>
-        </div>
+      <div className="flex w-full flex-col items-stretch gap-6 xl:flex-row xl:items-stretch">
+        {PLANS.map((plan) => renderCard(plan, footers[plan.id]))}
       </div>
     </div>
   );

@@ -24,7 +24,7 @@ import {
 } from '@/lib/generation-pipeline';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
-import { getOrgContext } from '@/lib/org-context';
+import { getOrgContext, requireActiveWorkspace, canReadInActiveWorkspace } from '@/lib/org-context';
 import { notifyRenderCompleted } from '@/lib/api/notifications';
 import {
   assertCanStartImageRender,
@@ -45,6 +45,10 @@ export async function POST(request: NextRequest) {
         { error: 'Non authentifié' },
         { status: 401 }
       );
+    }
+    const ws = requireActiveWorkspace(ctx);
+    if (!ws.ok) {
+      return NextResponse.json({ error: ws.error }, { status: 400 });
     }
     // Cible Better Auth pour les helpers internes qui attendent encore `session`.
     const session = await auth.api.getSession({ headers: await headers() });
@@ -186,6 +190,26 @@ export async function POST(request: NextRequest) {
           },
           { status: 503 }
         );
+      }
+    }
+
+    if (projectId) {
+      const { data: project, error: projectError } = await supabase
+        .from('projects')
+        .select('id, user_id, organization_id, visibility')
+        .eq('id', projectId)
+        .single();
+      const projectRow = project as {
+        user_id: string;
+        organization_id: string | null;
+        visibility: 'private' | 'organization';
+      } | null;
+      if (
+        projectError ||
+        !projectRow ||
+        !canReadInActiveWorkspace(ctx, projectRow)
+      ) {
+        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
       }
     }
 

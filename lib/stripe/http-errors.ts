@@ -22,7 +22,7 @@ export function jsonFromStripeCaughtError(e: unknown): NextResponse | null {
       {
         code: "STRIPE_INVALID_API_KEY",
         error:
-          "Stripe refuse STRIPE_SECRET_KEY (clé invalide, révoquée ou tronquée). Vérifiez dans Dashboard → Développeurs → Clés API : collez la clé secrète complète dans .env.local sans guillemets ni espace. En développement, préférez sk_test_… avec des prix créés en mode Test. Les STRIPE_PRICE_* doivent être du même mode (test/live) que la clé.",
+          "Stripe refuse STRIPE_SECRET_KEY (clé invalide, révoquée ou tronquée). Production : Vercel → Project → Settings → Environment Variables → Production : STRIPE_SECRET_KEY=sk_live_… (clé secrète Live complète, sans guillemets). Les 4 STRIPE_PRICE_* doivent être des price_… créés en mode Live (Dashboard Stripe, interrupteur « Live » activé). Local : sk_test_… + prix Test. Ne mélangez pas test et live.",
       },
       { status: 503 }
     );

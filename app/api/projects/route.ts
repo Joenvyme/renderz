@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getOrgContext, buildReadScopeFilter, parseVisibility } from "@/lib/org-context";
+import { getOrgContext, buildWorkspaceReadFilter, parseVisibility, requireActiveWorkspace } from "@/lib/org-context";
 
 export const dynamic = "force-dynamic";
 
-// GET - Liste les projets visibles : créés par moi (toutes orgs) + partagés dans mes organisations.
+// GET - Projets visibles dans l'espace de travail actif uniquement.
 export async function GET() {
   try {
     const ctx = await getOrgContext();
@@ -19,8 +19,8 @@ export async function GET() {
 
     const { data: projects, error } = await supabase
       .from("projects")
-      .select("*, renders(count)")
-      .or(buildReadScopeFilter(ctx))
+      .select("*")
+      .or(buildWorkspaceReadFilter(ctx))
       .order("updated_at", { ascending: false });
 
     if (error) {
@@ -31,13 +31,37 @@ export async function GET() {
       );
     }
 
-    const projectsWithCount = (projects || []).map((p: any) => ({
+    const { data: completedRows, error: countError } = await supabase
+      .from("renders")
+      .select("project_id")
+      .or(buildWorkspaceReadFilter(ctx))
+      .eq("status", "completed");
+
+    if (countError) {
+      console.error("Error counting renders per project:", countError);
+      return NextResponse.json(
+        { error: "Erreur lors du comptage des rendus" },
+        { status: 500 }
+      );
+    }
+
+    const countByProject = new Map<string, number>();
+    let unassignedCount = 0;
+    for (const row of completedRows ?? []) {
+      const pid = row.project_id as string | null;
+      if (!pid) {
+        unassignedCount += 1;
+        continue;
+      }
+      countByProject.set(pid, (countByProject.get(pid) ?? 0) + 1);
+    }
+
+    const projectsWithCount = (projects || []).map((p) => ({
       ...p,
-      render_count: p.renders?.[0]?.count || 0,
-      renders: undefined,
+      render_count: countByProject.get(p.id) ?? 0,
     }));
 
-    return NextResponse.json({ projects: projectsWithCount });
+    return NextResponse.json({ projects: projectsWithCount, unassigned_count: unassignedCount });
   } catch (error) {
     console.error("Error:", error);
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
@@ -64,6 +88,11 @@ export async function POST(request: NextRequest) {
         { error: "Le nom du projet est requis" },
         { status: 400 }
       );
+    }
+
+    const ws = requireActiveWorkspace(ctx);
+    if (!ws.ok) {
+      return NextResponse.json({ error: ws.error }, { status: 400 });
     }
 
     const supabase = createClient(

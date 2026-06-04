@@ -16,4 +16,16 @@ export const LANDING_RENDER_FORM_STORAGE_KEYS = {
   MAGNIFIC_STYLE_VALUE: "renderz_magnific_style_value",
   MAGNIFIC_RESEMBLANCE_VALUE: "renderz_magnific_resemblance_value",
   MAGNIFIC_CREATIVITY_VALUE: "renderz_magnific_creativity_value",
+  /** Génération lancée sur la landing sans session — reprise après auth. */
+  PENDING_GENERATE: "renderz_pending_generate",
 } as const;
+
+/** URL de retour après inscription depuis « Generate » sur la landing. */
+export function landingResumeAfterAuthPath() {
+  return "/?resumeGenerate=1#hero-section";
+}
+
+export function landingResumeAfterAuthUrl() {
+  if (typeof window === "undefined") return landingResumeAfterAuthPath();
+  return `${window.location.origin}${landingResumeAfterAuthPath()}`;
+}

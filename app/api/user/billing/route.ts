@@ -4,10 +4,11 @@ import { headers } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import {
   currentUtcPeriodKey,
-  FREE_GENERATIONS_PER_MONTH,
-  FREE_UPSCALES_PER_MONTH,
+  TRIAL_GENERATIONS_TOTAL,
+  TRIAL_UPSCALES_TOTAL,
   TIER_LIMITS,
   isBillingUnlimitedEmail,
+  type BillingTier,
 } from "@/lib/billing/constants";
 import { getMonthlyUsage, getOrCreateBillingAccountForUser } from "@/lib/billing/service";
 import { getStripe, isStripeConfigured } from "@/lib/stripe/server";
@@ -31,10 +32,11 @@ export async function GET() {
     const usage = await getMonthlyUsage(supabase, account.id, periodKey);
     const unlimited = isBillingUnlimitedEmail(session.user.email);
 
+    const tier = account.tier as BillingTier;
     const limits =
-      account.tier === "free"
+      tier === "trial" || tier === "agency"
         ? null
-        : TIER_LIMITS[account.tier as "pro" | "enterprise"];
+        : TIER_LIMITS[tier as "solo" | "studio"];
 
     let subscription: { currentPeriodEnd: string; cancelAtPeriodEnd: boolean } | null = null;
     if (isStripeConfigured() && account.stripe_subscription_id) {
@@ -67,12 +69,12 @@ export async function GET() {
         upscales: usage.upscales_used,
       },
       limits,
-      free: {
+      trial: {
         generationsUsed: usage.renders_used + usage.animations_used,
-        generationsMax: FREE_GENERATIONS_PER_MONTH,
+        generationsMax: TRIAL_GENERATIONS_TOTAL,
         periodKey,
         upscalesUsed: usage.upscales_used,
-        upscalesMax: FREE_UPSCALES_PER_MONTH,
+        upscalesMax: TRIAL_UPSCALES_TOTAL,
       },
     });
   } catch (e) {

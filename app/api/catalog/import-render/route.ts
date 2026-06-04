@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getOrgContext } from "@/lib/org-context";
+import { getOrgContext, canReadInActiveWorkspace, requireActiveWorkspace } from "@/lib/org-context";
 
 export const dynamic = "force-dynamic";
 
@@ -60,14 +60,15 @@ export async function POST(request: NextRequest) {
       upscaled_image_url: string | null;
     };
 
-    const allowed =
-      r.user_id === ctx.userId ||
-      (r.visibility === "organization" &&
-        r.organization_id !== null &&
-        ctx.orgIds.includes(r.organization_id));
+    const allowed = canReadInActiveWorkspace(ctx, r);
 
     if (!allowed) {
       return NextResponse.json({ error: "Rendu introuvable" }, { status: 404 });
+    }
+
+    const ws = requireActiveWorkspace(ctx);
+    if (!ws.ok) {
+      return NextResponse.json({ error: ws.error }, { status: 400 });
     }
 
     const sourceUrl = getRenderImageUrl(r);

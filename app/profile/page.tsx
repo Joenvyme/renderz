@@ -36,6 +36,10 @@ import {
   FolderInput,
 } from "lucide-react";
 import Link from "next/link";
+import {
+  LANDING_RENDER_FORM_STORAGE_KEYS,
+  landingResumeAfterAuthPath,
+} from "@/lib/landing-render-form-storage";
 import { BrandLogo } from "@/components/brand-logo";
 import { RenderGenerator } from "@/components/render-generator";
 import { ProjectSidebar, Project, RENDER_DRAG_MIME } from "@/components/project-sidebar";
@@ -379,6 +383,7 @@ function ProfilePage() {
 
   // Projects state
   const [projects, setProjects] = useState<Project[]>([]);
+  const [unassignedCount, setUnassignedCount] = useState(0);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -436,6 +441,19 @@ function ProfilePage() {
       router.push("/");
     }
   }, [session, isPending, router]);
+
+  /** Reprise génération landing si l’auth a redirigé vers /profile par défaut. */
+  useEffect(() => {
+    if (!session?.user) return;
+    const K = LANDING_RENDER_FORM_STORAGE_KEYS;
+    if (localStorage.getItem(K.PENDING_GENERATE) !== "1") return;
+    const rawImg = localStorage.getItem(K.IMAGES);
+    if (!rawImg) {
+      localStorage.removeItem(K.PENDING_GENERATE);
+      return;
+    }
+    router.replace(landingResumeAfterAuthPath());
+  }, [session, router]);
 
   useEffect(() => {
     if (session) fetchBilling();
@@ -525,6 +543,9 @@ function ProfilePage() {
       const data = await res.json();
       if (data.projects) {
         setProjects(data.projects);
+      }
+      if (typeof data.unassigned_count === "number") {
+        setUnassignedCount(data.unassigned_count);
       }
     } catch (error) {
       console.error("Error fetching projects:", error);
@@ -1358,15 +1379,16 @@ function ProfilePage() {
         </div>
       </div>
       <div className="flex shrink-0 items-center max-lg:pl-1">
-        <div className="inline-flex shrink-0 rounded-full bg-muted/25 p-0.5 touch-manipulation">
+        <div className="inline-flex shrink-0 gap-0.5 rounded-[4px] border border-border/80 bg-muted/20 p-0.5 touch-manipulation">
           <button
             type="button"
             onClick={() => setGalleryMediaMode("images")}
-            className={`inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-all sm:min-h-0 sm:px-3.5 sm:py-1.5 sm:text-xs ${
+            className={cn(
+              "inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[3px] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider transition-colors sm:min-h-0 sm:px-3 sm:text-[11px]",
               galleryMediaMode === "images"
-                ? "bg-[#ffe8e0] text-[#7c2d12] shadow-sm ring-1 ring-[#f5cbb8]/80"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+                ? "bg-black text-white"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+            )}
           >
             <Image className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
             Images
@@ -1374,11 +1396,12 @@ function ProfilePage() {
           <button
             type="button"
             onClick={() => setGalleryMediaMode("videos")}
-            className={`inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-all sm:min-h-0 sm:px-3.5 sm:py-1.5 sm:text-xs ${
+            className={cn(
+              "inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[3px] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider transition-colors sm:min-h-0 sm:px-3 sm:text-[11px]",
               galleryMediaMode === "videos"
-                ? "bg-[#ffe8e0] text-[#7c2d12] shadow-sm ring-1 ring-[#f5cbb8]/80"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+                ? "bg-black text-white"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+            )}
           >
             <Clapperboard className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
             Videos
@@ -1403,13 +1426,15 @@ function ProfilePage() {
     : billing
       ? billing.unlimited
         ? "Illimité"
-        : billing.tier === "free"
-          ? "Free"
-          : billing.tier === "pro"
-            ? "Pro"
-            : billing.tier === "enterprise"
-              ? "Enterprise"
-              : billing.tier
+        : billing.tier === "trial"
+          ? "Trial"
+          : billing.tier === "solo"
+            ? "Solo"
+            : billing.tier === "studio"
+              ? "Studio"
+              : billing.tier === "agency"
+                ? "Agency"
+                : billing.tier
       : "—";
 
   return (
@@ -1417,30 +1442,29 @@ function ProfilePage() {
       <StripedPattern className="absolute inset-0 [mask-image:radial-gradient(800px_circle_at_center,white,transparent)]" />
 
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-[100] bg-white/80 backdrop-blur-sm border-b border-border">
-        <div className="px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
+      <header className="fixed top-0 left-0 right-0 z-[100] border-b border-border/80 bg-white/90 backdrop-blur-md">
+        <div className="flex h-14 items-center justify-between px-3 sm:h-16 sm:px-6">
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Mobile menu button */}
             <button
               type="button"
               onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
-              className="p-1.5 hover:bg-muted rounded-md transition-colors lg:hidden"
+              className="rounded-[4px] p-1.5 transition-colors hover:bg-muted/60 lg:hidden"
               aria-label="Ouvrir le menu"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="h-5 w-5" />
             </button>
-            <BrandLogo className="hover:opacity-90 transition-opacity" />
+            <BrandLogo className="transition-opacity hover:opacity-90" />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <OrganizationSwitcher className="hidden sm:flex" />
             <Badge
               asChild
               variant="outline"
-              className="cursor-pointer gap-1 sm:gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] sm:text-[11px] uppercase tracking-wide hover:bg-muted/80"
+              className="cursor-pointer gap-1 rounded-[4px] border-2 border-black px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider hover:bg-black hover:text-white sm:gap-1.5 sm:text-[11px]"
             >
               <Link
                 href="/settings#billing"
-                title="Palier d’abonnement — offres et quotas (paramètres)"
+                title="Plan & monthly usage"
                 className="inline-flex items-center gap-1 sm:gap-1.5"
               >
                 {billingLoading ? (
@@ -1448,17 +1472,13 @@ function ProfilePage() {
                 ) : (
                   <>
                     <span className="min-w-[2.75rem] text-center tabular-nums">{tierBadgeText}</span>
-                    <ArrowUpRightIcon
-                      className="size-3.5 shrink-0 text-muted-foreground"
-                      data-icon="inline-end"
-                    />
+                    <ArrowUpRightIcon className="size-3.5 shrink-0 opacity-70" />
                   </>
                 )}
               </Link>
             </Badge>
-            {/* User avatar */}
             <Link href="/settings">
-              <div className="w-8 h-8 rounded-full bg-muted border border-border overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary transition-all">
+              <div className="h-8 w-8 cursor-pointer overflow-hidden rounded-full border border-border bg-muted transition-all hover:ring-2 hover:ring-black/15">
                 {session.user.image ? (
                   <img src={session.user.image} alt={session.user.name || ""} className="w-full h-full object-cover" />
                 ) : (
@@ -1519,6 +1539,7 @@ function ProfilePage() {
             onRenameProject={handleRenameProject}
             isLoading={isLoadingProjects}
             onDropRender={handleMoveRendersToProject}
+            unassignedCount={unassignedCount}
           />
         </div>
 
@@ -1578,6 +1599,7 @@ function ProfilePage() {
                     onGenerateSuccess={() => {
                       fetchRenders();
                       fetchProjects();
+                      fetchBilling();
                     }}
                     projects={projects.map((p) => ({ id: p.id, name: p.name }))}
                     selectedProjectId={
@@ -1589,12 +1611,13 @@ function ProfilePage() {
                     onProjectChange={setGeneratorProjectId}
                     compact
                     compactOuterClassName="w-full max-w-[1200px] lg:max-w-none"
+                    compactBarClassName="border-border/80 bg-white"
                     enableImageGallery
                   />
                   {galleryToolbar}
                 </div>
               ) : (
-                <div className="mb-2 sticky top-14 z-[85] -mx-2 space-y-2 bg-white/95 px-2 py-1.5 backdrop-blur-md supports-[backdrop-filter]:bg-white/88 sm:top-16 lg:hidden">
+                <div className="sticky top-14 z-[85] -mx-2 mb-2 space-y-2 bg-white/95 px-2 py-1.5 backdrop-blur-md supports-[backdrop-filter]:bg-white/88 sm:top-16 lg:hidden">
                   <QuotaUsageBanner
                     billing={billingLoading ? null : billing}
                     dismissed={quotaBannerDismissed}
@@ -1622,6 +1645,7 @@ function ProfilePage() {
                       onGenerateSuccess={() => {
                         fetchRenders();
                         fetchProjects();
+                        fetchBilling();
                       }}
                       projects={projects.map((p) => ({ id: p.id, name: p.name }))}
                       selectedProjectId={
@@ -1646,13 +1670,15 @@ function ProfilePage() {
                   <Loader2 className="w-8 h-8 animate-spin" />
                 </div>
               ) : renders.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <Image className="w-12 h-12 mb-4 text-muted-foreground/30" />
-                  <p className="text-sm text-muted-foreground font-mono">No renders in this view</p>
-                  <p className="text-xs text-muted-foreground/60 font-mono mt-1">
+                <div className="flex flex-col items-center justify-center rounded-[4px] border border-dashed border-border/70 bg-muted/10 px-6 py-16 text-center">
+                  <Sparkles className="mb-4 h-10 w-10 text-muted-foreground/35" strokeWidth={1.5} />
+                  <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Gallery empty
+                  </p>
+                  <p className="mt-2 max-w-sm text-sm text-muted-foreground">
                     {matchesLg
-                      ? "Use the prompt bar above to create your first render"
-                      : "Use the prompt bar at the bottom to create your first render"}
+                      ? "Describe your scene in the prompt bar above to generate your first render."
+                      : "Use the prompt bar at the bottom to create your first render."}
                   </p>
                 </div>
               ) : filteredGalleryItems.length === 0 ? (

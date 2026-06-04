@@ -529,12 +529,16 @@ export default function CatalogPage() {
   const tierBadgeText = billingLoading
     ? "…"
     : !billing
-      ? "FREE"
-      : billing.tier === "free"
-        ? "FREE"
-        : billing.tier === "pro"
-          ? "PRO"
-          : "ENT";
+      ? "TRIAL"
+      : billing.tier === "trial"
+        ? "TRIAL"
+        : billing.tier === "solo"
+          ? "SOLO"
+          : billing.tier === "studio"
+            ? "STUDIO"
+            : billing.tier === "agency"
+              ? "AGENCY"
+              : billing.tier.toUpperCase();
 
   if (sessionPending) {
     return (

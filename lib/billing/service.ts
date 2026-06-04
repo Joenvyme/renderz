@@ -2,8 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   BillingTier,
   currentUtcPeriodKey,
-  FREE_GENERATIONS_PER_MONTH,
-  FREE_UPSCALES_PER_MONTH,
+  TRIAL_GENERATIONS_TOTAL,
+  TRIAL_UPSCALES_TOTAL,
   isBillingUnlimitedEmail,
   TIER_LIMITS,
 } from "./constants";
@@ -66,7 +66,7 @@ export async function getOrCreateBillingAccountForUser(
     .from("billing_account")
     .insert({
       type: "personal",
-      tier: "free",
+      tier: "trial",
     })
     .select(
       "id, type, name, stripe_customer_id, stripe_subscription_id, stripe_subscription_status, tier, free_generations_used, last_upscale_utc_date"
@@ -113,7 +113,7 @@ export async function getMonthlyUsage(
 }
 
 function limitsForTier(tier: BillingTier) {
-  if (tier === "free") return null;
+  if (tier === "trial" || tier === "agency") return null;
   return TIER_LIMITS[tier];
 }
 
@@ -126,13 +126,13 @@ export function assertCanStartImageRender(
 ): QuotaBlock | null {
   if (isBillingUnlimitedEmail(userEmail)) return null;
 
-  if (account.tier === "free") {
+  if (account.tier === "trial") {
     const combined = usage.renders_used + usage.animations_used;
-    if (combined >= FREE_GENERATIONS_PER_MONTH) {
+    if (combined >= TRIAL_GENERATIONS_TOTAL) {
       return {
         error:
-          "Quota gratuit atteint pour ce mois (UTC) : 5 créations (images + animations). Réessayez le mois prochain ou passez à Pro.",
-        code: "FREE_GENERATIONS_EXHAUSTED",
+          `Quota d’essai atteint : ${TRIAL_GENERATIONS_TOTAL} créations (images + animations). Passez à Solo ou attendez la fin de l’essai.`,
+        code: "TRIAL_GENERATIONS_EXHAUSTED",
         status: 403,
       };
     }
@@ -158,13 +158,13 @@ export function assertCanStartAnimation(
 ): QuotaBlock | null {
   if (isBillingUnlimitedEmail(userEmail)) return null;
 
-  if (account.tier === "free") {
+  if (account.tier === "trial") {
     const combined = usage.renders_used + usage.animations_used;
-    if (combined >= FREE_GENERATIONS_PER_MONTH) {
+    if (combined >= TRIAL_GENERATIONS_TOTAL) {
       return {
         error:
-          "Quota gratuit atteint pour ce mois (UTC) : 5 créations (images + animations). Réessayez le mois prochain ou passez à Pro.",
-        code: "FREE_GENERATIONS_EXHAUSTED",
+          `Quota d’essai atteint : ${TRIAL_GENERATIONS_TOTAL} créations (images + animations). Passez à Solo ou attendez la fin de l’essai.`,
+        code: "TRIAL_GENERATIONS_EXHAUSTED",
         status: 403,
       };
     }
@@ -190,12 +190,12 @@ export function assertCanUpscale(
 ): QuotaBlock | null {
   if (isBillingUnlimitedEmail(userEmail)) return null;
 
-  if (account.tier === "free") {
-    if (usage.upscales_used >= FREE_UPSCALES_PER_MONTH) {
+  if (account.tier === "trial") {
+    if (TRIAL_UPSCALES_TOTAL <= 0 || usage.upscales_used >= TRIAL_UPSCALES_TOTAL) {
       return {
         error:
-          "Quota gratuit : 1 upscale 4K par mois maximum (période UTC). Réessayez le mois prochain ou passez à Pro.",
-        code: "FREE_UPSCALE_MONTHLY",
+          "Les upscales 4K ne sont pas inclus dans l’essai. Passez à Solo pour débloquer les upscales.",
+        code: "TRIAL_UPSCALE_NOT_INCLUDED",
         status: 403,
       };
     }

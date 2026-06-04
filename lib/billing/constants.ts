@@ -1,18 +1,24 @@
-export type BillingTier = "free" | "pro" | "enterprise";
+export type BillingTier = "trial" | "solo" | "studio" | "agency";
 
 export const TIER_LIMITS: Record<
-  Exclude<BillingTier, "free">,
+  Exclude<BillingTier, "trial" | "agency">,
   { renders: number; animations: number; upscales: number }
 > = {
-  pro: { renders: 100, animations: 100, upscales: 25 },
-  enterprise: { renders: 1000, animations: 250, upscales: 100 },
+  solo: { renders: 200, animations: 200, upscales: 20 },
+  studio: { renders: 600, animations: 150, upscales: 60 },
 };
 
-/** Gratuit : créations (images + animations) par mois civil UTC, compteur combiné dans usage_monthly. */
-export const FREE_GENERATIONS_PER_MONTH = 5;
+/** Trial : ~50 créations (images + animations) pendant la période d’essai. */
+export const TRIAL_GENERATIONS_TOTAL = 50;
 
-/** Gratuit : upscales Magnific par mois civil UTC (usage_monthly.upscales_used). */
-export const FREE_UPSCALES_PER_MONTH = 1;
+/** Trial : pas d’upscale 4K inclus (sorties watermark). */
+export const TRIAL_UPSCALES_TOTAL = 0;
+
+/** @deprecated Utiliser TRIAL_GENERATIONS_TOTAL */
+export const FREE_GENERATIONS_PER_MONTH = TRIAL_GENERATIONS_TOTAL;
+
+/** @deprecated Utiliser TRIAL_UPSCALES_TOTAL */
+export const FREE_UPSCALES_PER_MONTH = TRIAL_UPSCALES_TOTAL;
 
 /**
  * Comptes créateur : toujours sans plafond de quotas ni comptage d’usage (en plus de
@@ -46,4 +52,8 @@ export function currentUtcPeriodKey(): string {
 
 export function utcDateString(d: Date = new Date()): string {
   return d.toISOString().slice(0, 10);
+}
+
+export function isPaidTier(tier: BillingTier): boolean {
+  return tier === "solo" || tier === "studio";
 }

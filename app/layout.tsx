@@ -26,7 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" className={`${jetbrainsMono.variable}`}>
+    <html lang="en" className={`${jetbrainsMono.variable}`}>
       <head>
         {/* Police principale (UI). Funnel Display n'est pas (encore) dans la liste statique
             de next/font pour cette version de Next, donc on la charge ainsi : preconnect + <link>

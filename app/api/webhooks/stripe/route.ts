@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
+import { STUDIO_MIN_SEATS } from "@/lib/billing/plans";
 import {
   getStripe,
   tierFromCheckoutPlanKey,
@@ -93,16 +94,6 @@ export async function POST(request: NextRequest) {
 
       case "customer.subscription.updated": {
         const sub = event.data.object as Stripe.Subscription;
-        const priceId = sub.items.data[0]?.price?.id;
-        let tier =
-          tierFromCheckoutPlanKey(
-            typeof sub.metadata?.checkoutPlan === "string" ? sub.metadata.checkoutPlan : null
-          ) ?? tierFromStripePriceId(priceId);
-
-        if (!tier && priceId) {
-          const price = await stripe.prices.retrieve(priceId);
-          tier = tierFromEnvLookupKey(price.lookup_key ?? undefined);
-        }
 
         const { data: row } = await supabase
           .from("billing_account")
@@ -115,16 +106,38 @@ export async function POST(request: NextRequest) {
           break;
         }
 
+        const item = sub.items.data[0];
+        const priceId = item?.price?.id;
+        let resolvedTier =
+          tierFromCheckoutPlanKey(
+            typeof sub.metadata?.checkoutPlan === "string" ? sub.metadata.checkoutPlan : null
+          ) ?? tierFromStripePriceId(priceId);
+
+        if (!resolvedTier && priceId) {
+          const price = await stripe.prices.retrieve(priceId);
+          resolvedTier = tierFromEnvLookupKey(price.lookup_key ?? undefined);
+        }
+
+        if (resolvedTier === "studio" && item?.id) {
+          const qty = item.quantity ?? 0;
+          if (qty < STUDIO_MIN_SEATS) {
+            await stripe.subscriptions.update(sub.id, {
+              items: [{ id: item.id, quantity: STUDIO_MIN_SEATS }],
+              proration_behavior: "create_prorations",
+            });
+          }
+        }
+
         const terminal = ["canceled", "unpaid", "incomplete_expired"].includes(sub.status);
         const patch: Record<string, unknown> = {
           stripe_subscription_status: sub.status,
           updated_at: new Date().toISOString(),
         };
         if (terminal) {
-          patch.tier = "free";
+          patch.tier = "trial";
           patch.stripe_subscription_id = null;
-        } else if (tier) {
-          patch.tier = tier;
+        } else if (resolvedTier) {
+          patch.tier = resolvedTier;
         }
 
         await supabase.from("billing_account").update(patch).eq("id", row.id);
@@ -137,7 +150,7 @@ export async function POST(request: NextRequest) {
         await supabase
           .from("billing_account")
           .update({
-            tier: "free",
+            tier: "trial",
             stripe_subscription_id: null,
             stripe_subscription_status: "canceled",
             updated_at: new Date().toISOString(),

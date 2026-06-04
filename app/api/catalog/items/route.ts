@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getOrgContext, buildReadScopeFilter, parseVisibility } from "@/lib/org-context";
+import {
+  getOrgContext,
+  buildWorkspaceReadFilter,
+  buildWorkspacePrivateFilter,
+  parseVisibility,
+  canReadInActiveWorkspace,
+  requireActiveWorkspace,
+} from "@/lib/org-context";
 
 export const dynamic = "force-dynamic";
 
@@ -51,11 +58,11 @@ export async function GET(request: NextRequest) {
       .order("updated_at", { ascending: false });
 
     if (onlyPrivate) {
-      query = query.eq("user_id", ctx.userId).eq("visibility", "private");
+      query = query.or(buildWorkspacePrivateFilter(ctx));
     } else if (onlyShared) {
-      query = query.or(buildReadScopeFilter(ctx)).eq("visibility", "organization");
+      query = query.or(buildWorkspaceReadFilter(ctx)).eq("visibility", "organization");
     } else {
-      query = query.or(buildReadScopeFilter(ctx));
+      query = query.or(buildWorkspaceReadFilter(ctx));
     }
 
     if (folderParam === "unassigned") {
@@ -130,18 +137,18 @@ export async function POST(request: NextRequest) {
         organization_id: string | null;
         visibility: "private" | "organization";
       } | null;
-      const allowed =
-        !!f &&
-        (f.user_id === ctx.userId ||
-          (f.visibility === "organization" &&
-            f.organization_id !== null &&
-            ctx.orgIds.includes(f.organization_id)));
+      const allowed = !!f && canReadInActiveWorkspace(ctx, f);
       if (folderErr || !allowed) {
         return NextResponse.json(
           { error: "Dossier introuvable" },
           { status: 400 }
         );
       }
+    }
+
+    const ws = requireActiveWorkspace(ctx);
+    if (!ws.ok) {
+      return NextResponse.json({ error: ws.error }, { status: 400 });
     }
 
     const visibility = parseVisibility(body.visibility, "private");

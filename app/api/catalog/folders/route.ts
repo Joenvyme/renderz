@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getOrgContext, buildReadScopeFilter, parseVisibility } from "@/lib/org-context";
+import {
+  getOrgContext,
+  buildWorkspaceReadFilter,
+  buildWorkspacePrivateFilter,
+  parseVisibility,
+  canReadInActiveWorkspace,
+  canWriteInActiveWorkspace,
+  requireActiveWorkspace,
+} from "@/lib/org-context";
 
 export const dynamic = "force-dynamic";
 
@@ -48,11 +56,11 @@ export async function GET(request: NextRequest) {
       .order("name", { ascending: true });
 
     if (onlyPrivate) {
-      query = query.eq("user_id", ctx.userId).eq("visibility", "private");
+      query = query.or(buildWorkspacePrivateFilter(ctx));
     } else if (onlyShared) {
-      query = query.or(buildReadScopeFilter(ctx)).eq("visibility", "organization");
+      query = query.or(buildWorkspaceReadFilter(ctx)).eq("visibility", "organization");
     } else {
-      query = query.or(buildReadScopeFilter(ctx));
+      query = query.or(buildWorkspaceReadFilter(ctx));
     }
 
     const { data, error } = await query;
@@ -116,18 +124,18 @@ export async function POST(request: NextRequest) {
         organization_id: string | null;
         visibility: "private" | "organization";
       } | null;
-      const allowed =
-        !!p &&
-        (p.user_id === ctx.userId ||
-          (p.visibility === "organization" &&
-            p.organization_id !== null &&
-            ctx.orgIds.includes(p.organization_id)));
+      const allowed = !!p && canReadInActiveWorkspace(ctx, p);
       if (parentErr || !allowed) {
         return NextResponse.json(
           { error: "Dossier parent introuvable" },
           { status: 400 }
         );
       }
+    }
+
+    const ws = requireActiveWorkspace(ctx);
+    if (!ws.ok) {
+      return NextResponse.json({ error: ws.error }, { status: 400 });
     }
 
     const visibility = parseVisibility(body.visibility, "private");

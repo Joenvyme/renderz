@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getOrgContext, buildReadScopeFilter } from "@/lib/org-context";
+import { getOrgContext, buildWorkspaceReadFilter, buildWorkspacePrivateFilter } from "@/lib/org-context";
 
 export const dynamic = "force-dynamic";
 
@@ -49,14 +49,11 @@ export async function GET(request: NextRequest) {
       .order("id", { ascending: false });
 
     if (onlyPrivate) {
-      // Privés uniquement → forcément les miens (les privés des autres ne sont pas visibles).
-      query = query.eq("user_id", ctx.userId).eq("visibility", "private");
+      query = query.or(buildWorkspacePrivateFilter(ctx));
     } else if (onlyShared) {
-      // Partagés uniquement : scope read standard + filtre visibility = organization.
-      query = query.or(buildReadScopeFilter(ctx)).eq("visibility", "organization");
+      query = query.or(buildWorkspaceReadFilter(ctx)).eq("visibility", "organization");
     } else {
-      // Pas de filtre OU les deux cochés : mes items + items partagés dans mes orgs.
-      query = query.or(buildReadScopeFilter(ctx));
+      query = query.or(buildWorkspaceReadFilter(ctx));
     }
 
     if (projectId === "unassigned") {
