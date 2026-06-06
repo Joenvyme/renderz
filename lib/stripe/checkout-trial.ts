@@ -40,7 +40,8 @@ export function checkoutPaymentMethodCollection(
   account: BillingAccountRow,
   applyTrial: boolean
 ): Stripe.Checkout.SessionCreateParams.PaymentMethodCollection {
-  if (applyTrial) return "if_required";
+  // Essai abonnement : carte enregistrée (comme Visualizee — $0 today, facturation après J+7).
+  if (applyTrial) return "always";
   if (account.stripe_customer_id) return "if_required";
   return "always";
 }

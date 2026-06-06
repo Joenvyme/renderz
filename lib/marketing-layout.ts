@@ -10,3 +10,6 @@ export const SECTION_H2_CLASSES =
 
 export const SECTION_LEAD_CLASSES =
   "mx-auto max-w-2xl text-pretty text-sm leading-relaxed text-muted-foreground sm:text-base md:text-lg lg:text-xl";
+
+/** Bandeau essai + cartes Solo/Studio + remark Agency — même largeur. */
+export const PRICING_STACK_CLASSES = "mx-auto w-full min-w-0 max-w-5xl";

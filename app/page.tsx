@@ -15,6 +15,7 @@ import { MarketingPricingSection } from "@/components/marketing-pricing-section"
 import { RenderGenerator } from "@/components/render-generator";
 import { AutoBeforeAfter } from "@/components/auto-before-after";
 import { HeroIntro } from "@/components/hero-intro";
+import { HowItWorksShowcase } from "@/components/how-it-works-showcase";
 import { TrustedByCarousel } from "@/components/trusted-by-carousel";
 import { CatalogShowcase } from "@/components/catalog-showcase";
 import { VisionsCarousel } from "@/components/visions-carousel";
@@ -116,7 +117,7 @@ function LandingPageContent() {
                 />
               </GlowBorder>
               <p className="mx-auto mt-3 max-w-lg text-center font-mono text-[11px] uppercase tracking-wide text-foreground/70 sm:mt-4 sm:text-xs">
-                {TRIAL_DAYS}-day trial — ~{TRIAL_RENDERS} renders, no card required
+                Start 7-day Solo or Studio trial — ~{TRIAL_RENDERS} free renders before you subscribe
               </p>
             </div>
 
@@ -125,6 +126,22 @@ function LandingPageContent() {
 
           <TrustedByCarousel className="relative z-0 mx-auto hidden w-full min-w-0 max-w-3xl shrink-0 sm:mt-auto sm:mb-16 sm:block md:mb-20 lg:mb-24" />
         </main>
+      </section>
+
+      <section className={`relative border-t border-border/50 bg-white ${SECTION_PADDING}`}>
+        <div className="container mx-auto w-full min-w-0 px-4 sm:px-6">
+          <div className="mx-auto max-w-6xl min-w-0">
+            <div className={HEADING_SPACING}>
+              <h2 className={SECTION_H2_CLASSES}>
+                Three steps to a <AuroraText>client-ready</AuroraText> render
+              </h2>
+              <p className={SECTION_LEAD_CLASSES}>
+                Upload your input, describe the look, and present — no 3D pipeline required.
+              </p>
+            </div>
+            <HowItWorksShowcase />
+          </div>
+        </div>
       </section>
 
       <section className={`relative border-t border-border/50 bg-white ${SECTION_PADDING}`}>
@@ -217,7 +234,6 @@ function LandingPageContent() {
           <div className="mx-auto w-full max-w-7xl min-w-0">
             <MarketingPricingSection
               theme="dark"
-              onStartTrial={beginTrialSignup}
               onChooseSolo={chooseSoloFromLanding}
               onChooseStudio={chooseStudioFromLanding}
             />
@@ -234,7 +250,7 @@ function LandingPageContent() {
             <div className="mt-8 flex flex-col items-stretch justify-center gap-3.5 sm:flex-row sm:items-center sm:justify-center">
               <Button
                 type="button"
-                onClick={beginTrialSignup}
+                onClick={() => document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth" })}
                 className="min-h-12 rounded-[4px] bg-black px-7 font-mono text-xs uppercase tracking-[0.1em] text-white hover:bg-[#1a1a1a]"
               >
                 Start 7-day trial

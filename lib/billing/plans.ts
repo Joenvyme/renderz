@@ -60,6 +60,29 @@ export const TRIAL_RENDERS = 50;
 export const ANNUAL_DISCOUNT_PERCENT = 20;
 export const ANNUAL_DISCOUNT_LABEL = "−20 %";
 
+export const TRIAL_CTA_LABEL = "Start Solo trial";
+
+/** Puces du bandeau promo au-dessus des cartes (style Visualizee). */
+export const TRIAL_PROMO_BULLETS = [
+  `${TRIAL_DAYS}-day trial`,
+  `~${TRIAL_RENDERS} renders`,
+  "Solo pre-selected",
+  "Watermarked images",
+  "Personal use only",
+] as const;
+
+export const TRIAL_PROMO_FOOTNOTE =
+  "Card on file · CHF 0 today · Cancel before day 7";
+
+export const TRIAL_PROMO_SKIP_TRIAL_HINT = `Skip trial: save ${ANNUAL_DISCOUNT_PERCENT}% with annual billing`;
+
+export const AGENCY_REMARK = {
+  title: "Agency",
+  subtitle: "Multi-seat studios & volume pricing",
+  description: "Custom onboarding, shared workflows, and team billing.",
+  ctaLabel: "Contact us",
+} as const;
+
 export const STUDIO_MIN_SEATS = 3;
 export const STUDIO_DEFAULT_SEATS = 3;
 
@@ -102,7 +125,7 @@ export const PLANS: PlanDefinition[] = [
     id: "solo",
     name: "Solo",
     tagline: "For individual creators",
-    highlighted: false,
+    highlighted: true,
     customPricing: false,
     isPerSeat: false,
     minSeats: 1,
@@ -122,21 +145,21 @@ export const PLANS: PlanDefinition[] = [
       },
     },
     quotas: { rendersPerMonth: 200, upscalesPerMonth: 20, seats: 1 },
-    cta: { kind: "checkout", label: "Choose Solo" },
+    cta: { kind: "checkout", label: TRIAL_CTA_LABEL },
     features: [
-      "1 seat",
-      "200 renders / month",
+      `${TRIAL_DAYS}-day trial included`,
+      "During trial: watermarked · personal use only",
+      "1 seat · 200 renders / month after trial",
       "20 upscales / month",
       "Unlimited projects",
-      "No watermark",
-      "Commercial license",
+      "No watermark · commercial license when billed",
     ],
   },
   {
     id: "studio",
     name: "Studio",
     tagline: "For small teams",
-    highlighted: true,
+    highlighted: false,
     customPricing: false,
     isPerSeat: true,
     minSeats: STUDIO_MIN_SEATS,
@@ -159,12 +182,13 @@ export const PLANS: PlanDefinition[] = [
       },
     },
     quotas: { rendersPerMonth: "shared_pool", seats: STUDIO_MIN_SEATS },
-    cta: { kind: "checkout", label: "Choose Studio" },
+    cta: { kind: "checkout", label: TRIAL_CTA_LABEL },
     features: [
+      `${TRIAL_DAYS}-day trial included`,
+      "During trial: watermarked · personal use only",
       "Shared render pool",
       "Furniture catalog",
-      "Centralized billing",
-      "Priority queue",
+      "Centralized billing · priority queue",
     ],
   },
   {
@@ -187,6 +211,9 @@ export const PLANS: PlanDefinition[] = [
     ],
   },
 ];
+
+/** Cartes checkout : Solo (highlight) + Studio. Agency = remarque sous la grille. */
+export const PRICING_GRID_PLANS = PLANS.filter((p) => p.id === "solo" || p.id === "studio");
 
 export function getPlan(id: PlanId): PlanDefinition {
   const plan = PLANS.find((p) => p.id === id);

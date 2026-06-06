@@ -4,14 +4,14 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { PricingAgencyRemark } from "@/components/pricing-agency-remark";
+import { PricingTrialPromoBanner } from "@/components/pricing-trial-promo-banner";
 import {
-  PricingIntervalTabs,
   PricingPlansGrid,
   type PricingInterval,
 } from "@/components/pricing-plans-grid";
 
 type MarketingPricingSectionProps = {
-  onStartTrial: () => void;
   onChooseSolo: (interval: PricingInterval) => void;
   onChooseStudio: (interval: PricingInterval, seats: number) => void;
   onContactAgency?: () => void;
@@ -19,11 +19,50 @@ type MarketingPricingSectionProps = {
   theme?: "light" | "dark";
 };
 
-/**
- * Grille tarifaire marketing (page d’accueil) — même grille que Paramètres / abonnement.
- */
+function TrialFinePrint({ dark, onHighlightedCard }: { dark?: boolean; onHighlightedCard?: boolean }) {
+  return (
+    <p
+      className={cn(
+        "mt-2 text-center font-mono text-[10px] leading-snug tracking-wide",
+        onHighlightedCard ? "text-black/55" : dark ? "text-white/55" : "text-muted-foreground"
+      )}
+    >
+      Trial: watermarked · personal use only · card on file · CHF 0 today
+    </p>
+  );
+}
+
+function PlanTrialButton({
+  onClick,
+  dark,
+  highlighted,
+}: {
+  onClick: () => void;
+  dark?: boolean;
+  highlighted?: boolean;
+}) {
+  return (
+    <div className="w-full">
+      <Button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "min-h-11 w-full touch-manipulation rounded-[4px] font-mono text-[11px] uppercase tracking-[0.1em]",
+          highlighted
+            ? "bg-black text-white hover:bg-black/90"
+            : dark
+              ? "border-2 border-white/40 bg-transparent text-white hover:bg-white/12 hover:text-white"
+              : "rounded-[2px] border-2 border-black bg-transparent text-black hover:bg-black/8 hover:text-black"
+        )}
+      >
+        {dark ? "Start 7-day trial" : "START 7-DAY TRIAL"}
+      </Button>
+      <TrialFinePrint dark={dark} onHighlightedCard={highlighted} />
+    </div>
+  );
+}
+
 export function MarketingPricingSection({
-  onStartTrial,
   onChooseSolo,
   onChooseStudio,
   onContactAgency,
@@ -34,117 +73,58 @@ export function MarketingPricingSection({
   const [studioSeats, setStudioSeats] = useState(3);
   const isDark = theme === "dark";
 
-  const trialFooter = (
-    <Button
-      type="button"
-      variant="outline"
-      onClick={onStartTrial}
-      className={cn(
-        "min-h-11 w-full touch-manipulation rounded-[4px] font-mono text-[11px] uppercase tracking-[0.1em]",
-        isDark
-          ? "border border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
-          : "rounded-[2px] border-2 border-black tracking-wider hover:bg-black hover:text-white"
-      )}
-    >
-      {isDark ? "Start 7-day trial" : "START 7-DAY TRIAL"}
-    </Button>
+  const trialPromoBanner = (
+    <PricingTrialPromoBanner
+      dark={isDark}
+      onStartSoloTrial={() => onChooseSolo("monthly")}
+      onSkipTrialHint={() => setInterval("yearly")}
+    />
   );
 
   const soloFooter = (
-    <Button
-      type="button"
-      onClick={() => onChooseSolo(interval)}
-      className={cn(
-        "min-h-11 w-full touch-manipulation rounded-[4px] font-mono text-[11px] uppercase tracking-[0.1em]",
-        isDark
-          ? "border border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
-          : "rounded-[2px] border-2 border-black tracking-wider hover:bg-black hover:text-white"
-      )}
-    >
-      {isDark ? "Choose Solo" : "CHOOSE SOLO"}
-    </Button>
+    <PlanTrialButton dark={isDark} highlighted onClick={() => onChooseSolo(interval)} />
   );
 
   const studioFooter = (
-    <Button
-      type="button"
-      onClick={() => onChooseStudio(interval, studioSeats)}
-      className={cn(
-        "min-h-11 w-full touch-manipulation rounded-[4px] font-mono text-[11px] uppercase tracking-[0.1em]",
-        isDark
-          ? "bg-black text-white hover:bg-black/85"
-          : "bg-black text-xs tracking-wider text-white hover:bg-black/85"
-      )}
-    >
-      {isDark ? "Choose Studio" : "CHOOSE STUDIO"}
-    </Button>
+    <PlanTrialButton dark={isDark} onClick={() => onChooseStudio(interval, studioSeats)} />
   );
 
-  const agencyFooter = (
-    <Button
-      type="button"
-      variant="outline"
-      onClick={onContactAgency ?? (() => (window.location.href = "mailto:hello@renderz.ch?subject=Agency%20plan"))}
-      className={cn(
-        "min-h-11 w-full touch-manipulation rounded-[4px] font-mono text-[11px] uppercase tracking-[0.1em]",
-        isDark
-          ? "border border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
-          : "rounded-[2px] border-2 border-black tracking-wider hover:bg-black hover:text-white"
-      )}
-    >
-      {isDark ? "Contact us" : "CONTACT US"}
-    </Button>
+  const agencyRemark = (
+    <PricingAgencyRemark dark={isDark} onContact={onContactAgency} />
   );
 
-  if (isDark) {
-    return (
-      <div className={cn("w-full min-w-0", className)}>
-        <div className="mb-10 flex flex-col gap-6 sm:mb-12 sm:flex-row sm:items-end sm:justify-between">
-          <div className="space-y-4 text-left">
-            <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-white/45">
-              Pricing
-            </p>
-            <h2 className="max-w-[22ch] text-balance text-[clamp(2rem,5vw,3.375rem)] font-semibold leading-[1.02] tracking-[-0.03em] text-white">
-              7-day trial. Upgrade when it pays for itself
-            </h2>
-          </div>
-          <PricingIntervalTabs
-            interval={interval}
-            onIntervalChange={setInterval}
-            theme="dark"
-            className="shrink-0"
-          />
-        </div>
-
-        <PricingPlansGrid
-          theme="dark"
-          interval={interval}
-          onIntervalChange={setInterval}
-          activePlanId={null}
-          showIntervalToggle={false}
-          studioSeats={studioSeats}
-          onStudioSeatsChange={setStudioSeats}
-          trialFooter={trialFooter}
-          soloFooter={soloFooter}
-          studioFooter={studioFooter}
-          agencyFooter={agencyFooter}
-        />
-      </div>
-    );
-  }
-
-  return (
+  const pricingStack = (
     <PricingPlansGrid
-      className={cn(className)}
+      className={className}
+      theme={isDark ? "dark" : "light"}
       interval={interval}
       onIntervalChange={setInterval}
       activePlanId={null}
+      showIntervalToggle
       studioSeats={studioSeats}
       onStudioSeatsChange={setStudioSeats}
-      trialFooter={trialFooter}
+      trialPromoBanner={trialPromoBanner}
       soloFooter={soloFooter}
       studioFooter={studioFooter}
-      agencyFooter={agencyFooter}
+      agencyRemark={agencyRemark}
     />
+  );
+
+  if (!isDark) {
+    return pricingStack;
+  }
+
+  return (
+    <div className="w-full min-w-0">
+      <div className="mb-8 space-y-4 text-left sm:mb-10">
+        <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-white/45">
+          Pricing
+        </p>
+        <h2 className="max-w-[26ch] text-balance text-[clamp(2rem,5vw,3.375rem)] font-semibold leading-[1.02] tracking-[-0.03em] text-white">
+          Try Solo free for 7 days. Scale with Studio.
+        </h2>
+      </div>
+      {pricingStack}
+    </div>
   );
 }

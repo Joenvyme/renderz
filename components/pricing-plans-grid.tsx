@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { PRICING_STACK_CLASSES } from "@/lib/marketing-layout";
 import {
   ANNUAL_DISCOUNT_LABEL,
-  PLANS,
+  PRICING_GRID_PLANS,
   STUDIO_DEFAULT_SEATS,
   STUDIO_MIN_SEATS,
   formatChf,
@@ -98,10 +99,12 @@ export function PricingIntervalTabs({
 export type PricingPlansGridProps = {
   interval: PricingInterval;
   onIntervalChange: (v: PricingInterval) => void;
-  trialFooter: ReactNode;
   soloFooter: ReactNode;
   studioFooter: ReactNode;
-  agencyFooter: ReactNode;
+  /** Remarque Agency sous la grille (pas une carte). */
+  agencyRemark?: ReactNode;
+  /** Bandeau promo essai au-dessus de la grille (landing). */
+  trialPromoBanner?: ReactNode;
   /** Espace actif abonné (mapping legacy à brancher côté settings). */
   activePlanId?: PlanId | null;
   studioSeats?: number;
@@ -251,42 +254,66 @@ function StudioSeatSelector({
   const dec = () => onChange(Math.max(STUDIO_MIN_SEATS, seats - 1));
   const inc = () => onChange(seats + 1);
 
+  const seatBtnClass = cn(
+    "h-8 w-8 shrink-0 rounded-[4px] border-2 bg-transparent shadow-none",
+    onLightSurface
+      ? "border-black/25 text-black hover:bg-black/8 hover:text-black disabled:opacity-40"
+      : dark
+        ? "border-white/40 text-white hover:bg-white/12 hover:text-white disabled:opacity-40"
+        : "border-border text-foreground hover:bg-muted/50"
+  );
+
+  const labelClass = onLightSurface
+    ? "text-black/70"
+    : dark
+      ? "text-white/70"
+      : "text-muted-foreground";
+
+  const countClass = onLightSurface ? "text-black" : dark ? "text-white" : "text-foreground";
+
   return (
     <div
       className={cn(
         "mt-4 flex items-center justify-between gap-3 rounded-[4px] border px-3 py-2",
-        dark
-          ? onLightSurface
-            ? "border-black/15 bg-black/[0.03]"
-            : "border-white/20 bg-white/5"
-          : "border-border/80 bg-muted/20"
+        onLightSurface
+          ? "border-black/15 bg-black/[0.03]"
+          : dark
+            ? "border-white/25 bg-white/[0.06]"
+            : "border-border/80 bg-muted/20"
       )}
     >
-      <span className="font-mono text-[10px] uppercase tracking-wider">Seats</span>
+      <span className={cn("font-mono text-[10px] uppercase tracking-wider", labelClass)}>
+        Seats
+      </span>
       <div className="flex items-center gap-2">
         <Button
           type="button"
           variant="outline"
           size="icon"
-          className="h-8 w-8 rounded-[4px]"
+          className={seatBtnClass}
           onClick={dec}
           disabled={seats <= STUDIO_MIN_SEATS}
           aria-label="Remove seat"
         >
-          <Minus className="h-3.5 w-3.5" />
+          <Minus className="h-3.5 w-3.5" strokeWidth={2.5} />
         </Button>
-        <span className="min-w-[2ch] text-center font-mono text-sm font-semibold tabular-nums">
+        <span
+          className={cn(
+            "min-w-[2ch] text-center font-mono text-sm font-semibold tabular-nums",
+            countClass
+          )}
+        >
           {seats}
         </span>
         <Button
           type="button"
           variant="outline"
           size="icon"
-          className="h-8 w-8 rounded-[4px]"
+          className={seatBtnClass}
           onClick={inc}
           aria-label="Add seat"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
         </Button>
       </div>
     </div>
@@ -309,7 +336,7 @@ function PlanCardShell({
   if (dark) {
     if (onLightSurface) {
       return (
-        <div className="relative flex flex-col rounded-lg bg-white p-[34px_30px] text-black">
+        <div className="relative flex h-full min-h-0 flex-col rounded-lg bg-white p-[34px_30px] text-black">
           {children}
         </div>
       );
@@ -317,7 +344,7 @@ function PlanCardShell({
     return (
       <div
         className={cn(
-          "relative flex flex-col rounded-lg border p-[34px_30px] text-white",
+          "relative flex h-full min-h-0 flex-col rounded-lg border p-[34px_30px] text-white",
           plan.highlighted ? "border-white/40 ring-1 ring-white/20" : "border-white/14"
         )}
       >
@@ -343,14 +370,14 @@ function PlanCardShell({
   );
 }
 
-/** Grille Trial / Solo / Studio (highlight) / Agency. */
+/** Grille Solo / Studio (highlight) / Agency — essai 7j via checkout sur Solo & Studio. */
 export function PricingPlansGrid({
   interval,
   onIntervalChange,
-  trialFooter,
   soloFooter,
   studioFooter,
-  agencyFooter,
+  agencyRemark,
+  trialPromoBanner,
   activePlanId = null,
   studioSeats: studioSeatsProp,
   onStudioSeatsChange,
@@ -372,8 +399,8 @@ export function PricingPlansGrid({
       : undefined;
 
     return (
+      <div key={plan.id} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PlanCardShell
-        key={plan.id}
         plan={plan}
         active={activePlanId === plan.id}
         dark={isDark}
@@ -443,41 +470,41 @@ export function PricingPlansGrid({
           <div className="mt-8">{footer}</div>
         </div>
       </PlanCardShell>
+      </div>
     );
   };
 
-  const footers: Record<PlanId, ReactNode> = {
-    trial: trialFooter,
+  const footers: Record<"solo" | "studio", ReactNode> = {
     solo: soloFooter,
     studio: studioFooter,
-    agency: agencyFooter,
   };
 
-  if (isDark) {
-    return (
-      <div className={cn("w-full min-w-0", className)}>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-4">
-          {PLANS.map((plan) => renderCard(plan, footers[plan.id]))}
-        </div>
-      </div>
-    );
-  }
+  const intervalTabs = showIntervalToggle ? (
+    <div className="flex w-full justify-center">
+      <PricingIntervalTabs
+        interval={interval}
+        onIntervalChange={onIntervalChange}
+        theme={isDark ? "dark" : "light"}
+      />
+    </div>
+  ) : null;
 
-  return (
-    <div className={cn("w-full min-w-0", className)}>
-      {showIntervalToggle && (
-        <div className="mb-6 flex justify-center px-1 sm:mb-10">
-          <PricingIntervalTabs
-            interval={interval}
-            onIntervalChange={onIntervalChange}
-            theme="light"
-          />
-        </div>
+  const grid = (
+    <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-2 lg:items-stretch">
+      {PRICING_GRID_PLANS.map((plan) =>
+        renderCard(plan, footers[plan.id as keyof typeof footers])
       )}
-
-      <div className="flex w-full flex-col items-stretch gap-6 xl:flex-row xl:items-stretch">
-        {PLANS.map((plan) => renderCard(plan, footers[plan.id]))}
-      </div>
     </div>
   );
+
+  const stack = (
+    <div className={cn(PRICING_STACK_CLASSES, "flex w-full flex-col gap-6", className)}>
+      {intervalTabs}
+      {trialPromoBanner}
+      {grid}
+      {agencyRemark ? <div className="w-full">{agencyRemark}</div> : null}
+    </div>
+  );
+
+  return stack;
 }

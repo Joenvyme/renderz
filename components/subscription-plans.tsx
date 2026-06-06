@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import type { BillingPayload } from "@/lib/billing/billing-types";
 import type { BillingTier } from "@/lib/billing/constants";
+import { TRIAL_CTA_LABEL } from "@/lib/billing/plans";
 import { startStripeCheckout } from "@/lib/billing/stripe-checkout-client";
 import type { CheckoutPlanKey } from "@/lib/billing/plans";
 import { checkoutKeyForPlan } from "@/lib/billing/plans";
 import type { PlanId } from "@/lib/billing/plans";
+import { PricingAgencyRemark } from "@/components/pricing-agency-remark";
 import {
   PricingPlansGrid,
   type PricingInterval,
@@ -83,29 +85,10 @@ export function SubscriptionPlans({
 
   const tier = billing.tier as BillingTier;
   const activePlanId: PlanId | null =
-    tier === "trial"
-      ? "trial"
-      : tier === "solo"
-        ? "solo"
-        : tier === "studio"
-          ? "studio"
-          : tier === "agency"
-            ? "agency"
-            : null;
+    tier === "solo" ? "solo" : tier === "studio" ? "studio" : null;
 
   const soloPlanKey = checkoutKeyForPlan("solo", interval);
   const studioPlanKey = checkoutKeyForPlan("studio", interval);
-
-  const trialFooter =
-    tier === "trial" ? (
-      <div className="w-full rounded-[2px] border-2 border-black/20 py-3 text-center font-mono text-xs tracking-wider text-muted-foreground">
-        Votre plan actuel
-      </div>
-    ) : (
-      <div className="w-full rounded-[2px] border border-border py-3 text-center font-mono text-xs text-muted-foreground">
-        Inclus dans les offres payantes
-      </div>
-    );
 
   const soloFooter =
     tier === "solo" ? (
@@ -116,7 +99,7 @@ export function SubscriptionPlans({
       >
         {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Gérer facturation & abonnement"}
       </Button>
-    ) : tier === "trial" && soloPlanKey ? (
+    ) : soloPlanKey ? (
       <Button
         className="h-11 w-full rounded-[4px] bg-black font-mono text-xs tracking-wider text-white hover:bg-black/90"
         disabled={!!checkoutLoading}
@@ -125,10 +108,7 @@ export function SubscriptionPlans({
         {checkoutLoading === soloPlanKey ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
-          <>
-            <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-            Passer à Solo
-          </>
+          TRIAL_CTA_LABEL
         )}
       </Button>
     ) : (
@@ -157,45 +137,36 @@ export function SubscriptionPlans({
         {checkoutLoading === studioPlanKey ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
-          "Passer à Studio"
+          "Start 7-day trial"
         )}
       </Button>
     ) : (
       <div className="w-full rounded-[2px] border border-border py-3 text-center font-mono text-xs text-muted-foreground">
-        —
+        {tier === "solo" ? "Vous êtes sur Solo" : "—"}
       </div>
     );
 
-  const agencyFooter = (
-    <Button
-      variant="outline"
-      className="h-11 w-full rounded-[2px] border-2 border-black font-mono text-xs tracking-wider hover:bg-black hover:text-white"
-      onClick={() => {
-        window.location.href = "mailto:hello@renderz.ch?subject=Agency%20plan";
-      }}
-    >
-      Contact us
-    </Button>
-  );
-
   return (
     <div className="w-full">
+      {tier === "trial" && (
+        <p className="mb-4 rounded-[4px] border border-border/80 bg-muted/30 px-3 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          Compte essai gratuit (~50 rendus watermark). Choisissez Solo ou Studio pour l’essai
+          abonnement 7 jours.
+        </p>
+      )}
       <PricingPlansGrid
         interval={interval}
         onIntervalChange={setInterval}
         activePlanId={activePlanId}
         studioSeats={studioSeats}
         onStudioSeatsChange={setStudioSeats}
-        trialFooter={trialFooter}
         soloFooter={soloFooter}
         studioFooter={studioFooter}
-        agencyFooter={agencyFooter}
+        agencyRemark={<PricingAgencyRemark />}
       />
-      {(tier === "solo" || tier === "studio") && (
-        <p className="mt-6 text-center font-mono text-[10px] text-muted-foreground">
-          Paiement sécurisé par Stripe — essai 7 jours, carte demandée seulement si nécessaire.
-        </p>
-      )}
+      <p className="mt-4 text-center font-mono text-[10px] text-muted-foreground">
+        Essai 7 jours · watermark pendant l’essai · annulez avant le jour 7
+      </p>
     </div>
   );
 }

@@ -5,7 +5,11 @@ import { LogOut, User } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { StripedPattern } from "@/components/magicui/striped-pattern";
-import { SolutionsNav } from "@/components/marketing/solutions-nav";
+import {
+  MarketingDesktopNav,
+  MarketingFooterNav,
+  MarketingMobileNav,
+} from "@/components/marketing/marketing-nav";
 import { useMarketingAuth } from "@/components/marketing/marketing-auth-provider";
 import { signOut, useSession } from "@/lib/auth-client";
 
@@ -30,7 +34,7 @@ export function MarketingShell({ children }: MarketingShellProps) {
           </div>
 
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            <SolutionsNav variant="header" />
+            <MarketingDesktopNav />
 
             {session ? (
               <div className="flex items-center gap-1.5 sm:gap-2">
@@ -74,6 +78,8 @@ export function MarketingShell({ children }: MarketingShellProps) {
                 Sign in
               </Button>
             )}
+
+            <MarketingMobileNav />
           </div>
         </div>
       </header>
@@ -83,10 +89,15 @@ export function MarketingShell({ children }: MarketingShellProps) {
       <footer className="relative z-10 border-t border-border/50 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
         <div className="container mx-auto px-4 py-8 sm:px-6 sm:py-10">
           <div className="mb-8 border-b border-border/40 pb-8">
-            <p className="mb-5 font-mono text-[10px] uppercase tracking-[0.15em] text-foreground/80 sm:text-xs">
-              Solutions
-            </p>
-            <SolutionsNav variant="footer" />
+            <MarketingFooterNav />
+            <div className="mt-8">
+              <Link
+                href="/#pricing-section"
+                className="font-mono text-[10px] uppercase tracking-[0.15em] text-foreground/80 transition-colors hover:text-foreground sm:text-xs"
+              >
+                Pricing
+              </Link>
+            </div>
           </div>
 
           <div className="flex flex-col items-center justify-center gap-1">
